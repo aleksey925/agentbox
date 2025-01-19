@@ -454,6 +454,12 @@ Flags:
 		return toShellExit(code)
 	}
 
+	// ensure shared volumes exist (prevents "volume created for different project" warning)
+	if err := docker.EnsureSharedVolumes(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating shared volumes: %v\n", err)
+		return 1
+	}
+
 	// discover compose files
 	composeFiles, err := docker.DiscoverComposeFiles(cwd)
 	if err != nil {

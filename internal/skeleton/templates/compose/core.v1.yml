@@ -4,7 +4,7 @@ services:
   agentbox:
     image: agentbox:local
     build:
-      context: ..
+      context: .
       dockerfile: .agentbox/Dockerfile.v1.agentbox
     volumes:
       # ai agents binaries (read-only mount from host)
@@ -25,12 +25,15 @@ services:
       # git config (for commits inside sandbox)
       - ~/.gitconfig:/home/box/.gitconfig:ro
       # project files
-      - ..:/home/box/app
+      - .:/home/box/app
 
 volumes:
   mise-data:
     name: agentbox-mise-data
+    external: true
   mise-cache:
     name: agentbox-mise-cache
+    external: true
   opencode-cache:
     name: agentbox-opencode-cache
+    external: true

@@ -13,6 +13,25 @@ import (
 	"github.com/aleksey925/agentbox/internal/skeleton"
 )
 
+// SharedVolumes are Docker volumes shared between all agentbox projects.
+var SharedVolumes = []string{
+	"agentbox-mise-data",
+	"agentbox-mise-cache",
+	"agentbox-opencode-cache",
+}
+
+// EnsureSharedVolumes creates shared volumes if they don't exist.
+func EnsureSharedVolumes() error {
+	for _, vol := range SharedVolumes {
+		ctx := context.Background()
+		cmd := exec.CommandContext(ctx, "docker", "volume", "create", vol)
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("create volume %s: %w", vol, err)
+		}
+	}
+	return nil
+}
+
 // buildRunArgs builds docker compose run arguments.
 func buildRunArgs(projectDir string, composeFiles []string) []string {
 	args := []string{"compose", "--project-directory", projectDir}
