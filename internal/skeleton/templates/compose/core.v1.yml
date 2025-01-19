@@ -17,7 +17,10 @@ services:
       - ~/.copilot/:/home/box/.copilot/
       - ~/.codex/:/home/box/.codex/
       - ~/.gemini/:/home/box/.gemini/
-      - ~/.opencode/:/home/box/.opencode/
+      - ~/.config/opencode/:/home/box/.config/opencode/
+      - ~/.local/share/opencode/:/home/box/.local/share/opencode/
+      - ~/.local/state/opencode/:/home/box/.local/state/opencode/
+      - opencode-cache:/home/box/.cache/opencode
       # git config (for commits inside sandbox)
       - ~/.gitconfig:/home/box/.gitconfig:ro
       # project files
@@ -28,3 +31,5 @@ volumes:
     name: agentbox-mise-data
   mise-cache:
     name: agentbox-mise-cache
+  opencode-cache:
+    name: agentbox-opencode-cache

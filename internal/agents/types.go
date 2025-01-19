@@ -95,13 +95,22 @@ func AllAgentNames() []string {
 	return []string{"claude", "copilot", "codex", "gemini", "opencode"}
 }
 
-// AgentConfigDirs returns config directory names for all agents (e.g., ".claude", ".copilot").
+// agentConfigDirs maps agent name to its config directories (relative to $HOME).
+// Most agents use simple format (.claude), but opencode uses XDG paths.
+var agentConfigDirs = map[string][]string{
+	"claude":   {".claude"},
+	"copilot":  {".copilot"},
+	"codex":    {".codex"},
+	"gemini":   {".gemini"},
+	"opencode": {".config/opencode", ".local/share/opencode", ".local/state/opencode"},
+}
+
+// AgentConfigDirs returns all config directory paths (relative to $HOME) for all agents.
 // Used by CLI to create directories before Docker mounts them.
 func AgentConfigDirs() []string {
-	names := AllAgentNames()
-	dirs := make([]string, len(names))
-	for i, name := range names {
-		dirs[i] = "." + name
+	var dirs []string
+	for _, name := range AllAgentNames() {
+		dirs = append(dirs, agentConfigDirs[name]...)
 	}
 	return dirs
 }

@@ -173,7 +173,8 @@ func TestCoreYml_agent_config_volumes(t *testing.T) {
 
 	// act & assert
 	for _, configDir := range agents.AgentConfigDirs() {
-		// expected format: ~/.{agent}/:/home/box/.{agent}/
+		// expected format: ~/{configDir}/:/home/box/{configDir}/
+		// configDir can be ".claude" or ".config/opencode" (XDG paths)
 		expectedMount := "~/" + configDir + "/:/home/box/" + configDir + "/"
 		if !strings.Contains(coreContent, expectedMount) {
 			t.Errorf("core.v1.yml missing volume mount for %s (expected %q)", configDir, expectedMount)
