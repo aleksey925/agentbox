@@ -13,15 +13,20 @@ import (
 	"github.com/aleksey925/agentbox/internal/skeleton"
 )
 
-// Run starts a container using compose files from .agentbox/ directory.
-func Run(projectDir string, composeFiles []string) error {
-	ctx := context.Background()
-	args := []string{"compose"}
-
+// buildRunArgs builds docker compose run arguments.
+func buildRunArgs(projectDir string, composeFiles []string) []string {
+	args := []string{"compose", "--project-directory", projectDir}
 	for _, f := range composeFiles {
 		args = append(args, "-f", f)
 	}
 	args = append(args, "run", "--rm", "agentbox")
+	return args
+}
+
+// Run starts a container using compose files from .agentbox/ directory.
+func Run(projectDir string, composeFiles []string) error {
+	ctx := context.Background()
+	args := buildRunArgs(projectDir, composeFiles)
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = projectDir
@@ -48,19 +53,23 @@ func Attach(containerID string) error {
 	return nil
 }
 
-// Build builds the container image using compose files from .agentbox/ directory.
-func Build(projectDir string, composeFiles []string, noCache bool) error {
-	ctx := context.Background()
-	args := []string{"compose"}
-
+// buildBuildArgs builds docker compose build arguments.
+func buildBuildArgs(projectDir string, composeFiles []string, noCache bool) []string {
+	args := []string{"compose", "--project-directory", projectDir}
 	for _, f := range composeFiles {
 		args = append(args, "-f", f)
 	}
 	args = append(args, "build")
-
 	if noCache {
 		args = append(args, "--no-cache")
 	}
+	return args
+}
+
+// Build builds the container image using compose files from .agentbox/ directory.
+func Build(projectDir string, composeFiles []string, noCache bool) error {
+	ctx := context.Background()
+	args := buildBuildArgs(projectDir, composeFiles, noCache)
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = projectDir

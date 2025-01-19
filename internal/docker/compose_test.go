@@ -264,3 +264,79 @@ func TestDiscoverComposeFiles__ignores_non_yml_files(t *testing.T) {
 		t.Fatalf("len(files) = %d, want %d; got %v", len(files), len(expected), files)
 	}
 }
+
+func TestBuildRunArgs(t *testing.T) {
+	// arrange
+	projectDir := "/home/user/myproject"
+	composeFiles := []string{
+		"/home/user/myproject/.agentbox/core.v1.yml",
+		"/home/user/myproject/.agentbox/go.v1.yml",
+	}
+
+	// act
+	args := buildRunArgs(projectDir, composeFiles)
+
+	// assert
+	expected := []string{
+		"compose", "--project-directory", "/home/user/myproject",
+		"-f", "/home/user/myproject/.agentbox/core.v1.yml",
+		"-f", "/home/user/myproject/.agentbox/go.v1.yml",
+		"run", "--rm", "agentbox",
+	}
+	if len(args) != len(expected) {
+		t.Fatalf("len(args) = %d, want %d\nargs: %v", len(args), len(expected), args)
+	}
+	for i, arg := range args {
+		if arg != expected[i] {
+			t.Errorf("args[%d] = %q, want %q", i, arg, expected[i])
+		}
+	}
+}
+
+func TestBuildBuildArgs(t *testing.T) {
+	// arrange
+	projectDir := "/home/user/myproject"
+	composeFiles := []string{"/home/user/myproject/.agentbox/core.v1.yml"}
+
+	// act
+	args := buildBuildArgs(projectDir, composeFiles, false)
+
+	// assert
+	expected := []string{
+		"compose", "--project-directory", "/home/user/myproject",
+		"-f", "/home/user/myproject/.agentbox/core.v1.yml",
+		"build",
+	}
+	if len(args) != len(expected) {
+		t.Fatalf("len(args) = %d, want %d\nargs: %v", len(args), len(expected), args)
+	}
+	for i, arg := range args {
+		if arg != expected[i] {
+			t.Errorf("args[%d] = %q, want %q", i, arg, expected[i])
+		}
+	}
+}
+
+func TestBuildBuildArgs__with_no_cache(t *testing.T) {
+	// arrange
+	projectDir := "/home/user/myproject"
+	composeFiles := []string{"/home/user/myproject/.agentbox/core.v1.yml"}
+
+	// act
+	args := buildBuildArgs(projectDir, composeFiles, true)
+
+	// assert
+	expected := []string{
+		"compose", "--project-directory", "/home/user/myproject",
+		"-f", "/home/user/myproject/.agentbox/core.v1.yml",
+		"build", "--no-cache",
+	}
+	if len(args) != len(expected) {
+		t.Fatalf("len(args) = %d, want %d\nargs: %v", len(args), len(expected), args)
+	}
+	for i, arg := range args {
+		if arg != expected[i] {
+			t.Errorf("args[%d] = %q, want %q", i, arg, expected[i])
+		}
+	}
+}
