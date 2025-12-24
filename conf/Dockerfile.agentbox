@@ -1,0 +1,73 @@
+FROM debian:13-slim
+
+ENV UV_LINK_MODE=copy
+ENV POETRY_VIRTUALENVS_CREATE=false
+
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+                    make \
+                    vim \
+                    curl \
+                    wget \
+                    git \
+                    mc \
+                    ripgrep \
+                    gpg \
+                    gnupg \
+                    lsb-release \
+                    ca-certificates \
+                    jq \
+                    sudo \
+    && rm -rf /var/lib/apt/lists/* \
+              /var/cache/apt/* \
+              /var/log/apt/* \
+              /var/log/dpkg.log \
+              /var/log/alternatives.log \
+              /tmp/*
+
+# Create non root user to be able to run claude code with --dangerously-skip-permissions key
+RUN useradd -m alex && \
+    echo "alex ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/alex && \
+    chmod 0440 /etc/sudoers.d/alex
+
+RUN mkdir -p /etc/apt/keyrings && \
+    chmod 755 /etc/apt/keyrings && \
+    wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null && \
+    echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=arm64] https://mise.jdx.dev/deb stable main" | tee /etc/apt/sources.list.d/mise.list && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends mise && \
+    rm -rf /var/lib/apt/lists/* \
+           /var/cache/apt/* \
+           /var/log/apt/* \
+           /var/log/dpkg.log \
+           /var/log/alternatives.log \
+           /tmp/* && \
+    echo 'eval "$(mise activate bash)"' >> /home/alex/.bashrc
+
+USER alex
+
+WORKDIR /home/alex/app
+
+# ============================================
+# Tools layer (mise + languages)
+# ============================================
+ARG REBUILD_TOOLS=0
+
+COPY mise.toml /home/alex/app/mise.toml
+RUN mise trust && mise install && \
+    rm -rf ~/.cache/mise/* /tmp/*
+
+# ============================================
+# AI Agents layer (Claude, Copilot)
+# ============================================
+ARG REBUILD_AGENTS=0
+
+# claude
+RUN curl -fsSL https://claude.ai/install.sh | bash && \
+    echo 'alias claude="$HOME/.local/bin/claude --dangerously-skip-permissions"' >> /home/alex/.bashrc
+
+# copilot
+RUN curl -fsSL https://gh.io/copilot-install | bash && \
+    echo 'alias copilot="$HOME/.local/bin/copilot --allow-all-paths --allow-all-tools"' >> /home/alex/.bashrc
+
+ENTRYPOINT ["/bin/bash"]
