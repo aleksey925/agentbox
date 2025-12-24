@@ -10,7 +10,7 @@ SCRIPT_NAME="$(basename "$0")"
 
 # Installation paths
 INSTALL_BIN="$HOME/.local/bin/agentbox"
-INSTALL_CONF="$HOME/.agentbox"
+INSTALL_SKELETON="$HOME/.agentbox"
 
 COMPOSE_FILE="docker-compose.agentbox.yml"
 DOCKERFILE="Dockerfile.agentbox"
@@ -41,7 +41,7 @@ regex_escape() { printf '%s' "$1" | sed 's/[.[\*^$()+?{|]/\\&/g'; }
 is_repo() {
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    [[ -d "$script_dir/conf" && -d "$script_dir/.git" ]]
+    [[ -d "$script_dir/skeleton" && -d "$script_dir/.git" ]]
 }
 
 # cross-platform sed -i
@@ -58,8 +58,8 @@ sed_inplace() {
 # ============================================================================
 
 cmd_init() {
-    if [[ ! -d "$INSTALL_CONF" ]]; then
-        die "Source directory not found: $INSTALL_CONF"
+    if [[ ! -d "$INSTALL_SKELETON" ]]; then
+        die "Skeleton directory not found: $INSTALL_SKELETON"
     fi
     
     # Check if files already exist
@@ -80,7 +80,7 @@ cmd_init() {
     [[ -f ".git/info/exclude" ]] && git_exclude=".git/info/exclude"
     
     local copied=0
-    for file in "$INSTALL_CONF"/*; do
+    for file in "$INSTALL_SKELETON"/*; do
         [[ ! -f "$file" ]] && continue
         
         local filename
@@ -194,15 +194,15 @@ cmd_clean() {
 cmd_install() {
     local script_dir
     script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local conf_dir="$script_dir/conf"
+    local skeleton_dir="$script_dir/skeleton"
 
-    if [[ ! -d "$conf_dir" ]]; then
-        die "Config directory not found: $conf_dir"
+    if [[ ! -d "$skeleton_dir" ]]; then
+        die "Skeleton directory not found: $skeleton_dir"
     fi
 
     local existing=()
     [[ -f "$INSTALL_BIN" ]] && existing+=("$INSTALL_BIN")
-    [[ -d "$INSTALL_CONF" ]] && existing+=("$INSTALL_CONF/")
+    [[ -d "$INSTALL_SKELETON" ]] && existing+=("$INSTALL_SKELETON/")
 
     if [[ ${#existing[@]} -gt 0 ]]; then
         log_warning "Already installed: ${existing[*]}"
@@ -217,17 +217,17 @@ cmd_install() {
     chmod +x "$INSTALL_BIN"
     log_success "Installed: $INSTALL_BIN"
 
-    mkdir -p "$INSTALL_CONF"
+    mkdir -p "$INSTALL_SKELETON"
     local copied=0
-    for file in "$conf_dir"/*; do
+    for file in "$skeleton_dir"/*; do
         [[ ! -f "$file" ]] && continue
-        cp "$file" "$INSTALL_CONF/"
-        log_success "Copied: $(basename "$file") -> $INSTALL_CONF/"
+        cp "$file" "$INSTALL_SKELETON/"
+        log_success "Copied: $(basename "$file") -> $INSTALL_SKELETON/"
         copied=$((copied + 1))
     done
 
     echo
-    log_success "Installation complete (${copied} config files)"
+    log_success "Installation complete (${copied} skeleton files)"
     echo
     echo "Make sure ~/.local/bin is in your PATH:"
     echo -e "  ${BOLD}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
