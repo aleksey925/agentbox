@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup mise
+        uses: jdx/mise-action@v2
+
+      - name: Test
+        run: go test -race -timeout 3m -coverprofile=coverage.out ./...
+        env:
+          TZ: UTC
+
+      - name: Lint
+        run: golangci-lint run
+
+      - name: Build
+        run: go build -o agentbox ./cmd/agentbox

@@ -1,0 +1,93 @@
+version: "2"
+
+run:
+  concurrency: 4
+
+linters:
+  default: none
+  enable:
+    # bugs
+    - asciicheck
+    - bidichk
+    - bodyclose
+    - copyloopvar
+    - durationcheck
+    - errcheck
+    - govet
+    - makezero
+    - nilerr
+    - nilnil
+    - rowserrcheck
+    - sqlclosecheck
+    - staticcheck
+
+    # style
+    - dupl
+    - errname
+    - ineffassign
+    - misspell
+    - unconvert
+    - unparam
+    - unused
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+
+    # complexity
+    - cyclop
+    - funlen
+    - gocognit
+
+    # formatting
+    - lll
+
+  settings:
+    cyclop:
+      max-complexity: 20
+
+    dupl:
+      threshold: 100
+
+    funlen:
+      lines: 100
+      statements: 55
+
+    gocognit:
+      min-complexity: 30
+
+    lll:
+      line-length: 140
+
+    errcheck:
+      exclude-functions:
+        # defer Close() is standard pattern
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (*compress/gzip.Reader).Close
+        # cleanup operations - best effort
+        - os.Remove
+        - os.RemoveAll
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - lll
+        - funlen
+        - dupl
+        - cyclop
+        - gocognit
+        - errcheck
+
+formatters:
+  enable:
+    - goimports
+    - gofmt
+
+output:
+  formats:
+    text:
+      path: stdout
+  sort-order:
+    - linter
+    - file

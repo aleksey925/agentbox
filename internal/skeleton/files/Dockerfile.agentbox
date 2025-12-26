@@ -1,0 +1,72 @@
+FROM debian:13-slim
+
+ENV UV_LINK_MODE=copy
+ENV POETRY_VIRTUALENVS_CREATE=false
+
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
+                    make \
+                    vim \
+                    curl \
+                    wget \
+                    git \
+                    mc \
+                    ripgrep \
+                    gpg \
+                    gnupg \
+                    lsb-release \
+                    ca-certificates \
+                    jq \
+                    sudo \
+    && rm -rf /var/lib/apt/lists/* \
+              /var/cache/apt/* \
+              /var/log/apt/* \
+              /var/log/dpkg.log \
+              /var/log/alternatives.log \
+              /tmp/*
+
+# Create non root user to be able to run claude code with --dangerously-skip-permissions key
+RUN useradd -m box && \
+    echo "box ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/box && \
+    chmod 0440 /etc/sudoers.d/box
+
+# Install mise
+RUN mkdir -p /etc/apt/keyrings && \
+    chmod 755 /etc/apt/keyrings && \
+    wget -qO - https://mise.jdx.dev/gpg-key.pub | gpg --dearmor | tee /etc/apt/keyrings/mise-archive-keyring.gpg 1> /dev/null && \
+    echo "deb [signed-by=/etc/apt/keyrings/mise-archive-keyring.gpg arch=$(dpkg --print-architecture)] https://mise.jdx.dev/deb stable main" | tee /etc/apt/sources.list.d/mise.list && \
+    apt-get update -y && \
+    apt-get install -y --no-install-recommends mise && \
+    rm -rf /var/lib/apt/lists/* \
+           /var/cache/apt/* \
+           /var/log/apt/* \
+           /var/log/dpkg.log \
+           /var/log/alternatives.log \
+           /tmp/* && \
+    echo 'eval "$(mise activate bash)"' >> /home/box/.bashrc
+
+USER box
+
+WORKDIR /home/box/app
+
+COPY mise.toml /home/box/app/mise.toml
+RUN mise trust && mise install && \
+    rm -rf ~/.cache/mise/* /tmp/*
+
+# AI Agents — symlinks to mounted binaries
+ENV PATH="${PATH}:/home/box/.local/bin"
+RUN mkdir -p /home/box/.local/bin && \
+    ln -s /opt/agentbox/bin/claude/current/claude /home/box/.local/bin/claude && \
+    ln -s /opt/agentbox/bin/copilot/current/copilot /home/box/.local/bin/copilot && \
+    ln -s /opt/agentbox/bin/codex/current/codex /home/box/.local/bin/codex && \
+    printf '#!/bin/bash\nmise exec node -- node /opt/agentbox/bin/gemini/current/gemini.js "$@"\n' \
+        > /home/box/.local/bin/gemini && \
+    chmod +x /home/box/.local/bin/gemini
+
+# Aliases with skip-permissions flags
+RUN echo 'alias claude="/home/box/.local/bin/claude --dangerously-skip-permissions"' >> /home/box/.bashrc && \
+    echo 'alias copilot="/home/box/.local/bin/copilot --allow-all-paths --allow-all-tools"' >> /home/box/.bashrc && \
+    echo 'alias codex="/home/box/.local/bin/codex --full-auto"' >> /home/box/.bashrc && \
+    echo 'alias gemini="/home/box/.local/bin/gemini --yolo"' >> /home/box/.bashrc
+
+ENTRYPOINT ["/bin/bash"]
