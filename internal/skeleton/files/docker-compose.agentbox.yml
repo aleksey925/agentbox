@@ -1,0 +1,24 @@
+# docker compose -f docker-compose.agentbox.yml run --rm --build agentbox
+services:
+  agentbox:
+    build:
+      context: .
+      dockerfile: Dockerfile.agentbox
+    environment:
+      - VENV_DIR_PATH=/home/box/.venv
+      - UV_PROJECT_ENVIRONMENT=/home/box/.venv
+      - GOPATH=/home/box/go
+    volumes:
+      # ai agents binaries (read-only mount from host)
+      - ~/.agentbox/bin:/opt/agentbox/bin:ro
+      # agent configs
+      - ~/.claude.json:/home/box/.claude.json
+      - ~/.claude/:/home/box/.claude/
+      - ~/.copilot/:/home/box/.copilot/
+      - ~/.codex/:/home/box/.codex/
+      - ~/.gemini/:/home/box/.gemini/
+      # project files
+      - ./:/home/box/app
+      # caches
+      - ~/.go/:/home/box/go
+      - ~/.cache/uv:/home/box/.cache/uv
