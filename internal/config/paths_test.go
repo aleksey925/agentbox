@@ -121,7 +121,7 @@ func TestPaths_EnsureDirs__already_exists(t *testing.T) {
 		BinDir:      filepath.Join(tmpDir, ".agentbox", "bin"),
 	}
 
-	if err := os.MkdirAll(paths.BinDir, 0755); err != nil {
+	if err := os.MkdirAll(paths.BinDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 

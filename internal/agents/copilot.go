@@ -3,6 +3,8 @@ package agents
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,7 +20,7 @@ type CopilotAgent struct {
 func NewCopilotAgent() (*CopilotAgent, error) {
 	arch, err := DetectArch()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("detect arch: %w", err)
 	}
 	return &CopilotAgent{arch: arch}, nil
 }
@@ -35,25 +37,30 @@ func (c *CopilotAgent) BinaryName() string {
 	return "copilot"
 }
 
-func (c *CopilotAgent) FetchLatestVersion() (string, error) {
-	tag, err := FetchLatestGitHubTag("github", "copilot-cli")
+func (c *CopilotAgent) FetchLatestVersion(ctx context.Context) (string, error) {
+	tag, err := FetchLatestGitHubTag(ctx, "github", "copilot-cli")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("fetch github tag: %w", err)
 	}
 	return strings.TrimPrefix(tag, "v"), nil
 }
 
-func (c *CopilotAgent) Download(version, destDir string, progress func(downloaded, total int64)) error {
+func (c *CopilotAgent) Download(ctx context.Context, version, destDir string, progress func(downloaded, total int64)) error {
 	assetName := fmt.Sprintf("copilot-linux-%s.tar.gz", c.arch)
 	assetURL := fmt.Sprintf("https://github.com/github/copilot-cli/releases/download/v%s/%s", version, assetName)
 
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return err
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return fmt.Errorf("create dest dir: %w", err)
 	}
 
-	resp, err := httpClient.Get(assetURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, http.NoBody)
 	if err != nil {
-		return err
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("http get: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -69,7 +76,7 @@ func (c *CopilotAgent) Download(version, destDir string, progress func(downloade
 
 	gzr, err := gzip.NewReader(pr)
 	if err != nil {
-		return err
+		return fmt.Errorf("create gzip reader: %w", err)
 	}
 	defer gzr.Close()
 
@@ -81,7 +88,7 @@ func (c *CopilotAgent) Download(version, destDir string, progress func(downloade
 			break
 		}
 		if err != nil {
-			return err
+			return fmt.Errorf("read tar header: %w", err)
 		}
 
 		if hdr.Typeflag != tar.TypeReg {
@@ -93,21 +100,21 @@ func (c *CopilotAgent) Download(version, destDir string, progress func(downloade
 			destPath := filepath.Join(destDir, "copilot")
 			out, err := os.Create(destPath)
 			if err != nil {
-				return err
+				return fmt.Errorf("create file: %w", err)
 			}
 
 			if _, err := io.Copy(out, tr); err != nil {
 				out.Close()
-				return err
+				return fmt.Errorf("copy to file: %w", err)
 			}
 			out.Close()
 
-			if err := os.Chmod(destPath, 0755); err != nil {
-				return err
+			if err := os.Chmod(destPath, 0o755); err != nil {
+				return fmt.Errorf("chmod: %w", err)
 			}
 			return nil
 		}
 	}
 
-	return fmt.Errorf("binary 'copilot' not found in archive")
+	return errors.New("binary 'copilot' not found in archive")
 }

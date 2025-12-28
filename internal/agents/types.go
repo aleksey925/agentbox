@@ -1,10 +1,11 @@
 package agents
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"runtime"
 	"strings"
 	"time"
@@ -16,26 +17,8 @@ var httpClient = &http.Client{
 	Timeout: 5 * time.Minute,
 }
 
-// GitHubRequest creates an HTTP request with proper headers for GitHub API
-func GitHubRequest(method, url string) (*http.Request, error) {
-	req, err := http.NewRequest(method, url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Set("User-Agent", userAgent)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	// use token if available
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	return req, nil
-}
-
 // FetchLatestGitHubTag gets latest release tag via redirect (bypasses API rate limit)
-func FetchLatestGitHubTag(owner, repo string) (string, error) {
+func FetchLatestGitHubTag(ctx context.Context, owner, repo string) (string, error) {
 	url := "https://github.com/" + owner + "/" + repo + "/releases/latest"
 
 	client := &http.Client{
@@ -45,15 +28,15 @@ func FetchLatestGitHubTag(owner, repo string) (string, error) {
 		},
 	}
 
-	req, err := http.NewRequest(http.MethodHead, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, http.NoBody)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("do request: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -63,7 +46,7 @@ func FetchLatestGitHubTag(owner, repo string) (string, error) {
 
 	location := resp.Header.Get("Location")
 	if location == "" {
-		return "", fmt.Errorf("no redirect location")
+		return "", errors.New("no redirect location")
 	}
 
 	// extract tag from URL like: https://github.com/owner/repo/releases/tag/v1.2.3
@@ -78,8 +61,8 @@ func FetchLatestGitHubTag(owner, repo string) (string, error) {
 type Agent interface {
 	Name() string
 	Variant() string
-	FetchLatestVersion() (string, error)
-	Download(version, destDir string, progress func(downloaded, total int64)) error
+	FetchLatestVersion(ctx context.Context) (string, error)
+	Download(ctx context.Context, version, destDir string, progress func(downloaded, total int64)) error
 	BinaryName() string
 }
 
@@ -120,5 +103,13 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 			pr.progress(pr.downloaded, pr.total)
 		}
 	}
-	return n, err
+	switch err {
+	case nil:
+		return n, nil
+	case io.EOF:
+		// don't wrap io.EOF - it breaks gzip/tar readers that check for io.EOF
+		return n, io.EOF
+	default:
+		return n, fmt.Errorf("read: %w", err)
+	}
 }

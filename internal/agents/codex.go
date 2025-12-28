@@ -3,6 +3,7 @@ package agents
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,7 +19,7 @@ type CodexAgent struct {
 func NewCodexAgent() (*CodexAgent, error) {
 	arch, err := DetectArch()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("detect arch: %w", err)
 	}
 	return &CodexAgent{arch: arch}, nil
 }
@@ -35,10 +36,10 @@ func (c *CodexAgent) BinaryName() string {
 	return "codex"
 }
 
-func (c *CodexAgent) FetchLatestVersion() (string, error) {
-	tag, err := FetchLatestGitHubTag("openai", "codex")
+func (c *CodexAgent) FetchLatestVersion(ctx context.Context) (string, error) {
+	tag, err := FetchLatestGitHubTag(ctx, "openai", "codex")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("fetch github tag: %w", err)
 	}
 	// tag format: rust-v0.77.0
 	return strings.TrimPrefix(tag, "rust-v"), nil
@@ -55,18 +56,23 @@ func (c *CodexAgent) rustArch() string {
 	}
 }
 
-func (c *CodexAgent) Download(version, destDir string, progress func(downloaded, total int64)) error {
+func (c *CodexAgent) Download(ctx context.Context, version, destDir string, progress func(downloaded, total int64)) error {
 	binaryName := fmt.Sprintf("codex-%s-unknown-linux-gnu", c.rustArch())
 	assetName := binaryName + ".tar.gz"
 	assetURL := fmt.Sprintf("https://github.com/openai/codex/releases/download/rust-v%s/%s", version, assetName)
 
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return err
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return fmt.Errorf("create dest dir: %w", err)
 	}
 
-	resp, err := httpClient.Get(assetURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, http.NoBody)
 	if err != nil {
-		return err
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("http get: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -82,7 +88,7 @@ func (c *CodexAgent) Download(version, destDir string, progress func(downloaded,
 
 	gzr, err := gzip.NewReader(pr)
 	if err != nil {
-		return err
+		return fmt.Errorf("create gzip reader: %w", err)
 	}
 	defer gzr.Close()
 
@@ -94,7 +100,7 @@ func (c *CodexAgent) Download(version, destDir string, progress func(downloaded,
 			break
 		}
 		if err != nil {
-			return err
+			return fmt.Errorf("read tar header: %w", err)
 		}
 
 		if hdr.Typeflag != tar.TypeReg {
@@ -106,17 +112,17 @@ func (c *CodexAgent) Download(version, destDir string, progress func(downloaded,
 			destPath := filepath.Join(destDir, "codex")
 			out, err := os.Create(destPath)
 			if err != nil {
-				return err
+				return fmt.Errorf("create file: %w", err)
 			}
 
 			if _, err := io.Copy(out, tr); err != nil {
 				out.Close()
-				return err
+				return fmt.Errorf("copy to file: %w", err)
 			}
 			out.Close()
 
-			if err := os.Chmod(destPath, 0755); err != nil {
-				return err
+			if err := os.Chmod(destPath, 0o755); err != nil {
+				return fmt.Errorf("chmod: %w", err)
 			}
 			return nil
 		}

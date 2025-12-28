@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -70,6 +71,7 @@ type AgentStatus struct {
 }
 
 func (m *Manager) GetStatus() []AgentStatus {
+	ctx := context.Background()
 	var wg sync.WaitGroup
 	results := make([]AgentStatus, len(m.agents))
 	names := AllAgentNames()
@@ -85,7 +87,7 @@ func (m *Manager) GetStatus() []AgentStatus {
 			installed := m.state.GetAgentVersion(agentName)
 			status.Installed = installed
 
-			latest, err := agent.FetchLatestVersion()
+			latest, err := agent.FetchLatestVersion(ctx)
 			if err != nil {
 				status.Error = err
 			} else {
@@ -102,14 +104,15 @@ func (m *Manager) GetStatus() []AgentStatus {
 }
 
 func (m *Manager) Install(name string, onProgress func(agent string, downloaded, total int64)) error {
+	ctx := context.Background()
 	agent, ok := m.agents[name]
 	if !ok {
 		return fmt.Errorf("unknown agent: %s", name)
 	}
 
-	version, err := agent.FetchLatestVersion()
+	version, err := agent.FetchLatestVersion(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("fetch latest version: %w", err)
 	}
 
 	destDir := m.paths.AgentVersionDir(name, version)
@@ -127,9 +130,9 @@ func (m *Manager) Install(name string, onProgress func(agent string, downloaded,
 		}
 	}
 
-	if err := agent.Download(version, destDir, progress); err != nil {
+	if err := agent.Download(ctx, version, destDir, progress); err != nil {
 		os.RemoveAll(destDir)
-		return err
+		return fmt.Errorf("download: %w", err)
 	}
 
 	if err := m.switchVersion(name, version); err != nil {
@@ -142,6 +145,7 @@ func (m *Manager) Install(name string, onProgress func(agent string, downloaded,
 }
 
 func (m *Manager) Update(names []string) ([]DownloadResult, error) {
+	ctx := context.Background()
 	if len(names) == 0 {
 		names = AllAgentNames()
 	}
@@ -166,7 +170,7 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 				return
 			}
 
-			version, err := agent.FetchLatestVersion()
+			version, err := agent.FetchLatestVersion(ctx)
 			if err != nil {
 				results[idx] = DownloadResult{
 					Agent: agentName,
@@ -212,7 +216,7 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 				}
 			}
 
-			if err := agent.Download(version, destDir, progress); err != nil {
+			if err := agent.Download(ctx, version, destDir, progress); err != nil {
 				bar.Abort(true)
 				os.RemoveAll(destDir)
 				results[idx] = DownloadResult{
@@ -276,11 +280,14 @@ func (m *Manager) switchVersion(name, version string) error {
 	currentLink := m.paths.AgentCurrentLink(name)
 
 	if err := os.Remove(currentLink); err != nil && !os.IsNotExist(err) {
-		return err
+		return fmt.Errorf("remove current link: %w", err)
 	}
 
 	// use relative symlink so it works when mounted in container
-	return os.Symlink(version, currentLink)
+	if err := os.Symlink(version, currentLink); err != nil {
+		return fmt.Errorf("create symlink: %w", err)
+	}
+	return nil
 }
 
 func (m *Manager) Cleanup(name string) (int, error) {
@@ -291,7 +298,7 @@ func (m *Manager) Cleanup(name string) (int, error) {
 		if os.IsNotExist(err) {
 			return 0, nil
 		}
-		return 0, err
+		return 0, fmt.Errorf("read agent dir: %w", err)
 	}
 
 	var versions []string
@@ -334,7 +341,7 @@ func (m *Manager) ListVersions(name string) ([]string, string, error) {
 		if os.IsNotExist(err) {
 			return nil, "", nil
 		}
-		return nil, "", err
+		return nil, "", fmt.Errorf("read agent dir: %w", err)
 	}
 
 	var versions []string
@@ -365,12 +372,9 @@ func compareVersions(a, b string) int {
 	partsA := strings.Split(a, ".")
 	partsB := strings.Split(b, ".")
 
-	maxLen := len(partsA)
-	if len(partsB) > maxLen {
-		maxLen = len(partsB)
-	}
+	maxLen := max(len(partsA), len(partsB))
 
-	for i := 0; i < maxLen; i++ {
+	for i := range maxLen {
 		var numA, numB int
 		if i < len(partsA) {
 			_, _ = fmt.Sscanf(partsA[i], "%d", &numA)

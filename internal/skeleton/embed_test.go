@@ -1,6 +1,7 @@
 package skeleton
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -99,7 +100,7 @@ func TestCopyUserFilesIfMissing__skips_existing(t *testing.T) {
 	tmpDir := t.TempDir()
 	existingFile := filepath.Join(tmpDir, "docker-compose.agentbox.local.yml")
 	customContent := []byte("# custom user content")
-	if err := os.WriteFile(existingFile, customContent, 0644); err != nil {
+	if err := os.WriteFile(existingFile, customContent, 0o644); err != nil {
 		t.Fatal(err)
 	}
 
@@ -119,7 +120,7 @@ func TestCopyUserFilesIfMissing__skips_existing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(content) != string(customContent) {
+	if !bytes.Equal(content, customContent) {
 		t.Errorf("file was overwritten, content = %s", content)
 	}
 }

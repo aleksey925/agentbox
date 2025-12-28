@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -15,7 +16,7 @@ type Paths struct {
 func NewPaths() (*Paths, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("get home dir: %w", err)
 	}
 
 	agentboxDir := filepath.Join(homeDir, ".agentbox")
@@ -47,8 +48,8 @@ func (p *Paths) EnsureDirs() error {
 	}
 
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return err
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create dir %s: %w", dir, err)
 		}
 	}
 

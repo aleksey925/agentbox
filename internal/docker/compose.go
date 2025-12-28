@@ -1,11 +1,14 @@
 package docker
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"os/exec"
 )
 
 func Run(projectDir string) error {
+	ctx := context.Background()
 	args := []string{
 		"compose",
 		"-f", "docker-compose.agentbox.yml",
@@ -14,25 +17,33 @@ func Run(projectDir string) error {
 		"agentbox",
 	}
 
-	cmd := exec.Command("docker", args...)
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = projectDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("docker compose run: %w", err)
+	}
+	return nil
 }
 
 func Attach(containerID string) error {
-	cmd := exec.Command("docker", "exec", "-it", containerID, "/bin/bash")
+	ctx := context.Background()
+	cmd := exec.CommandContext(ctx, "docker", "exec", "-it", containerID, "/bin/bash")
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("docker exec: %w", err)
+	}
+	return nil
 }
 
 func Build(projectDir string, noCache bool) error {
+	ctx := context.Background()
 	args := []string{
 		"compose",
 		"-f", "docker-compose.agentbox.yml",
@@ -44,10 +55,13 @@ func Build(projectDir string, noCache bool) error {
 		args = append(args, "--no-cache")
 	}
 
-	cmd := exec.Command("docker", args...)
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = projectDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	return cmd.Run()
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("docker compose build: %w", err)
+	}
+	return nil
 }

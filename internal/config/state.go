@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"time"
 )
@@ -25,12 +26,12 @@ func LoadState(path string) (*State, error) {
 				Agents: make(map[string]*AgentState),
 			}, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("read state file: %w", err)
 	}
 
 	var state State
 	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unmarshal state: %w", err)
 	}
 
 	if state.Agents == nil {
@@ -43,10 +44,13 @@ func LoadState(path string) (*State, error) {
 func (s *State) Save(path string) error {
 	data, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("marshal state: %w", err)
 	}
 
-	return os.WriteFile(path, data, 0644)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write state file: %w", err)
+	}
+	return nil
 }
 
 func (s *State) SetAgent(name, version, variant string) {
