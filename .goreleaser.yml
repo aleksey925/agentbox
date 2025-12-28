@@ -20,8 +20,6 @@ builds:
 
 archives:
   - id: agentbox
-    builds:
-      - agentbox
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - LICENSE
