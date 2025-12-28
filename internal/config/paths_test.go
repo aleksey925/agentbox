@@ -68,19 +68,19 @@ func TestPaths_AgentVersionDir(t *testing.T) {
 	}
 }
 
-func TestPaths_AgentCurrentLink(t *testing.T) {
+func TestPaths_AgentCurrentFile(t *testing.T) {
 	// arrange
 	paths := &Paths{
 		BinDir: "/home/user/.agentbox/bin",
 	}
 
 	// act
-	result := paths.AgentCurrentLink("claude")
+	result := paths.AgentCurrentFile("claude")
 
 	// assert
 	expected := "/home/user/.agentbox/bin/claude/current"
 	if result != expected {
-		t.Errorf("AgentCurrentLink = %s, want %s", result, expected)
+		t.Errorf("AgentCurrentFile = %s, want %s", result, expected)
 	}
 }
 

@@ -47,13 +47,7 @@ func (a *App) doInit(interactive bool) int {
 	a.setupGitExclude(cwd)
 	a.createMiseToml(cwd)
 
-	state, err := config.LoadState(paths.StateFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading state: %v\n", err)
-		return 1
-	}
-
-	if code := a.ensureAgentsInstalled(paths, state); code != 0 {
+	if code := a.ensureAgentsInstalled(paths); code != 0 {
 		return code
 	}
 
@@ -229,13 +223,7 @@ func (a *App) ensureProjectReady(cwd string) int {
 		return 1
 	}
 
-	state, err := config.LoadState(paths.StateFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading state: %v\n", err)
-		return 1
-	}
-
-	if code := a.ensureAgentsInstalled(paths, state); code != 0 {
+	if code := a.ensureAgentsInstalled(paths); code != 0 {
 		return code
 	}
 
@@ -254,13 +242,7 @@ func (a *App) cmdAgents(args []string) int {
 		return 1
 	}
 
-	state, err := config.LoadState(paths.StateFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error loading state: %v\n", err)
-		return 1
-	}
-
-	manager, err := agents.NewManager(paths, state)
+	manager, err := agents.NewManager(paths)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
@@ -275,9 +257,9 @@ func (a *App) cmdAgents(args []string) int {
 
 	switch subcmd {
 	case "update":
-		return a.agentsUpdate(manager, state, paths, subargs)
+		return a.agentsUpdate(manager, subargs)
 	case "use":
-		return a.agentsUse(manager, state, paths, subargs)
+		return a.agentsUse(manager, subargs)
 	default:
 		fmt.Fprintf(os.Stderr, "Unknown agents subcommand: %s\n", subcmd)
 		return 1
@@ -321,7 +303,7 @@ func (a *App) showAgentsStatus(manager *agents.Manager) int {
 	return 0
 }
 
-func (a *App) agentsUpdate(manager *agents.Manager, state *config.State, paths *config.Paths, args []string) int {
+func (a *App) agentsUpdate(manager *agents.Manager, args []string) int {
 	agentsToUpdate := make([]string, 0, len(args))
 
 	for _, arg := range args {
@@ -355,11 +337,6 @@ func (a *App) agentsUpdate(manager *agents.Manager, state *config.State, paths *
 		fmt.Fprintf(os.Stderr, "\nWarning: %d agent(s) failed to update\n", failedCount)
 	}
 
-	if err := state.Save(paths.StateFile); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving state: %v\n", err)
-		return 1
-	}
-
 	// cleanup old versions
 	totalRemoved := 0
 	for _, name := range agents.AllAgentNames() {
@@ -374,7 +351,7 @@ func (a *App) agentsUpdate(manager *agents.Manager, state *config.State, paths *
 	return 0
 }
 
-func (a *App) agentsUse(manager *agents.Manager, state *config.State, paths *config.Paths, args []string) int {
+func (a *App) agentsUse(manager *agents.Manager, args []string) int {
 	if len(args) < 2 {
 		fmt.Fprintf(os.Stderr, "Usage: agentbox agents use <agent> <version>\n")
 		return 1
@@ -385,11 +362,6 @@ func (a *App) agentsUse(manager *agents.Manager, state *config.State, paths *con
 
 	if err := manager.SwitchVersion(agentName, version); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return 1
-	}
-
-	if err := state.Save(paths.StateFile); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving state: %v\n", err)
 		return 1
 	}
 
@@ -517,26 +489,19 @@ func removeFromGitExclude(projectDir, filename string) error {
 	return nil
 }
 
-func (a *App) ensureAgentsInstalled(paths *config.Paths, state *config.State) int {
-	if len(state.Agents) > 0 {
+func (a *App) ensureAgentsInstalled(paths *config.Paths) int {
+	manager, err := agents.NewManager(paths)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+
+	if manager.HasInstalledAgents() {
 		return 0
 	}
 
 	fmt.Println()
 	fmt.Println("No agents installed. Downloading all agents...")
-
-	arch, err := agents.DetectArch()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return 1
-	}
-	state.Arch = arch
-
-	manager, err := agents.NewManager(paths, state)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return 1
-	}
 
 	results, err := manager.Update(nil)
 	if err != nil {
@@ -557,11 +522,6 @@ func (a *App) ensureAgentsInstalled(paths *config.Paths, state *config.State) in
 
 	if failedCount > 0 {
 		fmt.Fprintf(os.Stderr, "\nWarning: %d agent(s) failed to download\n", failedCount)
-	}
-
-	if err := state.Save(paths.StateFile); err != nil {
-		fmt.Fprintf(os.Stderr, "Error saving state: %v\n", err)
-		return 1
 	}
 
 	fmt.Println()
