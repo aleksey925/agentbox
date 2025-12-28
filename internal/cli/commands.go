@@ -36,10 +36,10 @@ func (a *App) doInit(interactive bool) int {
 		return 1
 	}
 
-	// check if files already exist
+	// check if overwrite files already exist (user files are never overwritten)
 	if interactive {
 		var existing []string
-		for _, name := range skeleton.Files() {
+		for _, name := range skeleton.OverwriteFiles() {
 			path := filepath.Join(cwd, name)
 			if _, err := os.Stat(path); err == nil {
 				existing = append(existing, name)
