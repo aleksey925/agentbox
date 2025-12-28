@@ -2,6 +2,7 @@ package skeleton
 
 import (
 	"embed"
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -26,12 +27,12 @@ func CopyTo(destDir string) error {
 	for _, name := range overwriteFiles {
 		data, err := embeddedFS.ReadFile("files/" + name)
 		if err != nil {
-			return err
+			return fmt.Errorf("read embedded file %s: %w", name, err)
 		}
 
 		destPath := filepath.Join(destDir, name)
-		if err := os.WriteFile(destPath, data, 0644); err != nil {
-			return err
+		if err := os.WriteFile(destPath, data, 0o644); err != nil {
+			return fmt.Errorf("write file %s: %w", name, err)
 		}
 	}
 
@@ -41,7 +42,7 @@ func CopyTo(destDir string) error {
 // CopyUserFilesIfMissing copies user-specific files only if they don't exist.
 // These files are never overwritten to preserve user customizations.
 func CopyUserFilesIfMissing(destDir string) ([]string, error) {
-	var created []string
+	created := make([]string, 0, len(userFiles))
 
 	for _, name := range userFiles {
 		destPath := filepath.Join(destDir, name)
@@ -52,11 +53,11 @@ func CopyUserFilesIfMissing(destDir string) ([]string, error) {
 
 		data, err := embeddedFS.ReadFile("files/" + name)
 		if err != nil {
-			return created, err
+			return created, fmt.Errorf("read embedded file %s: %w", name, err)
 		}
 
-		if err := os.WriteFile(destPath, data, 0644); err != nil {
-			return created, err
+		if err := os.WriteFile(destPath, data, 0o644); err != nil {
+			return created, fmt.Errorf("write file %s: %w", name, err)
 		}
 		created = append(created, name)
 	}

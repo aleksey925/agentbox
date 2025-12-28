@@ -1,93 +1,169 @@
 version: "2"
-
 run:
   concurrency: 4
-
 linters:
   default: none
   enable:
-    # bugs
     - asciicheck
     - bidichk
     - bodyclose
     - copyloopvar
+    - dupl
     - durationcheck
     - errcheck
+    - errname
+    - errorlint
+    - exhaustive
+    - fatcontext
+    - gochecknoinits
+    - goconst
+    - gocritic
+    - gocyclo
+    - godoclint
+    - gosec
     - govet
+    - ineffassign
+    - intrange
     - makezero
+    - misspell
+    - modernize
+    - nakedret
+    - nestif
     - nilerr
     - nilnil
-    - rowserrcheck
+    - noctx
+    - nolintlint
+    - perfsprint
+    - predeclared
+    - prealloc
+    - reassign
+    - revive
     - sqlclosecheck
     - staticcheck
-
-    # style
-    - dupl
-    - errname
-    - ineffassign
-    - misspell
+    - testifylint
+    - tparallel
     - unconvert
     - unparam
     - unused
     - usestdlibvars
     - wastedassign
     - whitespace
-
-    # complexity
-    - cyclop
-    - funlen
-    - gocognit
-
-    # formatting
-    - lll
+    - wrapcheck
 
   settings:
-    cyclop:
-      max-complexity: 20
-
+    exhaustive:
+      default-signifies-exhaustive: true
+    nolintlint:
+      require-explanation: true
+      require-specific: true
     dupl:
       threshold: 100
-
-    funlen:
-      lines: 100
-      statements: 55
-
-    gocognit:
-      min-complexity: 30
-
-    lll:
-      line-length: 140
-
+    goconst:
+      min-len: 2
+      min-occurrences: 7
+    gocritic:
+      disabled-checks:
+        - wrapperFunc
+        - hugeParam
+        - rangeValCopy
+      enabled-tags:
+        - performance
+        - style
+        - experimental
     errcheck:
       exclude-functions:
-        # defer Close() is standard pattern
         - (io.Closer).Close
         - (*os.File).Close
         - (*compress/gzip.Reader).Close
-        # cleanup operations - best effort
         - os.Remove
         - os.RemoveAll
-
-issues:
-  exclude-rules:
-    - path: _test\.go
-      linters:
-        - lll
-        - funlen
-        - dupl
-        - cyclop
-        - gocognit
-        - errcheck
-
+    gocyclo:
+      min-complexity: 20
+    govet:
+      enable:
+        - shadow
+    lll:
+      line-length: 140
+    misspell:
+      locale: US
+    revive:
+      rules:
+        - name: early-return
+        - name: indent-error-flow
+        - name: superfluous-else
+        - name: unreachable-code
+        - name: empty-block
+        - name: redefines-builtin-id
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - golint
+        text: should have a package comment, unless it's in another file for this package
+      - linters:
+          - gocritic
+        text: "exitAfterDefer:"
+      - linters:
+          - gocritic
+        text: "whyNoLint: include an explanation for nolint directive"
+      - linters:
+          - revive
+        text: should have a package comment
+      - linters:
+          - staticcheck
+        text: at least one file in a package should have a package comment
+      - linters:
+          - gocritic
+        text: "commentedOutCode: may want to remove commented-out code"
+      - linters:
+          - gocritic
+        text: "unnamedResult: consider giving a name to these results"
+      - linters:
+          - revive
+        text: "var-naming: don't use an underscore in package name"
+      - linters:
+          - staticcheck
+        text: should not use underscores in package names
+      - linters:
+          - govet
+        text: struct literal uses unkeyed fields
+      - linters:
+          - revive
+          - unparam
+          - unused
+        path: _test\.go$
+        text: unused-parameter
+      - linters:
+          - dupl
+          - goconst
+          - noctx
+          - usestdlibvars
+        path: _test\.go$
+      # gosec: file permissions are fine for CLI tool
+      - linters:
+          - gosec
+        text: "G301:|G302:|G306:"
+      # gosec: file paths are controlled, not user input
+      - linters:
+          - gosec
+        text: "G304:"
+      # gosec: archives from trusted sources (github releases)
+      - linters:
+          - gosec
+        text: "G110:"
+      # gosec: cleanup errors in error paths
+      - linters:
+          - gosec
+        text: "G104:"
+    paths:
+      - vendor
+      - third_party$
+      - builtin$
+      - examples$
 formatters:
-  enable:
-    - goimports
-    - gofmt
-
-output:
-  formats:
-    text:
-      path: stdout
-  sort-order:
-    - linter
-    - file
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$

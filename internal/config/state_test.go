@@ -109,7 +109,7 @@ func TestLoadState__invalid_json__returns_error(t *testing.T) {
 	// arrange
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "state.json")
-	if err := os.WriteFile(path, []byte("invalid json"), 0644); err != nil {
+	if err := os.WriteFile(path, []byte("invalid json"), 0o644); err != nil {
 		t.Fatalf("failed to create test file: %v", err)
 	}
 

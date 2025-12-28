@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,24 +28,29 @@ func (g *GeminiAgent) BinaryName() string {
 	return "gemini.js"
 }
 
-func (g *GeminiAgent) FetchLatestVersion() (string, error) {
-	tag, err := FetchLatestGitHubTag("google-gemini", "gemini-cli")
+func (g *GeminiAgent) FetchLatestVersion(ctx context.Context) (string, error) {
+	tag, err := FetchLatestGitHubTag(ctx, "google-gemini", "gemini-cli")
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("fetch github tag: %w", err)
 	}
 	return strings.TrimPrefix(tag, "v"), nil
 }
 
-func (g *GeminiAgent) Download(version, destDir string, progress func(downloaded, total int64)) error {
+func (g *GeminiAgent) Download(ctx context.Context, version, destDir string, progress func(downloaded, total int64)) error {
 	assetURL := fmt.Sprintf("https://github.com/google-gemini/gemini-cli/releases/download/v%s/gemini.js", version)
 
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return err
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return fmt.Errorf("create dest dir: %w", err)
 	}
 
-	resp, err := httpClient.Get(assetURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, http.NoBody)
 	if err != nil {
-		return err
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("http get: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -56,7 +62,7 @@ func (g *GeminiAgent) Download(version, destDir string, progress func(downloaded
 	tmpPath := destPath + ".tmp"
 	out, err := os.Create(tmpPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("create temp file: %w", err)
 	}
 
 	total := resp.ContentLength
@@ -68,7 +74,7 @@ func (g *GeminiAgent) Download(version, destDir string, progress func(downloaded
 			if _, writeErr := out.Write(buf[:n]); writeErr != nil {
 				out.Close()
 				os.Remove(tmpPath)
-				return writeErr
+				return fmt.Errorf("write to file: %w", writeErr)
 			}
 			downloaded += int64(n)
 			if progress != nil {
@@ -81,18 +87,18 @@ func (g *GeminiAgent) Download(version, destDir string, progress func(downloaded
 		if err != nil {
 			out.Close()
 			os.Remove(tmpPath)
-			return err
+			return fmt.Errorf("read response: %w", err)
 		}
 	}
 
 	if err := out.Close(); err != nil {
 		os.Remove(tmpPath)
-		return err
+		return fmt.Errorf("close file: %w", err)
 	}
 
 	if err := os.Rename(tmpPath, destPath); err != nil {
 		os.Remove(tmpPath)
-		return err
+		return fmt.Errorf("rename: %w", err)
 	}
 
 	return nil

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,7 +18,7 @@ func (a *App) cmdInit(_ []string) int {
 	return a.doInit(true)
 }
 
-//nolint:gocognit,cyclop,funlen // TODO: refactor this function
+//nolint:gocognit,gocyclo,funlen // TODO: refactor this function
 func (a *App) doInit(interactive bool) int {
 	paths, err := config.NewPaths()
 	if err != nil {
@@ -25,7 +26,7 @@ func (a *App) doInit(interactive bool) int {
 		return 1
 	}
 
-	if err := paths.EnsureDirs(); err != nil {
+	if err = paths.EnsureDirs(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating directories: %v\n", err)
 		return 1
 	}
@@ -41,7 +42,7 @@ func (a *App) doInit(interactive bool) int {
 		var existing []string
 		for _, name := range skeleton.OverwriteFiles() {
 			path := filepath.Join(cwd, name)
-			if _, err := os.Stat(path); err == nil {
+			if _, statErr := os.Stat(path); statErr == nil {
 				existing = append(existing, name)
 			}
 		}
@@ -63,7 +64,7 @@ func (a *App) doInit(interactive bool) int {
 
 	// copy skeleton files directly from embedded
 	fmt.Println("Initializing agentbox...")
-	if err := skeleton.CopyTo(cwd); err != nil {
+	if err = skeleton.CopyTo(cwd); err != nil {
 		fmt.Fprintf(os.Stderr, "Error copying skeleton files: %v\n", err)
 		return 1
 	}
@@ -92,9 +93,9 @@ func (a *App) doInit(interactive bool) int {
 
 	// create mise.toml if not exists
 	misePath := filepath.Join(cwd, "mise.toml")
-	if _, err := os.Stat(misePath); os.IsNotExist(err) {
-		if err := createMiseTomlIfNotExists(cwd); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not create mise.toml: %v\n", err)
+	if _, statErr := os.Stat(misePath); os.IsNotExist(statErr) {
+		if miseErr := createMiseTomlIfNotExists(cwd); miseErr != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not create mise.toml: %v\n", miseErr)
 		} else {
 			fmt.Println("  Created: mise.toml")
 		}
@@ -161,7 +162,7 @@ func (a *App) cmdRun(args []string) int {
 	}
 
 	composePath := filepath.Join(cwd, "docker-compose.agentbox.yml")
-	if _, err := os.Stat(composePath); os.IsNotExist(err) {
+	if _, statErr := os.Stat(composePath); os.IsNotExist(statErr) {
 		fmt.Println("Warning: not initialized, running init first...")
 		if code := a.doInit(false); code != 0 {
 			return code
@@ -176,7 +177,7 @@ func (a *App) cmdRun(args []string) int {
 		return 1
 	}
 
-	if err := paths.EnsureDirs(); err != nil {
+	if err = paths.EnsureDirs(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating directories: %v\n", err)
 		return 1
 	}
@@ -269,13 +270,14 @@ func (a *App) showAgentsStatus(manager *agents.Manager) int {
 		}
 
 		var statusStr string
-		if status.Error != nil {
+		switch {
+		case status.Error != nil:
 			statusStr = "error fetching"
-		} else if installed == "-" {
+		case installed == "-":
 			statusStr = "not installed"
-		} else if status.UpToDate {
+		case status.UpToDate:
 			statusStr = "up to date"
-		} else {
+		default:
 			statusStr = "update available"
 		}
 
@@ -287,7 +289,7 @@ func (a *App) showAgentsStatus(manager *agents.Manager) int {
 }
 
 func (a *App) agentsUpdate(manager *agents.Manager, state *config.State, paths *config.Paths, args []string) int {
-	var agentsToUpdate []string
+	agentsToUpdate := make([]string, 0, len(args))
 
 	for _, arg := range args {
 		if arg == "-a" || arg == "--all" {
@@ -407,7 +409,7 @@ func addToGitExcludeVerbose(projectDir string) ([]string, error) {
 
 	existing, err := os.ReadFile(excludePath)
 	if err != nil && !os.IsNotExist(err) {
-		return nil, err
+		return nil, fmt.Errorf("read exclude file: %w", err)
 	}
 
 	content := string(existing)
@@ -424,15 +426,15 @@ func addToGitExcludeVerbose(projectDir string) ([]string, error) {
 		return nil, nil
 	}
 
-	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open exclude file: %w", err)
 	}
 	defer f.Close()
 
 	for _, name := range toAdd {
 		if _, err := f.WriteString(name + "\n"); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("write to exclude file: %w", err)
 		}
 	}
 
@@ -446,7 +448,10 @@ func createMiseTomlIfNotExists(projectDir string) error {
 		return nil
 	}
 
-	return os.WriteFile(misePath, []byte{}, 0644)
+	if err := os.WriteFile(misePath, []byte{}, 0o644); err != nil {
+		return fmt.Errorf("write mise.toml: %w", err)
+	}
+	return nil
 }
 
 func removeFromGitExclude(projectDir, filename string) error {
@@ -454,11 +459,11 @@ func removeFromGitExclude(projectDir, filename string) error {
 
 	content, err := os.ReadFile(excludePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("read exclude file: %w", err)
 	}
 
 	lines := strings.Split(string(content), "\n")
-	var newLines []string
+	newLines := make([]string, 0, len(lines))
 	found := false
 
 	for _, line := range lines {
@@ -470,10 +475,13 @@ func removeFromGitExclude(projectDir, filename string) error {
 	}
 
 	if !found {
-		return fmt.Errorf("not found")
+		return errors.New("not found")
 	}
 
-	return os.WriteFile(excludePath, []byte(strings.Join(newLines, "\n")), 0644)
+	if err := os.WriteFile(excludePath, []byte(strings.Join(newLines, "\n")), 0o644); err != nil {
+		return fmt.Errorf("write exclude file: %w", err)
+	}
+	return nil
 }
 
 func (a *App) ensureAgentsInstalled(paths *config.Paths, state *config.State) int {
@@ -530,14 +538,14 @@ func (a *App) ensureAgentsInstalled(paths *config.Paths, state *config.State) in
 func ensureAgentConfigs() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return err
+		return fmt.Errorf("get home dir: %w", err)
 	}
 
 	// create ~/.claude.json if not exists (prevents Docker from creating it as directory)
 	claudeJSON := filepath.Join(home, ".claude.json")
 	if _, err := os.Stat(claudeJSON); os.IsNotExist(err) {
-		if err := os.WriteFile(claudeJSON, []byte("{}"), 0644); err != nil {
-			return err
+		if err := os.WriteFile(claudeJSON, []byte("{}"), 0o644); err != nil {
+			return fmt.Errorf("write claude.json: %w", err)
 		}
 	}
 
@@ -549,8 +557,8 @@ func ensureAgentConfigs() error {
 		filepath.Join(home, ".gemini"),
 	}
 	for _, dir := range dirs {
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return err
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("create dir %s: %w", dir, err)
 		}
 	}
 
