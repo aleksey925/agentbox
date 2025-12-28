@@ -17,11 +17,10 @@ const maxVersionsToKeep = 5
 
 type Manager struct {
 	paths  *config.Paths
-	state  *config.State
 	agents map[string]Agent
 }
 
-func NewManager(paths *config.Paths, state *config.State) (*Manager, error) {
+func NewManager(paths *config.Paths) (*Manager, error) {
 	claude, err := NewClaudeAgent()
 	if err != nil {
 		return nil, err
@@ -37,7 +36,6 @@ func NewManager(paths *config.Paths, state *config.State) (*Manager, error) {
 
 	return &Manager{
 		paths: paths,
-		state: state,
 		agents: map[string]Agent{
 			"claude":  claude,
 			"copilot": copilot,
@@ -59,6 +57,16 @@ func (m *Manager) AllAgents() []Agent {
 		m.agents["codex"],
 		m.agents["gemini"],
 	}
+}
+
+func (m *Manager) HasInstalledAgents() bool {
+	for _, name := range AllAgentNames() {
+		agentDir := m.paths.AgentDir(name)
+		if entries, err := os.ReadDir(agentDir); err == nil && len(entries) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 type AgentStatus struct {
@@ -83,7 +91,7 @@ func (m *Manager) GetStatus() []AgentStatus {
 			agent := m.agents[agentName]
 			status := AgentStatus{Name: agentName}
 
-			installed := m.state.GetAgentVersion(agentName)
+			_, installed, _ := m.ListVersions(agentName)
 			status.Installed = installed
 
 			latest, err := agent.FetchLatestVersion(ctx)
@@ -137,8 +145,6 @@ func (m *Manager) Install(name string, onProgress func(agent string, downloaded,
 	if err := m.switchVersion(name, version); err != nil {
 		return err
 	}
-
-	m.state.SetAgent(name, version, agent.Variant())
 
 	return nil
 }
@@ -248,9 +254,7 @@ func (m *Manager) applyResults(results []DownloadResult) {
 		if results[i].Error == nil && results[i].Version != "" {
 			if err := m.switchVersion(results[i].Agent, results[i].Version); err != nil {
 				results[i].Error = fmt.Errorf("switch version: %w", err)
-				continue
 			}
-			m.state.SetAgent(results[i].Agent, results[i].Version, results[i].Variant)
 		}
 	}
 }
@@ -265,14 +269,7 @@ func (m *Manager) SwitchVersion(name, version string) error {
 		return fmt.Errorf("version %s not installed for %s", version, name)
 	}
 
-	if err := m.switchVersion(name, version); err != nil {
-		return err
-	}
-
-	agent := m.agents[name]
-	m.state.SetAgent(name, version, agent.Variant())
-
-	return nil
+	return m.switchVersion(name, version)
 }
 
 func (m *Manager) switchVersion(name, version string) error {

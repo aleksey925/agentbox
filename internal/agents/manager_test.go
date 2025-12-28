@@ -135,10 +135,9 @@ func TestCodexAgent_rustArch(t *testing.T) {
 func TestNewManager(t *testing.T) {
 	// arrange
 	paths := &config.Paths{BinDir: "/tmp/test"}
-	state := &config.State{}
 
 	// act
-	manager, err := NewManager(paths, state)
+	manager, err := NewManager(paths)
 
 	// assert
 	if err != nil {
@@ -150,14 +149,11 @@ func TestNewManager(t *testing.T) {
 	if manager.paths != paths {
 		t.Error("paths not set correctly")
 	}
-	if manager.state != state {
-		t.Error("state not set correctly")
-	}
 }
 
 func TestManager_GetAgent(t *testing.T) {
 	// arrange
-	manager, err := NewManager(&config.Paths{}, &config.State{})
+	manager, err := NewManager(&config.Paths{})
 	if err != nil {
 		t.Fatalf("NewManager() error = %v", err)
 	}
@@ -179,7 +175,7 @@ func TestManager_GetAgent(t *testing.T) {
 
 func TestManager_AllAgents(t *testing.T) {
 	// arrange
-	manager, err := NewManager(&config.Paths{}, &config.State{})
+	manager, err := NewManager(&config.Paths{})
 	if err != nil {
 		t.Fatalf("NewManager() error = %v", err)
 	}

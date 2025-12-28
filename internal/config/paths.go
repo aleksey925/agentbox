@@ -10,7 +10,6 @@ type Paths struct {
 	HomeDir     string
 	AgentboxDir string
 	BinDir      string
-	StateFile   string
 }
 
 func NewPaths() (*Paths, error) {
@@ -25,7 +24,6 @@ func NewPaths() (*Paths, error) {
 		HomeDir:     homeDir,
 		AgentboxDir: agentboxDir,
 		BinDir:      filepath.Join(agentboxDir, "bin"),
-		StateFile:   filepath.Join(agentboxDir, "state.json"),
 	}, nil
 }
 
