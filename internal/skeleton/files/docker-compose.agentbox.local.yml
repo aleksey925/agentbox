@@ -6,8 +6,6 @@
 #   services:
 #     agentbox:
 #       volumes:
-#         - ~/.ssh:/home/box/.ssh:ro
+#         - ~/PycharmProjects:/home/box/PycharmProjects:ro
 #       environment:
 #         - MY_VAR=value
-
-services: {}
