@@ -9,6 +9,7 @@ func Run(projectDir string) error {
 	args := []string{
 		"compose",
 		"-f", "docker-compose.agentbox.yml",
+		"-f", "docker-compose.agentbox.local.yml",
 		"run", "--rm",
 		"agentbox",
 	}
@@ -35,6 +36,7 @@ func Build(projectDir string, noCache bool) error {
 	args := []string{
 		"compose",
 		"-f", "docker-compose.agentbox.yml",
+		"-f", "docker-compose.agentbox.local.yml",
 		"build",
 	}
 

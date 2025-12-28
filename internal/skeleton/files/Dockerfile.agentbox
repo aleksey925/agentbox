@@ -1,5 +1,9 @@
 FROM debian:13-slim
 
+# Configure UTF-8 locale for proper Unicode support
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
 ENV UV_LINK_MODE=copy
 ENV POETRY_VIRTUALENVS_CREATE=false
 

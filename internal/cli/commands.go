@@ -67,7 +67,17 @@ func (a *App) doInit(interactive bool) int {
 		fmt.Fprintf(os.Stderr, "Error copying skeleton files: %v\n", err)
 		return 1
 	}
-	for _, name := range skeleton.Files() {
+	for _, name := range skeleton.OverwriteFiles() {
+		fmt.Printf("  Created: %s\n", name)
+	}
+
+	// copy user files only if they don't exist
+	createdUserFiles, err := skeleton.CopyUserFilesIfMissing(cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error copying user files: %v\n", err)
+		return 1
+	}
+	for _, name := range createdUserFiles {
 		fmt.Printf("  Created: %s\n", name)
 	}
 
