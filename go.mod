@@ -1,6 +1,6 @@
 module github.com/aleksey925/agentbox
 
-go 1.24.11
+go 1.25
 
 require github.com/vbauerster/mpb/v8 v8.11.3
 
