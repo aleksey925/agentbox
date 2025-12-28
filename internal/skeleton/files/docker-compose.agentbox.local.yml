@@ -1,0 +1,11 @@
+# User-specific overrides for agentbox
+# This file is NOT overwritten by 'agentbox init'
+# Add your custom volumes, environment variables, etc. here
+#
+# Example:
+#   services:
+#     agentbox:
+#       volumes:
+#         - ~/PycharmProjects:/home/box/PycharmProjects:ro
+#       environment:
+#         - MY_VAR=value

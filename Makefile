@@ -8,6 +8,7 @@ build:
 
 install: build
 	mkdir -p ~/.local/bin
+	rm -f ~/.local/bin/agentbox
 	cp agentbox ~/.local/bin/
 
 test:

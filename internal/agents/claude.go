@@ -47,7 +47,7 @@ func (c *ClaudeAgent) BinaryName() string {
 }
 
 func (c *ClaudeAgent) FetchLatestVersion() (string, error) {
-	resp, err := httpClient.Get(claudeBucketURL + "/stable")
+	resp, err := httpClient.Get(claudeBucketURL + "/latest")
 	if err != nil {
 		return "", err
 	}

@@ -30,21 +30,16 @@ func (a *App) doInit(interactive bool) int {
 		return 1
 	}
 
-	if err := ensureSkeletonExtracted(paths.SkeletonDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Error extracting skeleton: %v\n", err)
-		return 1
-	}
-
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
 	}
 
-	// check if files already exist
+	// check if overwrite files already exist (user files are never overwritten)
 	if interactive {
 		var existing []string
-		for _, name := range skeleton.Files() {
+		for _, name := range skeleton.OverwriteFiles() {
 			path := filepath.Join(cwd, name)
 			if _, err := os.Stat(path); err == nil {
 				existing = append(existing, name)
@@ -66,23 +61,24 @@ func (a *App) doInit(interactive bool) int {
 		}
 	}
 
-	// copy skeleton to project
+	// copy skeleton files directly from embedded
 	fmt.Println("Initializing agentbox...")
-	for _, name := range skeleton.Files() {
-		srcPath := filepath.Join(paths.SkeletonDir, name)
-		destPath := filepath.Join(cwd, name)
+	if err := skeleton.CopyTo(cwd); err != nil {
+		fmt.Fprintf(os.Stderr, "Error copying skeleton files: %v\n", err)
+		return 1
+	}
+	for _, name := range skeleton.OverwriteFiles() {
+		fmt.Printf("  Created: %s\n", name)
+	}
 
-		data, err := os.ReadFile(srcPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error reading %s: %v\n", name, err)
-			return 1
-		}
-
-		if err := os.WriteFile(destPath, data, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "Error writing %s: %v\n", name, err)
-			return 1
-		}
-		fmt.Printf("  Copied: %s\n", name)
+	// copy user files only if they don't exist
+	createdUserFiles, err := skeleton.CopyUserFilesIfMissing(cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error copying user files: %v\n", err)
+		return 1
+	}
+	for _, name := range createdUserFiles {
+		fmt.Printf("  Created: %s\n", name)
 	}
 
 	// add to .git/info/exclude
@@ -182,11 +178,6 @@ func (a *App) cmdRun(args []string) int {
 
 	if err := paths.EnsureDirs(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating directories: %v\n", err)
-		return 1
-	}
-
-	if err := ensureSkeletonExtracted(paths.SkeletonDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Error extracting skeleton: %v\n", err)
 		return 1
 	}
 
@@ -407,23 +398,6 @@ func (a *App) cmdClean(_ []string) int {
 	return 0
 }
 
-func (a *App) cmdUpgrade(_ []string) int {
-	paths, err := config.NewPaths()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return 1
-	}
-
-	fmt.Println("Upgrading skeleton files from embedded...")
-	if err := skeleton.Extract(paths.SkeletonDir); err != nil {
-		fmt.Fprintf(os.Stderr, "Error extracting skeleton: %v\n", err)
-		return 1
-	}
-
-	fmt.Println("Skeleton files upgraded.")
-	return 0
-}
-
 func addToGitExcludeVerbose(projectDir string) ([]string, error) {
 	excludePath := filepath.Join(projectDir, ".git", "info", "exclude")
 
@@ -551,15 +525,6 @@ func (a *App) ensureAgentsInstalled(paths *config.Paths, state *config.State) in
 
 	fmt.Println()
 	return 0
-}
-
-func ensureSkeletonExtracted(skeletonDir string) error {
-	if skeleton.IsExtracted(skeletonDir) {
-		return nil
-	}
-
-	fmt.Println("Extracting skeleton files...")
-	return skeleton.Extract(skeletonDir)
 }
 
 func ensureAgentConfigs() error {
