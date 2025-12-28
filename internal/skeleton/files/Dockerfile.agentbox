@@ -1,6 +1,6 @@
 FROM debian:13-slim
 
-# Configure UTF-8 locale for proper Unicode support
+# configure utf-8 locale for proper unicode support
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
@@ -29,7 +29,7 @@ RUN apt-get update -y && \
               /var/log/alternatives.log \
               /tmp/*
 
-# Create non root user to be able to run claude code with --dangerously-skip-permissions key
+# create non root user to be able to run claude code with --dangerously-skip-permissions key
 RUN useradd -m box && \
     echo "box ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/box && \
     chmod 0440 /etc/sudoers.d/box
@@ -57,7 +57,7 @@ COPY mise.toml /home/box/app/mise.toml
 RUN mise trust && mise install && \
     rm -rf ~/.cache/mise/* /tmp/*
 
-# AI Agents — wrapper scripts
+# ai agent launchers
 ENV PATH="${PATH}:/home/box/.local/bin"
 RUN mkdir -p /home/box/.local/bin && \
     printf '#!/bin/bash\nexec /opt/agentbox/bin/claude/$(cat /opt/agentbox/bin/claude/current)/claude "$@"\n' \
@@ -73,7 +73,7 @@ RUN mkdir -p /home/box/.local/bin && \
              /home/box/.local/bin/codex \
              /home/box/.local/bin/gemini
 
-# Aliases with skip-permissions flags
+# aliases with skip-permissions flags
 RUN echo 'alias claude="/home/box/.local/bin/claude --dangerously-skip-permissions"' >> /home/box/.bashrc && \
     echo 'alias copilot="/home/box/.local/bin/copilot --allow-all-paths --allow-all-tools"' >> /home/box/.bashrc && \
     echo 'alias codex="/home/box/.local/bin/codex --full-auto"' >> /home/box/.bashrc && \
