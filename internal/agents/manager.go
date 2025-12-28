@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -277,15 +276,15 @@ func (m *Manager) SwitchVersion(name, version string) error {
 }
 
 func (m *Manager) switchVersion(name, version string) error {
-	currentLink := m.paths.AgentCurrentLink(name)
+	currentFile := m.paths.AgentCurrentFile(name)
 
-	if err := os.Remove(currentLink); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remove current link: %w", err)
+	if err := os.Remove(currentFile); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove current: %w", err)
 	}
 
-	// use relative symlink so it works when mounted in container
-	if err := os.Symlink(version, currentLink); err != nil {
-		return fmt.Errorf("create symlink: %w", err)
+	// write version to file instead of symlink to avoid Docker VM cache issues
+	if err := os.WriteFile(currentFile, []byte(version+"\n"), 0o644); err != nil {
+		return fmt.Errorf("write current version: %w", err)
 	}
 	return nil
 }
@@ -347,9 +346,9 @@ func (m *Manager) ListVersions(name string) ([]string, string, error) {
 	var versions []string
 	var current string
 
-	currentLink := m.paths.AgentCurrentLink(name)
-	if target, err := os.Readlink(currentLink); err == nil {
-		current = filepath.Base(target)
+	currentFile := m.paths.AgentCurrentFile(name)
+	if data, err := os.ReadFile(currentFile); err == nil {
+		current = strings.TrimSpace(string(data))
 	}
 
 	for _, entry := range entries {

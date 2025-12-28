@@ -37,7 +37,7 @@ func (p *Paths) AgentVersionDir(agent, version string) string {
 	return filepath.Join(p.BinDir, agent, version)
 }
 
-func (p *Paths) AgentCurrentLink(agent string) string {
+func (p *Paths) AgentCurrentFile(agent string) string {
 	return filepath.Join(p.BinDir, agent, "current")
 }
 
