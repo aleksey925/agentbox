@@ -105,7 +105,6 @@ agentbox agents use claude 2.0.67      # switch to specific version
 
 ```bash
 agentbox clean     # remove sandbox files from project
-agentbox upgrade   # update skeleton files from embedded
 agentbox version   # show version
 ```
 

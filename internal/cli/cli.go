@@ -31,8 +31,6 @@ func Run(args []string, version string) int {
 		return app.cmdClean(cmdArgs)
 	case "completions":
 		return app.cmdCompletions(cmdArgs)
-	case "upgrade":
-		return app.cmdUpgrade(cmdArgs)
 	case "help", "-h", "--help":
 		app.printHelp()
 		return 0
@@ -62,7 +60,6 @@ Commands:
     use <agent> <version> Switch agent to specific version
   clean                   Remove sandbox files from project
   completions <shell>     Output shell completions (bash/zsh)
-  upgrade                 Update skeleton files from embedded
   help                    Show this help
   version                 Show version
 

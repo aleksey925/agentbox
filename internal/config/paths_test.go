@@ -90,7 +90,6 @@ func TestPaths_EnsureDirs(t *testing.T) {
 	paths := &Paths{
 		AgentboxDir: filepath.Join(tmpDir, ".agentbox"),
 		BinDir:      filepath.Join(tmpDir, ".agentbox", "bin"),
-		SkeletonDir: filepath.Join(tmpDir, ".agentbox", "skeleton"),
 	}
 
 	// act
@@ -101,7 +100,7 @@ func TestPaths_EnsureDirs(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expectedDirs := []string{paths.AgentboxDir, paths.BinDir, paths.SkeletonDir}
+	expectedDirs := []string{paths.AgentboxDir, paths.BinDir}
 	for _, dir := range expectedDirs {
 		info, err := os.Stat(dir)
 		if err != nil {
@@ -120,7 +119,6 @@ func TestPaths_EnsureDirs__already_exists(t *testing.T) {
 	paths := &Paths{
 		AgentboxDir: filepath.Join(tmpDir, ".agentbox"),
 		BinDir:      filepath.Join(tmpDir, ".agentbox", "bin"),
-		SkeletonDir: filepath.Join(tmpDir, ".agentbox", "skeleton"),
 	}
 
 	if err := os.MkdirAll(paths.BinDir, 0755); err != nil {

@@ -42,7 +42,7 @@ func generateBashCompletion(cmdName string) string {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="init run agents clean help completions upgrade version"
+    commands="init run agents clean help completions version"
     agents_sub="update use"
     agent_names="claude copilot codex gemini"
     run_flags="--build --build-no-cache"
@@ -92,7 +92,6 @@ func generateZshCompletion(cmdName string) string {
         'agents:Manage AI agents'
         'clean:Remove sandbox files from project'
         'completions:Output shell completions'
-        'upgrade:Update skeleton files from embedded'
         'help:Show help'
         'version:Show version'
     )

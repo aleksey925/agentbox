@@ -14,11 +14,8 @@ var skeletonFiles = []string{
 	"docker-compose.agentbox.yml",
 }
 
-func Extract(destDir string) error {
-	if err := os.MkdirAll(destDir, 0755); err != nil {
-		return err
-	}
-
+// CopyTo copies embedded skeleton files directly to the destination directory.
+func CopyTo(destDir string) error {
 	for _, name := range skeletonFiles {
 		data, err := embeddedFS.ReadFile("files/" + name)
 		if err != nil {
@@ -32,16 +29,6 @@ func Extract(destDir string) error {
 	}
 
 	return nil
-}
-
-func IsExtracted(destDir string) bool {
-	for _, name := range skeletonFiles {
-		path := filepath.Join(destDir, name)
-		if _, err := os.Stat(path); os.IsNotExist(err) {
-			return false
-		}
-	}
-	return true
 }
 
 func Files() []string {

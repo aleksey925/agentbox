@@ -9,7 +9,6 @@ type Paths struct {
 	HomeDir     string
 	AgentboxDir string
 	BinDir      string
-	SkeletonDir string
 	StateFile   string
 }
 
@@ -25,7 +24,6 @@ func NewPaths() (*Paths, error) {
 		HomeDir:     homeDir,
 		AgentboxDir: agentboxDir,
 		BinDir:      filepath.Join(agentboxDir, "bin"),
-		SkeletonDir: filepath.Join(agentboxDir, "skeleton"),
 		StateFile:   filepath.Join(agentboxDir, "state.json"),
 	}, nil
 }
@@ -46,7 +44,6 @@ func (p *Paths) EnsureDirs() error {
 	dirs := []string{
 		p.AgentboxDir,
 		p.BinDir,
-		p.SkeletonDir,
 	}
 
 	for _, dir := range dirs {

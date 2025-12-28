@@ -27,49 +27,22 @@ func TestFiles(t *testing.T) {
 	}
 }
 
-func TestExtract(t *testing.T) {
+func TestCopyTo(t *testing.T) {
 	// arrange
 	tmpDir := t.TempDir()
 
 	// act
-	err := Extract(tmpDir)
+	err := CopyTo(tmpDir)
 
 	// assert
 	if err != nil {
-		t.Fatalf("Extract error: %v", err)
+		t.Fatalf("CopyTo error: %v", err)
 	}
 
 	for _, name := range Files() {
 		path := filepath.Join(tmpDir, name)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
-			t.Errorf("file %s not extracted", name)
+			t.Errorf("file %s not copied", name)
 		}
-	}
-}
-
-func TestIsExtracted__all_files_exist__returns_true(t *testing.T) {
-	// arrange
-	tmpDir := t.TempDir()
-	_ = Extract(tmpDir)
-
-	// act
-	result := IsExtracted(tmpDir)
-
-	// assert
-	if !result {
-		t.Error("IsExtracted should return true")
-	}
-}
-
-func TestIsExtracted__missing_file__returns_false(t *testing.T) {
-	// arrange
-	tmpDir := t.TempDir()
-
-	// act
-	result := IsExtracted(tmpDir)
-
-	// assert
-	if result {
-		t.Error("IsExtracted should return false")
 	}
 }
