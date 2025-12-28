@@ -18,7 +18,6 @@ func (a *App) cmdInit(_ []string) int {
 	return a.doInit(true)
 }
 
-//nolint:gocognit,gocyclo,funlen // TODO: refactor this function
 func (a *App) doInit(interactive bool) int {
 	paths, err := config.NewPaths()
 	if err != nil {
@@ -37,71 +36,17 @@ func (a *App) doInit(interactive bool) int {
 		return 1
 	}
 
-	// check if overwrite files already exist (user files are never overwritten)
-	if interactive {
-		var existing []string
-		for _, name := range skeleton.OverwriteFiles() {
-			path := filepath.Join(cwd, name)
-			if _, statErr := os.Stat(path); statErr == nil {
-				existing = append(existing, name)
-			}
-		}
-
-		if len(existing) > 0 {
-			fmt.Printf("Warning: files already exist: %s\n", strings.Join(existing, ", "))
-			fmt.Print("Overwrite? [y/N] ")
-
-			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
-			answer = strings.TrimSpace(strings.ToLower(answer))
-
-			if answer != "y" && answer != "yes" {
-				fmt.Println("Aborted")
-				return 1
-			}
-		}
-	}
-
-	// copy skeleton files directly from embedded
-	fmt.Println("Initializing agentbox...")
-	if err = skeleton.CopyTo(cwd); err != nil {
-		fmt.Fprintf(os.Stderr, "Error copying skeleton files: %v\n", err)
+	if interactive && !a.confirmOverwrite(cwd) {
 		return 1
 	}
-	for _, name := range skeleton.OverwriteFiles() {
-		fmt.Printf("  Created: %s\n", name)
+
+	if code := a.copySkeletonFiles(cwd); code != 0 {
+		return code
 	}
 
-	// copy user files only if they don't exist
-	createdUserFiles, err := skeleton.CopyUserFilesIfMissing(cwd)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error copying user files: %v\n", err)
-		return 1
-	}
-	for _, name := range createdUserFiles {
-		fmt.Printf("  Created: %s\n", name)
-	}
+	a.setupGitExclude(cwd)
+	a.createMiseToml(cwd)
 
-	// add to .git/info/exclude
-	added, err := addToGitExcludeVerbose(cwd)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not update .git/info/exclude: %v\n", err)
-	}
-	for _, name := range added {
-		fmt.Printf("  Added to .git/info/exclude: %s\n", name)
-	}
-
-	// create mise.toml if not exists
-	misePath := filepath.Join(cwd, "mise.toml")
-	if _, statErr := os.Stat(misePath); os.IsNotExist(statErr) {
-		if miseErr := createMiseTomlIfNotExists(cwd); miseErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not create mise.toml: %v\n", miseErr)
-		} else {
-			fmt.Println("  Created: mise.toml")
-		}
-	}
-
-	// check if agents are installed
 	state, err := config.LoadState(paths.StateFile)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error loading state: %v\n", err)
@@ -123,32 +68,92 @@ func (a *App) doInit(interactive bool) int {
 	return 0
 }
 
-//nolint:funlen,cyclop // complex but straightforward flow
-func (a *App) cmdRun(args []string) int {
-	// parse flags and arguments
-	var doBuild, noCache bool
-	var containerID string
-	for _, arg := range args {
-		switch arg {
-		case "--build":
-			doBuild = true
-		case "--build-no-cache":
-			doBuild = true
-			noCache = true
-		default:
-			if strings.HasPrefix(arg, "-") {
-				fmt.Fprintf(os.Stderr, "Unknown flag: %s\n", arg)
-				fmt.Fprintf(os.Stderr, "Available flags: --build, --build-no-cache\n")
-				return 1
-			}
-			// positional argument - container ID
-			containerID = arg
+func (a *App) confirmOverwrite(cwd string) bool {
+	var existing []string
+	for _, name := range skeleton.OverwriteFiles() {
+		path := filepath.Join(cwd, name)
+		if _, err := os.Stat(path); err == nil {
+			existing = append(existing, name)
 		}
 	}
 
-	// attach to existing container
-	if containerID != "" {
-		if err := docker.Attach(containerID); err != nil {
+	if len(existing) == 0 {
+		return true
+	}
+
+	fmt.Printf("Warning: files already exist: %s\n", strings.Join(existing, ", "))
+	fmt.Print("Overwrite? [y/N] ")
+
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+
+	if answer != "y" && answer != "yes" {
+		fmt.Println("Aborted")
+		return false
+	}
+	return true
+}
+
+func (a *App) copySkeletonFiles(cwd string) int {
+	fmt.Println("Initializing agentbox...")
+
+	if err := skeleton.CopyTo(cwd); err != nil {
+		fmt.Fprintf(os.Stderr, "Error copying skeleton files: %v\n", err)
+		return 1
+	}
+	for _, name := range skeleton.OverwriteFiles() {
+		fmt.Printf("  Created: %s\n", name)
+	}
+
+	createdUserFiles, err := skeleton.CopyUserFilesIfMissing(cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error copying user files: %v\n", err)
+		return 1
+	}
+	for _, name := range createdUserFiles {
+		fmt.Printf("  Created: %s\n", name)
+	}
+
+	return 0
+}
+
+func (a *App) setupGitExclude(cwd string) {
+	added, err := addToGitExcludeVerbose(cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not update .git/info/exclude: %v\n", err)
+		return
+	}
+	for _, name := range added {
+		fmt.Printf("  Added to .git/info/exclude: %s\n", name)
+	}
+}
+
+func (a *App) createMiseToml(cwd string) {
+	misePath := filepath.Join(cwd, "mise.toml")
+	if _, err := os.Stat(misePath); os.IsNotExist(err) {
+		if err := createMiseTomlIfNotExists(cwd); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: could not create mise.toml: %v\n", err)
+		} else {
+			fmt.Println("  Created: mise.toml")
+		}
+	}
+}
+
+type runOptions struct {
+	build      bool
+	noCache    bool
+	attachToID string
+}
+
+func (a *App) cmdRun(args []string) int {
+	opts, code := a.parseRunArgs(args)
+	if code != 0 {
+		return code
+	}
+
+	if opts.attachToID != "" {
+		if err := docker.Attach(opts.attachToID); err != nil {
 			fmt.Fprintf(os.Stderr, "Error attaching to container: %v\n", err)
 			return 1
 		}
@@ -161,8 +166,51 @@ func (a *App) cmdRun(args []string) int {
 		return 1
 	}
 
+	if code := a.ensureProjectReady(cwd); code != 0 {
+		return code
+	}
+
+	if opts.build {
+		fmt.Println("Building Docker image...")
+		if err := docker.Build(cwd, opts.noCache); err != nil {
+			fmt.Fprintf(os.Stderr, "Error building image: %v\n", err)
+			return 1
+		}
+	}
+
+	fmt.Println("Starting agentbox...")
+	if err := docker.Run(cwd); err != nil {
+		fmt.Fprintf(os.Stderr, "Error running container: %v\n", err)
+		return 1
+	}
+
+	return 0
+}
+
+func (a *App) parseRunArgs(args []string) (runOptions, int) {
+	var opts runOptions
+	for _, arg := range args {
+		switch arg {
+		case "--build":
+			opts.build = true
+		case "--build-no-cache":
+			opts.build = true
+			opts.noCache = true
+		default:
+			if strings.HasPrefix(arg, "-") {
+				fmt.Fprintf(os.Stderr, "Unknown flag: %s\n", arg)
+				fmt.Fprintf(os.Stderr, "Available flags: --build, --build-no-cache\n")
+				return opts, 1
+			}
+			opts.attachToID = arg
+		}
+	}
+	return opts, 0
+}
+
+func (a *App) ensureProjectReady(cwd string) int {
 	composePath := filepath.Join(cwd, "docker-compose.agentbox.yml")
-	if _, statErr := os.Stat(composePath); os.IsNotExist(statErr) {
+	if _, err := os.Stat(composePath); os.IsNotExist(err) {
 		fmt.Println("Warning: not initialized, running init first...")
 		if code := a.doInit(false); code != 0 {
 			return code
@@ -170,7 +218,6 @@ func (a *App) cmdRun(args []string) int {
 		fmt.Println()
 	}
 
-	// ensure skeleton and agents are ready even if project was initialized
 	paths, err := config.NewPaths()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -194,20 +241,6 @@ func (a *App) cmdRun(args []string) int {
 
 	if err := ensureAgentConfigs(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating agent configs: %v\n", err)
-		return 1
-	}
-
-	if doBuild {
-		fmt.Println("Building Docker image...")
-		if err := docker.Build(cwd, noCache); err != nil {
-			fmt.Fprintf(os.Stderr, "Error building image: %v\n", err)
-			return 1
-		}
-	}
-
-	fmt.Println("Starting agentbox...")
-	if err := docker.Run(cwd); err != nil {
-		fmt.Fprintf(os.Stderr, "Error running container: %v\n", err)
 		return 1
 	}
 
