@@ -1,27 +1,17 @@
-# Agentbox
+Agentbox
+========
 
 CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI) inside an isolated Docker container.
 
-## Why?
+- [Why use Agentbox?](#why-use-agentbox)
+- [Installation](#installation)
+  - [Shell Completions](#shell-completions)
+- [How to Use](#how-to-use)
+
+## Why use Agentbox?
 
 - **Security** — agents run in a sandbox and cannot access files outside the project, modify system configs, or cause unintended side effects
 - **Convenience** — no need to approve every agent action since it works in an isolated environment
-
-## Supported Agents
-
-| Agent       | Description                 |
-|-------------|-----------------------------|
-| Claude Code | Anthropic's Claude Code CLI |
-| Copilot     | GitHub Copilot CLI          |
-| Codex       | OpenAI Codex CLI            |
-| Gemini      | Google Gemini CLI           |
-
-Agentbox automatically downloads and manages agent binaries for your platform (Linux x64/arm64).
-
-## Requirements
-
-- Docker
-- [mise](https://mise.jdx.dev) — project must have `mise.toml` for tools provisioning inside the container
 
 ## Installation
 
@@ -41,6 +31,9 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ### Shell Completions
 
+Agentbox supports shell completions for Bash and Zsh. To enable them, add one of the following 
+lines to your shell configuration:
+
 ```bash
 # Bash: add to ~/.bashrc
 eval "$(agentbox completions bash)"
@@ -49,28 +42,22 @@ eval "$(agentbox completions bash)"
 eval "$(agentbox completions zsh)"
 ```
 
-## Usage
+## How to Use
 
-### Initialize project
+Navigate to your project directory and run `agentbox init`. This command creates several files in your 
+project and downloads AI agent binaries to `~/.agentbox/bin/`.
 
-```bash
-cd ~/my-project
-agentbox init
-```
+The following files will be added to your project:
 
-This will:
-1. Copy `Dockerfile.agentbox` and `docker-compose.agentbox.yml` to your project
-2. Create empty `mise.toml` if it doesn't exist
-3. Add sandbox files to `.git/info/exclude`
-4. Download all AI agents (on first run)
+- `Dockerfile.agentbox` — defines the container image. This file is overwritten on every `agentbox init`, so do not modify it manually.
+- `docker-compose.agentbox.yml` — main compose configuration with volume mounts and environment variables. This file is also overwritten on every `agentbox init`.
+- `docker-compose.agentbox.local.yml` — your personal overrides. This file is created only once and never overwritten. Use it to add custom volumes, environment variables, or any other Docker Compose settings you need.
+- `mise.toml` — configuration for [mise](https://mise.jdx.dev) tool manager. Created only if it doesn't exist. Use it to specify which tools (Python, Node.js, Go, etc.) should be available inside the container.
 
-### Run sandbox
+All these files are automatically added to `.git/info/exclude` to keep them out of version control.
 
-```bash
-agentbox run
-```
-
-Starts the container with your project mounted. Inside the container, agents are available with permissive flags:
+After initialization, run `agentbox run` to start the container. Your project is mounted at `/home/box/app` inside 
+the container. AI agents are available as commands with permissive flags enabled:
 
 ```bash
 claude    # runs with --dangerously-skip-permissions
@@ -79,58 +66,13 @@ codex     # runs with --full-auto
 gemini    # runs with --yolo
 ```
 
-### Run with rebuild
+To rebuild the container image before running, use `agentbox run --build`. For a full rebuild 
+without Docker cache, use `agentbox run --build-no-cache`.
 
-```bash
-agentbox run --build            # rebuild image before running
-agentbox run --build-no-cache   # full rebuild without Docker cache
-```
+To attach to an already running container, pass its ID: `agentbox run <container-id>`.
 
-### Attach to running container
+Agent binaries are managed separately from the container. Use `agentbox agents` to see installed versions 
+vs latest available. Use `agentbox agents update` to update all agents, or `agentbox agents update claude copilot` 
+to update specific ones. To switch to a specific version, use `agentbox agents use claude 2.0.67`.
 
-```bash
-agentbox run <container-id>
-```
-
-### Manage agents
-
-```bash
-agentbox agents                        # show status (installed vs latest)
-agentbox agents update                 # update all agents
-agentbox agents update claude copilot  # update specific agents
-agentbox agents use claude 2.0.67      # switch to specific version
-```
-
-### Other commands
-
-```bash
-agentbox clean     # remove sandbox files from project
-agentbox version   # show version
-```
-
-## How It Works
-
-Agentbox stores agent binaries in `~/.agentbox/bin/` and mounts them read-only into the container. 
-The container runs as a non-root user (`box`) with sudo access.
-
-Project structure after `agentbox init`:
-
-```
-my-project/
-├── Dockerfile.agentbox         # container definition
-├── docker-compose.agentbox.yml # compose configuration
-└── mise.toml                   # tools configuration (python, node, etc.)
-```
-
-Volumes mounted into container:
-- `./` → `/home/box/app` (project files)
-- `~/.agentbox/bin` → `/opt/agentbox/bin` (agent binaries, read-only)
-- `~/.claude.json`, `~/.claude/` → Claude config
-- `~/.copilot/` → Copilot config
-- `~/.codex/` → Codex config
-- `~/.gemini/` → Gemini config
-- `~/.go/`, `~/.cache/uv` → caches
-
-## License
-
-MIT
+To remove all agentbox files from the project, run `agentbox clean`.
