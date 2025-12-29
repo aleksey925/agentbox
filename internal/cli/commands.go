@@ -14,7 +14,40 @@ import (
 	"github.com/aleksey925/agentbox/internal/skeleton"
 )
 
-func (a *App) cmdInit(_ []string) int {
+func hasHelpFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "-h" || arg == "--help" {
+			return true
+		}
+	}
+	return false
+}
+
+func availableAgentsStr() string {
+	return strings.Join(agents.AllAgentNames(), ", ")
+}
+
+func (a *App) cmdInit(args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Print(`Initialize sandbox in current directory
+
+Usage:
+  agentbox init
+
+This command creates Docker configuration files and downloads AI agent binaries.
+Files created:
+  - Dockerfile.agentbox
+  - docker-compose.agentbox.yml
+  - docker-compose.agentbox.local.yml
+  - mise.toml (if not exists)
+`)
+		return 0
+	}
+
+	if code := RejectUnknownFlags(args); code != 0 {
+		return code
+	}
+
 	return a.doInit(true)
 }
 
@@ -135,24 +168,31 @@ func (a *App) createMiseToml(cwd string) {
 }
 
 type runOptions struct {
-	build      bool
-	noCache    bool
-	attachToID string
+	build   bool
+	noCache bool
 }
 
+var runAllowedFlags = []string{"--build", "--build-no-cache"}
+
 func (a *App) cmdRun(args []string) int {
-	opts, code := a.parseRunArgs(args)
-	if code != 0 {
+	if hasHelpFlag(args) {
+		fmt.Print(`Start a new container
+
+Usage:
+  agentbox run [flags]
+
+Flags:
+  --build                           Rebuild image before running
+  --build-no-cache                  Rebuild image without Docker cache
+`)
+		return 0
+	}
+
+	if code := RejectUnknownFlagsWithAllowed(args, runAllowedFlags); code != 0 {
 		return code
 	}
 
-	if opts.attachToID != "" {
-		if err := docker.Attach(opts.attachToID); err != nil {
-			fmt.Fprintf(os.Stderr, "Error attaching to container: %v\n", err)
-			return 1
-		}
-		return 0
-	}
+	opts := a.parseRunFlags(args)
 
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -181,7 +221,9 @@ func (a *App) cmdRun(args []string) int {
 	return 0
 }
 
-func (a *App) parseRunArgs(args []string) (runOptions, int) {
+// parseRunFlags parses run command flags.
+// Assumes validation was already done by RejectUnknownFlagsWithAllowed.
+func (a *App) parseRunFlags(args []string) runOptions {
 	var opts runOptions
 	for _, arg := range args {
 		switch arg {
@@ -190,16 +232,81 @@ func (a *App) parseRunArgs(args []string) (runOptions, int) {
 		case "--build-no-cache":
 			opts.build = true
 			opts.noCache = true
-		default:
-			if strings.HasPrefix(arg, "-") {
-				fmt.Fprintf(os.Stderr, "Unknown flag: %s\n", arg)
-				fmt.Fprintf(os.Stderr, "Available flags: --build, --build-no-cache\n")
-				return opts, 1
-			}
-			opts.attachToID = arg
 		}
 	}
-	return opts, 0
+	return opts
+}
+
+func (a *App) cmdAttach(args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Print(`Attach to running container
+
+Usage:
+  agentbox attach [container-id]
+
+Arguments:
+  container-id                      Container ID (optional, interactive if omitted)
+
+If no container ID is provided and multiple containers are running,
+you will be prompted to select one.
+`)
+		return 0
+	}
+
+	if code := RejectUnknownFlags(args); code != 0 {
+		return code
+	}
+
+	if len(args) > 0 {
+		return a.attachToContainer(args[0])
+	}
+
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+
+	containers, err := docker.ListContainers(cwd, false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+
+	if len(containers) == 0 {
+		fmt.Println("No running agentbox containers in this project")
+		return 1
+	}
+
+	if len(containers) == 1 {
+		return a.attachToContainer(containers[0].ID)
+	}
+
+	return a.selectAndAttach(containers)
+}
+
+func (a *App) selectAndAttach(containers []docker.Container) int {
+	fmt.Println("Multiple running containers found:")
+	for i, c := range containers {
+		fmt.Printf("  %d) %s (started %s)\n", i+1, c.ID, c.Started)
+	}
+	fmt.Printf("Select [1-%d]: ", len(containers))
+
+	var selection int
+	if _, err := fmt.Scanf("%d", &selection); err != nil || selection < 1 || selection > len(containers) {
+		fmt.Fprintln(os.Stderr, "Invalid selection")
+		return 1
+	}
+
+	return a.attachToContainer(containers[selection-1].ID)
+}
+
+func (a *App) attachToContainer(containerID string) int {
+	if err := docker.Attach(containerID); err != nil {
+		fmt.Fprintf(os.Stderr, "Error attaching to container: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 func (a *App) ensureProjectReady(cwd string) int {
@@ -235,7 +342,38 @@ func (a *App) ensureProjectReady(cwd string) int {
 	return 0
 }
 
-func (a *App) cmdAgents(args []string) int {
+func (a *App) cmdAgent(args []string) int {
+	if len(args) > 0 && hasHelpFlag(args[:1]) {
+		fmt.Printf(`Manage AI agents
+
+Usage:
+  agentbox agent [command]
+
+Commands:
+  (none)                            Show agent status (installed vs latest)
+  update [agent...]                 Update agents (all or specified)
+  use <agent> <version>             Switch agent to specific version
+
+Available agents: %s
+
+Examples:
+  agentbox agent                    Show status of all agents
+  agentbox agent update             Update all agents
+  agentbox agent update claude      Update only Claude
+  agentbox agent use claude 1.0.0   Switch Claude to version 1.0.0
+
+Use "agentbox agent <command> --help" for more information about a command.
+`, availableAgentsStr())
+		return 0
+	}
+
+	// check for unknown flags at agent level (before subcommand dispatch)
+	if len(args) > 0 {
+		if code := RejectUnknownFlags(args[:1]); code != 0 {
+			return code
+		}
+	}
+
 	paths, err := config.NewPaths()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -249,7 +387,7 @@ func (a *App) cmdAgents(args []string) int {
 	}
 
 	if len(args) == 0 {
-		return a.showAgentsStatus(manager)
+		return a.showAgentStatus(manager)
 	}
 
 	subcmd := args[0]
@@ -257,16 +395,16 @@ func (a *App) cmdAgents(args []string) int {
 
 	switch subcmd {
 	case "update":
-		return a.agentsUpdate(manager, subargs)
+		return a.agentUpdate(manager, subargs)
 	case "use":
-		return a.agentsUse(manager, subargs)
+		return a.agentUse(manager, subargs)
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown agents subcommand: %s\n", subcmd)
+		fmt.Fprintf(os.Stderr, "Unknown agent subcommand: %s\n", subcmd)
 		return 1
 	}
 }
 
-func (a *App) showAgentsStatus(manager *agents.Manager) int {
+func (a *App) showAgentStatus(manager *agents.Manager) int {
 	fmt.Println("\nFetching agent versions...")
 	statuses := manager.GetStatus()
 
@@ -303,16 +441,32 @@ func (a *App) showAgentsStatus(manager *agents.Manager) int {
 	return 0
 }
 
-func (a *App) agentsUpdate(manager *agents.Manager, args []string) int {
-	agentsToUpdate := make([]string, 0, len(args))
+func (a *App) agentUpdate(manager *agents.Manager, args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Printf(`Update agents to latest version
 
-	for _, arg := range args {
-		if arg == "-a" || arg == "--all" {
-			agentsToUpdate = nil
-			break
-		}
-		agentsToUpdate = append(agentsToUpdate, arg)
+Usage:
+  agentbox agent update [agent...]
+
+Arguments:
+  agent                             Agent name(s) to update (optional, all if omitted)
+
+Available agents: %s
+
+Examples:
+  agentbox agent update             Update all agents
+  agentbox agent update claude      Update only Claude
+  agentbox agent update claude copilot  Update Claude and Copilot
+`, availableAgentsStr())
+		return 0
 	}
+
+	if code := RejectUnknownFlags(args); code != 0 {
+		return code
+	}
+
+	// all remaining args are agent names (flags already validated)
+	agentsToUpdate := args
 
 	fmt.Println("Updating agents...")
 
@@ -351,9 +505,32 @@ func (a *App) agentsUpdate(manager *agents.Manager, args []string) int {
 	return 0
 }
 
-func (a *App) agentsUse(manager *agents.Manager, args []string) int {
+func (a *App) agentUse(manager *agents.Manager, args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Printf(`Switch agent to specific version
+
+Usage:
+  agentbox agent use <agent> <version>
+
+Arguments:
+  agent                             Agent name
+  version                           Version to switch to
+
+Available agents: %s
+
+Examples:
+  agentbox agent use claude 1.0.0
+  agentbox agent use copilot 0.5.0
+`, availableAgentsStr())
+		return 0
+	}
+
+	if code := RejectUnknownFlags(args); code != 0 {
+		return code
+	}
+
 	if len(args) < 2 {
-		fmt.Fprintf(os.Stderr, "Usage: agentbox agents use <agent> <version>\n")
+		fmt.Fprintf(os.Stderr, "Usage: agentbox agent use <agent> <version>\n")
 		return 1
 	}
 
@@ -369,7 +546,86 @@ func (a *App) agentsUse(manager *agents.Manager, args []string) int {
 	return 0
 }
 
-func (a *App) cmdClean(_ []string) int {
+var psAllowedFlags = []string{"-a", "--all"}
+
+func (a *App) cmdPs(args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Print(`List running agentbox containers
+
+Usage:
+  agentbox ps [flags]
+
+Flags:
+  -a, --all                         Show containers from all projects
+
+By default, only containers from the current project directory are shown.
+`)
+		return 0
+	}
+
+	if code := RejectUnknownFlagsWithAllowed(args, psAllowedFlags); code != 0 {
+		return code
+	}
+
+	showAll := false
+	for _, arg := range args {
+		if arg == "-a" || arg == "--all" {
+			showAll = true
+		}
+	}
+
+	var projectDir string
+	if !showAll {
+		cwd, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return 1
+		}
+		projectDir = cwd
+	}
+
+	containers, err := docker.ListContainers(projectDir, showAll)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+
+	if len(containers) == 0 {
+		if showAll {
+			fmt.Println("No running agentbox containers")
+		} else {
+			fmt.Println("No running agentbox containers in this project")
+		}
+		return 0
+	}
+
+	fmt.Printf("%-14s %-40s %s\n", "CONTAINER ID", "NAME", "STARTED")
+	for _, c := range containers {
+		fmt.Printf("%-14s %-40s %s\n", c.ID, c.Name, c.Started)
+	}
+
+	return 0
+}
+
+func (a *App) cmdClean(args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Print(`Remove sandbox files from project
+
+Usage:
+  agentbox clean
+
+This command removes all agentbox-generated files from the current directory:
+  - Dockerfile.agentbox
+  - docker-compose.agentbox.yml
+  - docker-compose.agentbox.local.yml
+`)
+		return 0
+	}
+
+	if code := RejectUnknownFlags(args); code != 0 {
+		return code
+	}
+
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)

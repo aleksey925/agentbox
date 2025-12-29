@@ -4,16 +4,41 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/aleksey925/agentbox/internal/agents"
 )
 
-func (a *App) cmdCompletions(args []string) int {
-	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: agentbox completions <shell> [command-name]\n")
-		fmt.Fprintf(os.Stderr, "Supported shells: bash, zsh\n")
-		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  agentbox completions bash\n")
-		fmt.Fprintf(os.Stderr, "  agentbox completions zsh abox  # for alias 'abox'\n")
-		return 1
+func (a *App) cmdCompletion(args []string) int {
+	if len(args) == 0 || hasHelpFlag(args) {
+		fmt.Print(`Generate shell completion script
+
+Usage:
+  agentbox completion <shell> [alias]
+
+Arguments:
+  shell                             Shell type: bash, zsh
+  alias                             Command name for aliases (optional)
+
+Examples:
+  agentbox completion bash
+  agentbox completion zsh
+  agentbox completion bash abox     # for alias 'abox'
+
+To enable completions, add to your shell config:
+  # Bash (~/.bashrc)
+  eval "$(agentbox completion bash)"
+
+  # Zsh (~/.zshrc)
+  eval "$(agentbox completion zsh)"
+`)
+		if len(args) == 0 {
+			return 1
+		}
+		return 0
+	}
+
+	if code := RejectUnknownFlags(args); code != 0 {
+		return code
 	}
 
 	shell := args[0]
@@ -37,15 +62,26 @@ func (a *App) cmdCompletions(args []string) int {
 }
 
 func generateBashCompletion(cmdName string) string {
+	agentNames := agents.AllAgentNames()
+	agentNamesStr := strings.Join(agentNames, " ")
+	agentNamesPattern := strings.Join(agentNames, "|")
+
+	commands := strings.Join(AllCommands(), " ")
+	runFlags := strings.Join(CommandFlags()["run"], " ")
+	psFlags := strings.Join(CommandFlags()["ps"], " ")
+	agentSub := strings.Join(AgentSubcommands(), " ")
+	shells := strings.Join(CompletionShells(), " ")
+
 	tmpl := `_{{.FuncName}}() {
-    local cur prev commands agents_sub agent_names run_flags
+    local cur prev commands agent_sub agent_names run_flags ps_flags
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="init run agents clean help completions version"
-    agents_sub="update use"
-    agent_names="claude copilot codex gemini"
-    run_flags="--build --build-no-cache"
+    commands="{{.Commands}}"
+    agent_sub="{{.AgentSub}}"
+    agent_names="{{.AgentNames}}"
+    run_flags="{{.RunFlags}}"
+    ps_flags="{{.PsFlags}}"
 
     case "$prev" in
         {{.CmdName}})
@@ -54,23 +90,30 @@ func generateBashCompletion(cmdName string) string {
         run)
             COMPREPLY=($(compgen -W "$run_flags" -- "$cur"))
             ;;
-        agents)
-            COMPREPLY=($(compgen -W "$agents_sub" -- "$cur"))
+        attach)
+            local containers=$(docker ps --filter "label=com.docker.compose.service=agentbox" --filter "label=com.docker.compose.project.working_dir=$(pwd)" --format "{{.ID}}" 2>/dev/null)
+            COMPREPLY=($(compgen -W "$containers" -- "$cur"))
+            ;;
+        ps)
+            COMPREPLY=($(compgen -W "$ps_flags" -- "$cur"))
+            ;;
+        agent)
+            COMPREPLY=($(compgen -W "$agent_sub" -- "$cur"))
             ;;
         update)
-            COMPREPLY=($(compgen -W "$agent_names --all -a" -- "$cur"))
+            COMPREPLY=($(compgen -W "$agent_names" -- "$cur"))
             ;;
         use)
             COMPREPLY=($(compgen -W "$agent_names" -- "$cur"))
             ;;
-        claude|copilot|codex|gemini)
+        {{.AgentNamesPattern}})
             if [[ "${COMP_WORDS[COMP_CWORD-2]}" == "use" ]]; then
                 local versions=$(ls ~/.agentbox/bin/"$prev"/ 2>/dev/null | grep -v current)
                 COMPREPLY=($(compgen -W "$versions" -- "$cur"))
             fi
             ;;
-        completions)
-            COMPREPLY=($(compgen -W "bash zsh" -- "$cur"))
+        completion)
+            COMPREPLY=($(compgen -W "{{.Shells}}" -- "$cur"))
             ;;
     esac
 }
@@ -79,19 +122,37 @@ complete -F _{{.FuncName}} {{.CmdName}}
 	funcName := "_" + sanitizeFuncName(cmdName)
 	result := strings.ReplaceAll(tmpl, "{{.FuncName}}", funcName)
 	result = strings.ReplaceAll(result, "{{.CmdName}}", cmdName)
+	result = strings.ReplaceAll(result, "{{.Commands}}", commands)
+	result = strings.ReplaceAll(result, "{{.AgentSub}}", agentSub)
+	result = strings.ReplaceAll(result, "{{.AgentNames}}", agentNamesStr)
+	result = strings.ReplaceAll(result, "{{.AgentNamesPattern}}", agentNamesPattern)
+	result = strings.ReplaceAll(result, "{{.RunFlags}}", runFlags)
+	result = strings.ReplaceAll(result, "{{.PsFlags}}", psFlags)
+	result = strings.ReplaceAll(result, "{{.Shells}}", shells)
 	return result
 }
 
 func generateZshCompletion(cmdName string) string {
+	// build agent_names array for zsh
+	agentNames := agents.AllAgentNames()
+	agentDescs := agents.AgentDescriptions()
+	agentEntries := make([]string, 0, len(agentNames))
+	for _, name := range agentNames {
+		agentEntries = append(agentEntries, fmt.Sprintf("'%s:%s'", name, agentDescs[name]))
+	}
+	agentNamesZsh := strings.Join(agentEntries, "\n        ")
+
 	base := `_agentbox() {
-    local -a commands agents_cmds agent_names shells run_flags
+    local -a commands agent_cmds agent_names shells run_flags ps_flags
 
     commands=(
         'init:Initialize sandbox in current directory'
-        'run:Start the container'
-        'agents:Manage AI agents'
+        'run:Start a new container'
+        'attach:Attach to running container'
+        'ps:List running agentbox containers'
+        'agent:Manage AI agents'
         'clean:Remove sandbox files from project'
-        'completions:Output shell completions'
+        'completion:Generate shell completion script'
         'help:Show help'
         'version:Show version'
     )
@@ -101,16 +162,18 @@ func generateZshCompletion(cmdName string) string {
         '--build-no-cache:Rebuild image without Docker cache'
     )
 
-    agents_cmds=(
+    ps_flags=(
+        '--all:Show containers from all projects'
+        '-a:Show containers from all projects'
+    )
+
+    agent_cmds=(
         'update:Update agents to latest version'
         'use:Switch agent to specific version'
     )
 
     agent_names=(
-        'claude:Claude Code by Anthropic'
-        'copilot:GitHub Copilot'
-        'codex:OpenAI Codex'
-        'gemini:Google Gemini'
+        {{.AgentNamesZsh}}
     )
 
     shells=(
@@ -130,17 +193,25 @@ func generateZshCompletion(cmdName string) string {
                 run)
                     _describe -t flags 'flag' run_flags
                     ;;
-                agents)
-                    _describe -t commands 'agents command' agents_cmds
+                attach)
+                    local -a containers
+                    containers=(${(f)"$(docker ps --filter 'label=com.docker.compose.service=agentbox' --filter "label=com.docker.compose.project.working_dir=$(pwd)" --format '{{.ID}}:{{.Names}}' 2>/dev/null)"})
+                    (( ${#containers} )) && _describe -t containers 'container' containers
                     ;;
-                completions)
+                ps)
+                    _describe -t flags 'flag' ps_flags
+                    ;;
+                agent)
+                    _describe -t commands 'agent command' agent_cmds
+                    ;;
+                completion)
                     _describe -t shells 'shell' shells
                     ;;
             esac
             ;;
         4)
             case $cmd in
-                agents)
+                agent)
                     case $subcmd in
                         update)
                             _describe -t agents 'agent' agent_names
@@ -154,7 +225,7 @@ func generateZshCompletion(cmdName string) string {
             ;;
         5)
             case $cmd in
-                agents)
+                agent)
                     case $subcmd in
                         update)
                             _describe -t agents 'agent' agent_names
@@ -175,6 +246,7 @@ func generateZshCompletion(cmdName string) string {
 }
 compdef _agentbox agentbox
 `
+	base = strings.ReplaceAll(base, "{{.AgentNamesZsh}}", agentNamesZsh)
 	if cmdName != "agentbox" {
 		base += fmt.Sprintf("compdef _agentbox %s\n", cmdName)
 	}
