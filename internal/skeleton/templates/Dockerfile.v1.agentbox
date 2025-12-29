@@ -51,8 +51,10 @@ USER box
 WORKDIR /home/box/app
 
 COPY mise.toml /home/box/app/mise.toml
-RUN mise trust && mise install && \
-    rm -rf ~/.cache/mise/* /tmp/*
+RUN mkdir -p /home/box/.cache/mise
+RUN --mount=type=cache,target=/home/box/.cache/mise,uid=1000,gid=1000 \
+    mise trust && mise install && \
+    rm -rf /tmp/*
 
 # ai agent launchers
 ENV PATH="${PATH}:/home/box/.local/bin"
