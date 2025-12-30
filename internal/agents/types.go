@@ -88,6 +88,16 @@ func AllAgentNames() []string {
 	return []string{"claude", "copilot", "codex", "gemini"}
 }
 
+// AgentDescriptions returns short descriptions for all agents.
+func AgentDescriptions() map[string]string {
+	return map[string]string{
+		"claude":  "Claude Code by Anthropic",
+		"copilot": "GitHub Copilot",
+		"codex":   "OpenAI Codex",
+		"gemini":  "Google Gemini",
+	}
+}
+
 type progressReader struct {
 	reader     io.Reader
 	downloaded int64

@@ -31,15 +31,23 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ### Shell Completions
 
-Agentbox supports shell completions for Bash and Zsh. To enable them, add one of the following 
+Agentbox supports shell completions for Bash and Zsh. To enable them, add one of the following
 lines to your shell configuration:
 
 ```bash
 # Bash: add to ~/.bashrc
-eval "$(agentbox completions bash)"
+eval "$(agentbox completion bash)"
 
 # Zsh: add to ~/.zshrc
-eval "$(agentbox completions zsh)"
+eval "$(agentbox completion zsh)"
+```
+
+If you use an alias for agentbox, pass the alias name as the second argument:
+
+```bash
+# For alias "abox"
+alias abox="agentbox"
+eval "$(agentbox completion bash abox)"
 ```
 
 ## How to Use
@@ -66,13 +74,14 @@ codex     # runs with --full-auto
 gemini    # runs with --yolo
 ```
 
-To rebuild the container image before running, use `agentbox run --build`. For a full rebuild 
+To rebuild the container image before running, use `agentbox run --build`. For a full rebuild
 without Docker cache, use `agentbox run --build-no-cache`.
 
-To attach to an already running container, pass its ID: `agentbox run <container-id>`.
+To list running containers, use `agentbox ps`. To attach to an already running container, use
+`agentbox attach` (interactive selection) or `agentbox attach <container-id>`.
 
-Agent binaries are managed separately from the container. Use `agentbox agents` to see installed versions 
-vs latest available. Use `agentbox agents update` to update all agents, or `agentbox agents update claude copilot` 
-to update specific ones. To switch to a specific version, use `agentbox agents use claude 2.0.67`.
+Agent binaries are managed separately from the container. Use `agentbox agent` to see installed versions
+vs latest available. Use `agentbox agent update` to update all agents, or `agentbox agent update claude copilot`
+to update specific ones. To switch to a specific version, use `agentbox agent use claude 2.0.67`.
 
 To remove all agentbox files from the project, run `agentbox clean`.
