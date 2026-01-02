@@ -1,12 +1,20 @@
 package cli
 
 import (
+	"archive/tar"
 	"bufio"
+	"compress/gzip"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/aleksey925/agentbox/internal/agents"
 	"github.com/aleksey925/agentbox/internal/config"
@@ -813,5 +821,420 @@ func ensureAgentConfigs() error {
 		}
 	}
 
+	return nil
+}
+
+const githubRepo = "aleksey925/agentbox"
+
+func (a *App) cmdSelf(args []string) int {
+	if len(args) > 0 && hasHelpFlag(args[:1]) {
+		fmt.Print(`Update or uninstall agentbox
+
+Usage:
+  agentbox self <command>
+
+Commands:
+  update [version]                  Update to latest or specified version
+  uninstall                         Remove agentbox from system
+  versions                          List available versions
+
+Examples:
+  agentbox self update              Update to latest version
+  agentbox self update 1.2.0        Update to specific version
+  agentbox self uninstall           Remove agentbox
+  agentbox self uninstall --purge   Remove agentbox and all data
+
+Use "agentbox self <command> --help" for more information about a command.
+`)
+		return 0
+	}
+
+	if len(args) > 0 {
+		if code := RejectUnknownFlags(args[:1]); code != 0 {
+			return code
+		}
+	}
+
+	if len(args) == 0 {
+		fmt.Fprintf(os.Stderr, "Usage: agentbox self <command>\n")
+		fmt.Fprintf(os.Stderr, "Available commands: update, uninstall, versions\n")
+		return 1
+	}
+
+	subcmd := args[0]
+	subargs := args[1:]
+
+	switch subcmd {
+	case "update":
+		return a.selfUpdate(subargs)
+	case "uninstall":
+		return a.selfUninstall(subargs)
+	case "versions":
+		return a.selfVersions(subargs)
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown self subcommand: %s\n", subcmd)
+		return 1
+	}
+}
+
+func (a *App) selfUpdate(args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Print(`Update agentbox to latest or specified version
+
+Usage:
+  agentbox self update [version]
+
+Arguments:
+  version                           Target version (default: latest)
+
+Examples:
+  agentbox self update              Update to latest version
+  agentbox self update 1.2.0        Update to version 1.2.0
+`)
+		return 0
+	}
+
+	if code := RejectUnknownFlags(args); code != 0 {
+		return code
+	}
+
+	var targetVersion string
+	for _, arg := range args {
+		if !strings.HasPrefix(arg, "-") {
+			targetVersion = arg
+			break
+		}
+	}
+
+	if targetVersion == "" {
+		fmt.Println("Fetching latest version...")
+		latest, err := fetchLatestVersion()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error fetching latest version: %v\n", err)
+			return 1
+		}
+		targetVersion = latest
+	}
+
+	targetVersion = strings.TrimPrefix(targetVersion, "v")
+
+	if targetVersion == a.Version {
+		fmt.Printf("Already at version %s\n", targetVersion)
+		return 0
+	}
+
+	fmt.Printf("Updating to version %s...\n", targetVersion)
+
+	execPath, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting executable path: %v\n", err)
+		return 1
+	}
+
+	execPath, err = filepath.EvalSymlinks(execPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error resolving executable path: %v\n", err)
+		return 1
+	}
+
+	downloadURL := fmt.Sprintf(
+		"https://github.com/%s/releases/download/v%s/agentbox_%s_%s_%s.tar.gz",
+		githubRepo, targetVersion, targetVersion, runtime.GOOS, runtime.GOARCH,
+	)
+
+	fmt.Printf("Downloading from %s\n", downloadURL)
+
+	tmpDir, err := os.MkdirTemp("", "agentbox-update-")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating temp dir: %v\n", err)
+		return 1
+	}
+	defer os.RemoveAll(tmpDir)
+
+	resp, cancel, err := httpDownload(downloadURL)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error downloading: %v\n", err)
+		return 1
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		cancel()
+		fmt.Fprintf(os.Stderr, "Error: download failed with status %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "Version %s may not exist for %s/%s\n", targetVersion, runtime.GOOS, runtime.GOARCH)
+		return 1
+	}
+
+	newBinaryPath := filepath.Join(tmpDir, "agentbox")
+	err = extractBinaryFromTarGz(resp.Body, newBinaryPath)
+	resp.Body.Close()
+	cancel()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error extracting archive: %v\n", err)
+		return 1
+	}
+
+	backupPath := execPath + ".bak"
+	if err := os.Rename(execPath, backupPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Error backing up current binary: %v\n", err)
+		return 1
+	}
+
+	if err := copyFile(newBinaryPath, execPath); err != nil {
+		// restore backup
+		_ = os.Rename(backupPath, execPath)
+		fmt.Fprintf(os.Stderr, "Error replacing binary: %v\n", err)
+		return 1
+	}
+
+	_ = os.Remove(backupPath)
+
+	fmt.Printf("Successfully updated to version %s\n", targetVersion)
+	return 0
+}
+
+func (a *App) selfUninstall(args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Print(`Remove agentbox from system
+
+Usage:
+  agentbox self uninstall [flags]
+
+Flags:
+  --purge                           Also remove ~/.agentbox directory
+`)
+		return 0
+	}
+
+	if code := RejectUnknownFlagsWithAllowed(args, SelfUninstallFlags()); code != 0 {
+		return code
+	}
+
+	purge := false
+	for _, arg := range args {
+		if arg == "--purge" {
+			purge = true
+		}
+	}
+
+	execPath, err := os.Executable()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting executable path: %v\n", err)
+		return 1
+	}
+
+	execPath, err = filepath.EvalSymlinks(execPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error resolving executable path: %v\n", err)
+		return 1
+	}
+
+	fmt.Printf("This will remove: %s\n", execPath)
+	if purge {
+		home, _ := os.UserHomeDir()
+		fmt.Printf("This will also remove: %s\n", filepath.Join(home, ".agentbox"))
+	}
+
+	fmt.Print("Continue? [y/N]: ")
+	reader := bufio.NewReader(os.Stdin)
+	answer, _ := reader.ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+
+	if answer != "y" && answer != "yes" {
+		fmt.Println("Aborted")
+		return 0
+	}
+
+	if purge {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			agentboxDir := filepath.Join(home, ".agentbox")
+			if err := os.RemoveAll(agentboxDir); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: failed to remove %s: %v\n", agentboxDir, err)
+			} else {
+				fmt.Printf("Removed %s\n", agentboxDir)
+			}
+		}
+	}
+
+	if err := os.Remove(execPath); err != nil {
+		fmt.Fprintf(os.Stderr, "Error removing binary: %v\n", err)
+		return 1
+	}
+
+	fmt.Println("agentbox has been uninstalled")
+	return 0
+}
+
+func (a *App) selfVersions(args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Print(`List available agentbox versions
+
+Usage:
+  agentbox self versions
+`)
+		return 0
+	}
+
+	if code := RejectUnknownFlags(args); code != 0 {
+		return code
+	}
+
+	versions, err := fetchVersions()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error fetching versions: %v\n", err)
+		return 1
+	}
+
+	for _, v := range versions {
+		fmt.Println(v)
+	}
+	return 0
+}
+
+func fetchVersions() ([]string, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases?per_page=30", githubRepo)
+	resp, cancel, err := httpGet(url)
+	if err != nil {
+		return nil, fmt.Errorf("fetch releases: %w", err)
+	}
+	defer cancel()
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var releases []struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+
+	versions := make([]string, 0, len(releases))
+	for _, r := range releases {
+		versions = append(versions, strings.TrimPrefix(r.TagName, "v"))
+	}
+	return versions, nil
+}
+
+func fetchLatestVersion() (string, error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", githubRepo)
+	resp, cancel, err := httpGet(url)
+	if err != nil {
+		return "", fmt.Errorf("fetch releases: %w", err)
+	}
+	defer cancel()
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+
+	return strings.TrimPrefix(release.TagName, "v"), nil
+}
+
+const (
+	httpTimeout         = 30 * time.Second
+	httpDownloadTimeout = 5 * time.Minute
+)
+
+// httpGet performs a GET request with standard timeout.
+func httpGet(url string) (resp *http.Response, cancel context.CancelFunc, err error) {
+	return httpGetWithTimeout(url, httpTimeout)
+}
+
+// httpDownload performs a GET request with extended timeout for file downloads.
+func httpDownload(url string) (resp *http.Response, cancel context.CancelFunc, err error) {
+	return httpGetWithTimeout(url, httpDownloadTimeout)
+}
+
+func httpGetWithTimeout(url string, timeout time.Duration) (resp *http.Response, cancel context.CancelFunc, err error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		cancel()
+		return nil, nil, fmt.Errorf("execute request: %w", err)
+	}
+	return resp, cancel, nil
+}
+
+func extractBinaryFromTarGz(r io.Reader, destPath string) error {
+	gzr, err := gzip.NewReader(r)
+	if err != nil {
+		return fmt.Errorf("create gzip reader: %w", err)
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read tar header: %w", err)
+		}
+
+		if header.Typeflag == tar.TypeReg && filepath.Base(header.Name) == "agentbox" {
+			if err := extractFile(tr, destPath); err != nil {
+				return err
+			}
+			return nil
+		}
+	}
+
+	return errors.New("agentbox binary not found in archive")
+}
+
+func extractFile(r io.Reader, destPath string) error {
+	outFile, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("create file: %w", err)
+	}
+	defer outFile.Close()
+
+	if _, err := io.Copy(outFile, r); err != nil {
+		return fmt.Errorf("write file: %w", err)
+	}
+	return nil
+}
+
+func copyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("open source: %w", err)
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return fmt.Errorf("create destination: %w", err)
+	}
+	defer dstFile.Close()
+
+	if _, err := io.Copy(dstFile, srcFile); err != nil {
+		return fmt.Errorf("copy: %w", err)
+	}
+
+	if err := dstFile.Chmod(0o755); err != nil {
+		return fmt.Errorf("chmod: %w", err)
+	}
 	return nil
 }

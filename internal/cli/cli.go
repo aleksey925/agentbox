@@ -31,6 +31,8 @@ func Run(args []string, version string) int {
 		return app.cmdPs(cmdArgs)
 	case "agent":
 		return app.cmdAgent(cmdArgs)
+	case "self":
+		return app.cmdSelf(cmdArgs)
 	case "clean":
 		return app.cmdClean(cmdArgs)
 	case "completion":
@@ -60,6 +62,7 @@ Commands:
   attach                            Attach to running container
   ps                                List running agentbox containers
   agent                             Manage AI agents
+  self                              Update or uninstall agentbox
   clean                             Remove sandbox files from project
   completion                        Generate shell completion script
 

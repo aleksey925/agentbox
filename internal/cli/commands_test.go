@@ -116,6 +116,60 @@ func TestAgentSubcommandHelp(t *testing.T) {
 	}
 }
 
+// Test that self subcommand --help shows subcommand help, not parent help.
+func TestSelfSubcommandHelp(t *testing.T) {
+	app := &App{Version: "test"}
+
+	tests := []struct {
+		name             string
+		args             []string
+		shouldContain    string
+		shouldNotContain string
+	}{
+		{
+			name:             "self --help shows self help",
+			args:             []string{"--help"},
+			shouldContain:    "agentbox self <command>",
+			shouldNotContain: "",
+		},
+		{
+			name:             "self update --help shows update help",
+			args:             []string{"update", "--help"},
+			shouldContain:    "agentbox self update",
+			shouldNotContain: "agentbox self <command>",
+		},
+		{
+			name:             "self uninstall --help shows uninstall help",
+			args:             []string{"uninstall", "--help"},
+			shouldContain:    "agentbox self uninstall",
+			shouldNotContain: "agentbox self <command>",
+		},
+		{
+			name:             "self versions --help shows versions help",
+			args:             []string{"versions", "--help"},
+			shouldContain:    "agentbox self versions",
+			shouldNotContain: "agentbox self <command>",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// act
+			output := captureOutput(func() {
+				app.cmdSelf(tt.args)
+			})
+
+			// assert
+			if !strings.Contains(output, tt.shouldContain) {
+				t.Errorf("output should contain %q, got:\n%s", tt.shouldContain, output)
+			}
+			if tt.shouldNotContain != "" && strings.Contains(output, tt.shouldNotContain) {
+				t.Errorf("output should NOT contain %q, got:\n%s", tt.shouldNotContain, output)
+			}
+		})
+	}
+}
+
 // Test that unknown flags are rejected with proper error messages.
 // This prevents regression where unknown flags were silently ignored.
 func TestUnknownFlagRejection(t *testing.T) {
@@ -188,6 +242,10 @@ func TestHelpExitCode(t *testing.T) {
 		{"agent update --help", app.cmdAgent, []string{"update", "--help"}},
 		{"agent use --help", app.cmdAgent, []string{"use", "--help"}},
 		{"clean --help", app.cmdClean, []string{"--help"}},
+		{"self --help", app.cmdSelf, []string{"--help"}},
+		{"self update --help", app.cmdSelf, []string{"update", "--help"}},
+		{"self uninstall --help", app.cmdSelf, []string{"uninstall", "--help"}},
+		{"self versions --help", app.cmdSelf, []string{"versions", "--help"}},
 	}
 
 	for _, tt := range tests {
@@ -250,6 +308,34 @@ func TestBashCompletionContainsAllAgentSubcommands(t *testing.T) {
 	for _, sub := range AgentSubcommands() {
 		if !strings.Contains(completion, sub) {
 			t.Errorf("bash completion missing agent subcommand: %s", sub)
+		}
+	}
+}
+
+// TestBashCompletionContainsAllSelfSubcommands verifies that bash completion
+// includes all self subcommands.
+func TestBashCompletionContainsAllSelfSubcommands(t *testing.T) {
+	// act
+	completion := generateBashCompletion("agentbox")
+
+	// assert
+	for _, sub := range SelfSubcommands() {
+		if !strings.Contains(completion, sub) {
+			t.Errorf("bash completion missing self subcommand: %s", sub)
+		}
+	}
+}
+
+// TestBashCompletionContainsAllSelfUninstallFlags verifies that bash completion
+// includes all self uninstall flags.
+func TestBashCompletionContainsAllSelfUninstallFlags(t *testing.T) {
+	// act
+	completion := generateBashCompletion("agentbox")
+
+	// assert
+	for _, flag := range SelfUninstallFlags() {
+		if !strings.Contains(completion, flag) {
+			t.Errorf("bash completion missing self uninstall flag: %s", flag)
 		}
 	}
 }
@@ -340,6 +426,34 @@ func TestZshCompletionContainsAllAgentSubcommands(t *testing.T) {
 	}
 }
 
+// TestZshCompletionContainsAllSelfSubcommands verifies that zsh completion
+// includes all self subcommands.
+func TestZshCompletionContainsAllSelfSubcommands(t *testing.T) {
+	// act
+	completion := generateZshCompletion("agentbox")
+
+	// assert
+	for _, sub := range SelfSubcommands() {
+		if !strings.Contains(completion, "'"+sub+":") {
+			t.Errorf("zsh completion missing self subcommand: %s", sub)
+		}
+	}
+}
+
+// TestZshCompletionContainsAllSelfUninstallFlags verifies that zsh completion
+// includes all self uninstall flags.
+func TestZshCompletionContainsAllSelfUninstallFlags(t *testing.T) {
+	// act
+	completion := generateZshCompletion("agentbox")
+
+	// assert
+	for _, flag := range SelfUninstallFlags() {
+		if !strings.Contains(completion, "'"+flag+":") {
+			t.Errorf("zsh completion missing self uninstall flag: %s", flag)
+		}
+	}
+}
+
 // TestZshCompletionContainsAllShells verifies that zsh completion
 // includes all shells defined in CompletionShells().
 func TestZshCompletionContainsAllShells(t *testing.T) {
@@ -380,6 +494,7 @@ func TestAllCommandsRejectUnknownFlags(t *testing.T) {
 		"ps":         app.cmdPs,
 		"clean":      app.cmdClean,
 		"agent":      app.cmdAgent,
+		"self":       app.cmdSelf,
 		"completion": app.cmdCompletion,
 	}
 
