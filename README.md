@@ -15,7 +15,17 @@ CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI
 
 ## Installation
 
-Download the latest release from [Releases](https://github.com/aleksey925/agentbox/releases) or build from source:
+Download the latest release from [releases](https://github.com/aleksey925/agentbox/releases) and install it manually 
+or you can run the following commands to install the latest version to `~/.local/bin`:
+
+```bash
+VERSION=$(curl -sL -o /dev/null -w '%{url_effective}' https://github.com/aleksey925/agentbox/releases/latest | sed 's/.*\/v//')
+OS=$(uname -s | tr '[:upper:]' '[:lower:]')
+ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+curl -#L "https://github.com/aleksey925/agentbox/releases/download/v${VERSION}/agentbox_${VERSION}_${OS}_${ARCH}.tar.gz" | tar xz -C ~/.local/bin
+```
+
+Also, you can build it from source:
 
 ```bash
 git clone https://github.com/aleksey925/agentbox.git

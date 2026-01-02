@@ -70,18 +70,23 @@ func generateBashCompletion(cmdName string) string {
 	runFlags := strings.Join(CommandFlags()["run"], " ")
 	psFlags := strings.Join(CommandFlags()["ps"], " ")
 	agentSub := strings.Join(AgentSubcommands(), " ")
+	selfSub := strings.Join(SelfSubcommands(), " ")
+	selfUninstallFlags := strings.Join(SelfUninstallFlags(), " ")
 	shells := strings.Join(CompletionShells(), " ")
 
 	tmpl := `_{{.FuncName}}() {
-    local cur prev commands agent_sub agent_names run_flags ps_flags
+    local cur prev pprev="" commands agent_sub self_sub agent_names run_flags ps_flags self_uninstall_flags
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
+    [[ $COMP_CWORD -ge 2 ]] && pprev="${COMP_WORDS[COMP_CWORD-2]}"
 
     commands="{{.Commands}}"
     agent_sub="{{.AgentSub}}"
+    self_sub="{{.SelfSub}}"
     agent_names="{{.AgentNames}}"
     run_flags="{{.RunFlags}}"
     ps_flags="{{.PsFlags}}"
+    self_uninstall_flags="{{.SelfUninstallFlags}}"
 
     case "$prev" in
         {{.CmdName}})
@@ -100,14 +105,27 @@ func generateBashCompletion(cmdName string) string {
         agent)
             COMPREPLY=($(compgen -W "$agent_sub" -- "$cur"))
             ;;
+        self)
+            COMPREPLY=($(compgen -W "$self_sub" -- "$cur"))
+            ;;
         update)
-            COMPREPLY=($(compgen -W "$agent_names" -- "$cur"))
+            if [[ "$pprev" == "agent" ]]; then
+                COMPREPLY=($(compgen -W "$agent_names" -- "$cur"))
+            elif [[ "$pprev" == "self" ]]; then
+                local versions=$(command agentbox self versions 2>/dev/null)
+                COMPREPLY=($(compgen -W "$versions" -- "$cur"))
+            fi
+            ;;
+        uninstall)
+            if [[ "$pprev" == "self" ]]; then
+                COMPREPLY=($(compgen -W "$self_uninstall_flags" -- "$cur"))
+            fi
             ;;
         use)
             COMPREPLY=($(compgen -W "$agent_names" -- "$cur"))
             ;;
         {{.AgentNamesPattern}})
-            if [[ "${COMP_WORDS[COMP_CWORD-2]}" == "use" ]]; then
+            if [[ "$pprev" == "use" ]]; then
                 local versions=$(ls ~/.agentbox/bin/"$prev"/ 2>/dev/null | grep -v current)
                 COMPREPLY=($(compgen -W "$versions" -- "$cur"))
             fi
@@ -124,10 +142,12 @@ complete -F _{{.FuncName}} {{.CmdName}}
 	result = strings.ReplaceAll(result, "{{.CmdName}}", cmdName)
 	result = strings.ReplaceAll(result, "{{.Commands}}", commands)
 	result = strings.ReplaceAll(result, "{{.AgentSub}}", agentSub)
+	result = strings.ReplaceAll(result, "{{.SelfSub}}", selfSub)
 	result = strings.ReplaceAll(result, "{{.AgentNames}}", agentNamesStr)
 	result = strings.ReplaceAll(result, "{{.AgentNamesPattern}}", agentNamesPattern)
 	result = strings.ReplaceAll(result, "{{.RunFlags}}", runFlags)
 	result = strings.ReplaceAll(result, "{{.PsFlags}}", psFlags)
+	result = strings.ReplaceAll(result, "{{.SelfUninstallFlags}}", selfUninstallFlags)
 	result = strings.ReplaceAll(result, "{{.Shells}}", shells)
 	return result
 }
@@ -143,7 +163,7 @@ func generateZshCompletion(cmdName string) string {
 	agentNamesZsh := strings.Join(agentEntries, "\n        ")
 
 	base := `_agentbox() {
-    local -a commands agent_cmds agent_names shells run_flags ps_flags
+    local -a commands agent_cmds self_cmds agent_names shells run_flags ps_flags self_uninstall_flags
 
     commands=(
         'init:Initialize sandbox in current directory'
@@ -151,6 +171,7 @@ func generateZshCompletion(cmdName string) string {
         'attach:Attach to running container'
         'ps:List running agentbox containers'
         'agent:Manage AI agents'
+        'self:Update or uninstall agentbox'
         'clean:Remove sandbox files from project'
         'completion:Generate shell completion script'
         'help:Show help'
@@ -170,6 +191,16 @@ func generateZshCompletion(cmdName string) string {
     agent_cmds=(
         'update:Update agents to latest version'
         'use:Switch agent to specific version'
+    )
+
+    self_cmds=(
+        'update:Update to latest or specified version'
+        'uninstall:Remove agentbox from system'
+        'versions:List available versions'
+    )
+
+    self_uninstall_flags=(
+        '--purge:Also remove ~/.agentbox directory'
     )
 
     agent_names=(
@@ -204,6 +235,9 @@ func generateZshCompletion(cmdName string) string {
                 agent)
                     _describe -t commands 'agent command' agent_cmds
                     ;;
+                self)
+                    _describe -t commands 'self command' self_cmds
+                    ;;
                 completion)
                     _describe -t shells 'shell' shells
                     ;;
@@ -221,6 +255,18 @@ func generateZshCompletion(cmdName string) string {
                             ;;
                     esac
                     ;;
+                self)
+                    case $subcmd in
+                        update)
+                            local -a versions
+                            versions=(${(f)"$(command agentbox self versions 2>/dev/null)"})
+                            (( ${#versions} )) && compadd -a versions
+                            ;;
+                        uninstall)
+                            _describe -t flags 'flag' self_uninstall_flags
+                            ;;
+                    esac
+                    ;;
             esac
             ;;
         5)
@@ -235,7 +281,7 @@ func generateZshCompletion(cmdName string) string {
                             local -a versions
                             if [[ -d ~/.agentbox/bin/$agent ]]; then
                                 versions=(${(f)"$(command ls ~/.agentbox/bin/$agent 2>/dev/null | grep -v current)"})
-                                (( ${#versions} )) && _describe -t versions 'version' versions
+                                (( ${#versions} )) && compadd -a versions
                             fi
                             ;;
                     esac
@@ -247,6 +293,7 @@ func generateZshCompletion(cmdName string) string {
 compdef _agentbox agentbox
 `
 	base = strings.ReplaceAll(base, "{{.AgentNamesZsh}}", agentNamesZsh)
+	base = strings.ReplaceAll(base, "{{.CmdName}}", cmdName)
 	if cmdName != "agentbox" {
 		base += fmt.Sprintf("compdef _agentbox %s\n", cmdName)
 	}

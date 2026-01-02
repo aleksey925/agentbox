@@ -18,6 +18,7 @@ func AllCommands() []string {
 		"attach",
 		"ps",
 		"agent",
+		"self",
 		"clean",
 		"completion",
 		"help",
@@ -34,6 +35,7 @@ func CommandFlags() map[string][]string {
 		"attach":     {}, // no flags, only positional args
 		"ps":         {"-a", "--all"},
 		"agent":      {}, // has subcommands, not flags
+		"self":       {}, // has subcommands, not flags
 		"clean":      {}, // no flags
 		"completion": {}, // no flags, only positional args
 	}
@@ -42,6 +44,16 @@ func CommandFlags() map[string][]string {
 // AgentSubcommands returns valid agent subcommands.
 func AgentSubcommands() []string {
 	return []string{"update", "use"}
+}
+
+// SelfSubcommands returns valid self subcommands.
+func SelfSubcommands() []string {
+	return []string{"update", "uninstall", "versions"}
+}
+
+// SelfUninstallFlags returns valid flags for self uninstall subcommand.
+func SelfUninstallFlags() []string {
+	return []string{"--purge"}
 }
 
 // CompletionShells returns valid shells for completion command.
@@ -56,6 +68,9 @@ func AllSubcommandPaths() [][]string {
 	return [][]string{
 		{"agent", "update"},
 		{"agent", "use", "dummy-agent", "1.0.0"}, // need args to pass validation
+		{"self", "update"},
+		{"self", "uninstall"},
+		{"self", "versions"},
 	}
 }
 

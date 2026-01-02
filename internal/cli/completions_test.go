@@ -38,7 +38,7 @@ func TestGenerateBashCompletion(t *testing.T) {
 	expectedSubstrings := []string{
 		"__agentbox()",
 		"complete -F __agentbox agentbox",
-		"commands=\"init run attach ps agent clean completion help version\"",
+		"commands=\"init run attach ps agent self clean completion help version\"",
 	}
 
 	for _, expected := range expectedSubstrings {
