@@ -408,8 +408,7 @@ func (a *App) showAgentStatus(manager *agents.Manager) int {
 	fmt.Println("\nFetching agent versions...")
 	statuses := manager.GetStatus()
 
-	fmt.Printf("\n%-12s %-12s %-12s %s\n", "Agent", "Installed", "Latest", "Status")
-	fmt.Println(strings.Repeat("-", 50))
+	table := NewTable("Agent", "Installed", "Latest", "Status")
 
 	for _, status := range statuses {
 		installed := status.Installed
@@ -434,9 +433,11 @@ func (a *App) showAgentStatus(manager *agents.Manager) int {
 			statusStr = "update available"
 		}
 
-		fmt.Printf("%-12s %-12s %-12s %s\n", status.Name, installed, latest, statusStr)
+		table.AddRow(status.Name, installed, latest, statusStr)
 	}
 
+	fmt.Println()
+	table.Render()
 	fmt.Println()
 	return 0
 }
@@ -599,10 +600,11 @@ By default, only containers from the current project directory are shown.
 		return 0
 	}
 
-	fmt.Printf("%-14s %-40s %s\n", "CONTAINER ID", "NAME", "STARTED")
+	table := NewTable("CONTAINER ID", "NAME", "STARTED")
 	for _, c := range containers {
-		fmt.Printf("%-14s %-40s %s\n", c.ID, c.Name, c.Started)
+		table.AddRow(c.ID, c.Name, c.Started)
 	}
+	table.Render()
 
 	return 0
 }
