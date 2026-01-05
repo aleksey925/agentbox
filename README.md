@@ -6,6 +6,7 @@ CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI
 - [Why use Agentbox?](#why-use-agentbox)
 - [Installation](#installation)
   - [Shell Completions](#shell-completions)
+- [Updating](#updating)
 - [How to Use](#how-to-use)
 
 ## Why use Agentbox?
@@ -59,6 +60,11 @@ If you use an alias for agentbox, pass the alias name as the second argument:
 alias abox="agentbox"
 eval "$(agentbox completion bash abox)"
 ```
+
+## Updating
+
+Agentbox can update itself. Run `agentbox self update <version>` to update to a specific version,
+or use `agentbox self update <tab>` to choose a version and install it.
 
 ## How to Use
 
