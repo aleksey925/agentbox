@@ -10,19 +10,70 @@ import (
 // Command metadata for consistency between help, completions, and validation.
 // This is the single source of truth for CLI structure.
 
-// AllCommands returns all available top-level commands.
+// =============================================================================
+// Core types and helpers
+// =============================================================================
+
+// Subcommand represents a subcommand with its description for completions.
+type Subcommand struct {
+	Name        string
+	Description string
+}
+
+// extractNames extracts just the names from a slice of Subcommands.
+func extractNames(subs []Subcommand) []string {
+	names := make([]string, len(subs))
+	for i, s := range subs {
+		names[i] = s.Name
+	}
+	return names
+}
+
+// =============================================================================
+// Top-level commands
+// =============================================================================
+
+// AllCommandsWithDesc returns all available top-level commands with descriptions.
+// This is the single source of truth for top-level commands.
+func AllCommandsWithDesc() []Subcommand {
+	return []Subcommand{
+		{"init", "Initialize sandbox in current directory"},
+		{"run", "Start a new container"},
+		{"attach", "Attach to running container"},
+		{"ps", "List running agentbox containers"},
+		{"agent", "Manage AI agents"},
+		{"self", "Update or uninstall agentbox"},
+		{"clean", "Remove sandbox files from project"},
+		{"completion", "Generate shell completion script"},
+		{"help", "Show help"},
+		{"version", "Show version"},
+	}
+}
+
+// AllCommands returns all available top-level command names.
 func AllCommands() []string {
-	return []string{
-		"init",
-		"run",
-		"attach",
-		"ps",
-		"agent",
-		"self",
-		"clean",
-		"completion",
-		"help",
-		"version",
+	return extractNames(AllCommandsWithDesc())
+}
+
+// =============================================================================
+// Command flags
+// =============================================================================
+
+// RunFlagsWithDesc returns run command flags with descriptions.
+// This is the single source of truth for run flags.
+func RunFlagsWithDesc() []Subcommand {
+	return []Subcommand{
+		{"--build", "Rebuild image before running"},
+		{"--build-no-cache", "Rebuild image without Docker cache"},
+	}
+}
+
+// PsFlagsWithDesc returns ps command flags with descriptions.
+// This is the single source of truth for ps flags.
+func PsFlagsWithDesc() []Subcommand {
+	return []Subcommand{
+		{"-a", "Show containers from all projects"},
+		{"--all", "Show containers from all projects"},
 	}
 }
 
@@ -31,9 +82,9 @@ func AllCommands() []string {
 func CommandFlags() map[string][]string {
 	return map[string][]string{
 		"init":       {}, // no flags
-		"run":        {"--build", "--build-no-cache"},
+		"run":        extractNames(RunFlagsWithDesc()),
 		"attach":     {}, // no flags, only positional args
-		"ps":         {"-a", "--all"},
+		"ps":         extractNames(PsFlagsWithDesc()),
 		"agent":      {}, // has subcommands, not flags
 		"self":       {}, // has subcommands, not flags
 		"clean":      {}, // no flags
@@ -41,29 +92,77 @@ func CommandFlags() map[string][]string {
 	}
 }
 
-// AgentSubcommands returns valid agent subcommands.
-func AgentSubcommands() []string {
-	return []string{"update", "use"}
+// =============================================================================
+// Subcommands
+// =============================================================================
+
+// InitSubcommandsWithDesc returns init subcommands with descriptions.
+// This is the single source of truth for init subcommands.
+func InitSubcommandsWithDesc() []Subcommand {
+	return []Subcommand{
+		{"skeleton", "Regenerate language skeleton"},
+	}
 }
 
-// InitSubcommands returns valid init subcommands.
+// InitSubcommands returns valid init subcommand names.
 func InitSubcommands() []string {
-	return []string{"skeleton"}
+	return extractNames(InitSubcommandsWithDesc())
 }
 
-// SelfSubcommands returns valid self subcommands.
+// AgentSubcommandsWithDesc returns agent subcommands with descriptions.
+// This is the single source of truth for agent subcommands.
+func AgentSubcommandsWithDesc() []Subcommand {
+	return []Subcommand{
+		{"update", "Update agents to latest version"},
+		{"use", "Switch agent to specific version"},
+	}
+}
+
+// AgentSubcommands returns valid agent subcommand names.
+func AgentSubcommands() []string {
+	return extractNames(AgentSubcommandsWithDesc())
+}
+
+// SelfSubcommandsWithDesc returns self subcommands with descriptions.
+// This is the single source of truth for self subcommands.
+func SelfSubcommandsWithDesc() []Subcommand {
+	return []Subcommand{
+		{"update", "Update to latest or specified version"},
+		{"uninstall", "Remove agentbox from system"},
+		{"versions", "List available versions"},
+	}
+}
+
+// SelfSubcommands returns valid self subcommand names.
 func SelfSubcommands() []string {
-	return []string{"update", "uninstall", "versions"}
+	return extractNames(SelfSubcommandsWithDesc())
+}
+
+// SelfUninstallFlagsWithDesc returns self uninstall flags with descriptions.
+// This is the single source of truth for self uninstall flags.
+func SelfUninstallFlagsWithDesc() []Subcommand {
+	return []Subcommand{
+		{"--purge", "Also remove ~/.agentbox directory"},
+	}
 }
 
 // SelfUninstallFlags returns valid flags for self uninstall subcommand.
 func SelfUninstallFlags() []string {
-	return []string{"--purge"}
+	return extractNames(SelfUninstallFlagsWithDesc())
+}
+
+// CompletionShellsWithDesc returns valid shells with descriptions.
+// This is the single source of truth for completion shells.
+func CompletionShellsWithDesc() []Subcommand {
+	return []Subcommand{
+		{"bash", "Bash shell"},
+		{"zsh", "Zsh shell"},
+	}
 }
 
 // CompletionShells returns valid shells for completion command.
 func CompletionShells() []string {
-	return []string{"bash", "zsh"}
+	return extractNames(CompletionShellsWithDesc())
 }
 
 // AllSubcommandPaths returns all subcommand paths for testing.
@@ -81,7 +180,7 @@ func AllSubcommandPaths() [][]string {
 }
 
 // =============================================================================
-// Flag validation - single source of truth for all commands
+// Flag validation
 // =============================================================================
 
 // UnknownFlagError is returned when an unknown flag is encountered.

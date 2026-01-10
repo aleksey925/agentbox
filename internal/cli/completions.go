@@ -158,6 +158,15 @@ complete -F _{{.FuncName}} {{.CmdName}}
 	return result
 }
 
+// formatSubcommandsZsh formats subcommands for zsh completion array.
+func formatSubcommandsZsh(subs []Subcommand) string {
+	entries := make([]string, 0, len(subs))
+	for _, s := range subs {
+		entries = append(entries, fmt.Sprintf("'%s:%s'", s.Name, s.Description))
+	}
+	return strings.Join(entries, "\n        ")
+}
+
 func generateZshCompletion(cmdName string) string {
 	// build agent_names array for zsh
 	agentNames := agents.AllAgentNames()
@@ -168,49 +177,45 @@ func generateZshCompletion(cmdName string) string {
 	}
 	agentNamesZsh := strings.Join(agentEntries, "\n        ")
 
+	// generate all arrays from metadata (single source of truth)
+	commandsZsh := formatSubcommandsZsh(AllCommandsWithDesc())
+	runFlagsZsh := formatSubcommandsZsh(RunFlagsWithDesc())
+	psFlagsZsh := formatSubcommandsZsh(PsFlagsWithDesc())
+	initCmdsZsh := formatSubcommandsZsh(InitSubcommandsWithDesc())
+	agentCmdsZsh := formatSubcommandsZsh(AgentSubcommandsWithDesc())
+	selfCmdsZsh := formatSubcommandsZsh(SelfSubcommandsWithDesc())
+	selfUninstallFlagsZsh := formatSubcommandsZsh(SelfUninstallFlagsWithDesc())
+	shellsZsh := formatSubcommandsZsh(CompletionShellsWithDesc())
+
 	base := `_agentbox() {
     local -a commands init_cmds agent_cmds self_cmds agent_names shells run_flags ps_flags self_uninstall_flags
 
     commands=(
-        'init:Initialize sandbox in current directory'
-        'run:Start a new container'
-        'attach:Attach to running container'
-        'ps:List running agentbox containers'
-        'agent:Manage AI agents'
-        'self:Update or uninstall agentbox'
-        'clean:Remove sandbox files from project'
-        'completion:Generate shell completion script'
-        'help:Show help'
-        'version:Show version'
+        {{.CommandsZsh}}
     )
 
     run_flags=(
-        '--build:Rebuild image before running'
-        '--build-no-cache:Rebuild image without Docker cache'
+        {{.RunFlagsZsh}}
     )
 
     ps_flags=(
-        '--all:Show containers from all projects'
-        '-a:Show containers from all projects'
+        {{.PsFlagsZsh}}
     )
 
     init_cmds=(
-        'skeleton:Regenerate language skeleton'
+        {{.InitCmdsZsh}}
     )
 
     agent_cmds=(
-        'update:Update agents to latest version'
-        'use:Switch agent to specific version'
+        {{.AgentCmdsZsh}}
     )
 
     self_cmds=(
-        'update:Update to latest or specified version'
-        'uninstall:Remove agentbox from system'
-        'versions:List available versions'
+        {{.SelfCmdsZsh}}
     )
 
     self_uninstall_flags=(
-        '--purge:Also remove ~/.agentbox directory'
+        {{.SelfUninstallFlagsZsh}}
     )
 
     agent_names=(
@@ -218,8 +223,7 @@ func generateZshCompletion(cmdName string) string {
     )
 
     shells=(
-        'bash:Bash shell'
-        'zsh:Zsh shell'
+        {{.ShellsZsh}}
     )
 
     local cmd=${words[2]}
@@ -305,7 +309,15 @@ func generateZshCompletion(cmdName string) string {
 }
 compdef _agentbox agentbox
 `
+	base = strings.ReplaceAll(base, "{{.CommandsZsh}}", commandsZsh)
+	base = strings.ReplaceAll(base, "{{.RunFlagsZsh}}", runFlagsZsh)
+	base = strings.ReplaceAll(base, "{{.PsFlagsZsh}}", psFlagsZsh)
+	base = strings.ReplaceAll(base, "{{.InitCmdsZsh}}", initCmdsZsh)
+	base = strings.ReplaceAll(base, "{{.AgentCmdsZsh}}", agentCmdsZsh)
+	base = strings.ReplaceAll(base, "{{.SelfCmdsZsh}}", selfCmdsZsh)
+	base = strings.ReplaceAll(base, "{{.SelfUninstallFlagsZsh}}", selfUninstallFlagsZsh)
 	base = strings.ReplaceAll(base, "{{.AgentNamesZsh}}", agentNamesZsh)
+	base = strings.ReplaceAll(base, "{{.ShellsZsh}}", shellsZsh)
 	base = strings.ReplaceAll(base, "{{.CmdName}}", cmdName)
 	if cmdName != "agentbox" {
 		base += fmt.Sprintf("compdef _agentbox %s\n", cmdName)
