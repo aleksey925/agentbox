@@ -246,6 +246,7 @@ Tests in `commands_test.go` automatically verify:
 - `TestBashCompletionContainsAllCommands` — has all commands from `AllCommands()`
 - `TestBashCompletionContainsAllFlags` — has all flags from `CommandFlags()`
 - `TestBashCompletionContainsAllAgentSubcommands` — has all subcommands from `AgentSubcommands()`
+- `TestBashCompletionContainsAllInitSubcommands` — has all subcommands from `InitSubcommands()`
 - `TestBashCompletionContainsAllAgentNames` — has all agents from `agents.AllAgentNames()`
 - `TestBashCompletionContainsAllShells` — has all shells from `CompletionShells()`
 
@@ -253,6 +254,7 @@ Tests in `commands_test.go` automatically verify:
 - `TestZshCompletionContainsAllCommands` — has all commands from `AllCommands()`
 - `TestZshCompletionContainsAllFlags` — has all flags from `CommandFlags()`
 - `TestZshCompletionContainsAllAgentSubcommands` — has all subcommands from `AgentSubcommands()`
+- `TestZshCompletionContainsAllInitSubcommands` — has all subcommands from `InitSubcommands()`
 - `TestZshCompletionContainsAllAgentNames` — has all agents from `agents.AllAgentNames()`
 - `TestZshCompletionContainsAllShells` — has all shells from `CompletionShells()`
 

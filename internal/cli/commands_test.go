@@ -312,6 +312,20 @@ func TestBashCompletionContainsAllAgentSubcommands(t *testing.T) {
 	}
 }
 
+// TestBashCompletionContainsAllInitSubcommands verifies that bash completion
+// includes all init subcommands.
+func TestBashCompletionContainsAllInitSubcommands(t *testing.T) {
+	// act
+	completion := generateBashCompletion("agentbox")
+
+	// assert
+	for _, sub := range InitSubcommands() {
+		if !strings.Contains(completion, sub) {
+			t.Errorf("bash completion missing init subcommand: %s", sub)
+		}
+	}
+}
+
 // TestBashCompletionContainsAllSelfSubcommands verifies that bash completion
 // includes all self subcommands.
 func TestBashCompletionContainsAllSelfSubcommands(t *testing.T) {
@@ -422,6 +436,20 @@ func TestZshCompletionContainsAllAgentSubcommands(t *testing.T) {
 	for _, sub := range AgentSubcommands() {
 		if !strings.Contains(completion, "'"+sub+":") {
 			t.Errorf("zsh completion missing agent subcommand: %s", sub)
+		}
+	}
+}
+
+// TestZshCompletionContainsAllInitSubcommands verifies that zsh completion
+// includes all init subcommands.
+func TestZshCompletionContainsAllInitSubcommands(t *testing.T) {
+	// act
+	completion := generateZshCompletion("agentbox")
+
+	// assert
+	for _, sub := range InitSubcommands() {
+		if !strings.Contains(completion, "'"+sub+":") {
+			t.Errorf("zsh completion missing init subcommand: %s", sub)
 		}
 	}
 }

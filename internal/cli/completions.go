@@ -69,18 +69,20 @@ func generateBashCompletion(cmdName string) string {
 	commands := strings.Join(AllCommands(), " ")
 	runFlags := strings.Join(CommandFlags()["run"], " ")
 	psFlags := strings.Join(CommandFlags()["ps"], " ")
+	initSub := strings.Join(InitSubcommands(), " ")
 	agentSub := strings.Join(AgentSubcommands(), " ")
 	selfSub := strings.Join(SelfSubcommands(), " ")
 	selfUninstallFlags := strings.Join(SelfUninstallFlags(), " ")
 	shells := strings.Join(CompletionShells(), " ")
 
 	tmpl := `_{{.FuncName}}() {
-    local cur prev pprev="" commands agent_sub self_sub agent_names run_flags ps_flags self_uninstall_flags
+    local cur prev pprev="" commands init_sub agent_sub self_sub agent_names run_flags ps_flags self_uninstall_flags
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     [[ $COMP_CWORD -ge 2 ]] && pprev="${COMP_WORDS[COMP_CWORD-2]}"
 
     commands="{{.Commands}}"
+    init_sub="{{.InitSub}}"
     agent_sub="{{.AgentSub}}"
     self_sub="{{.SelfSub}}"
     agent_names="{{.AgentNames}}"
@@ -91,6 +93,9 @@ func generateBashCompletion(cmdName string) string {
     case "$prev" in
         {{.CmdName}})
             COMPREPLY=($(compgen -W "$commands" -- "$cur"))
+            ;;
+        init)
+            COMPREPLY=($(compgen -W "$init_sub" -- "$cur"))
             ;;
         run)
             COMPREPLY=($(compgen -W "$run_flags" -- "$cur"))
@@ -141,6 +146,7 @@ complete -F _{{.FuncName}} {{.CmdName}}
 	result := strings.ReplaceAll(tmpl, "{{.FuncName}}", funcName)
 	result = strings.ReplaceAll(result, "{{.CmdName}}", cmdName)
 	result = strings.ReplaceAll(result, "{{.Commands}}", commands)
+	result = strings.ReplaceAll(result, "{{.InitSub}}", initSub)
 	result = strings.ReplaceAll(result, "{{.AgentSub}}", agentSub)
 	result = strings.ReplaceAll(result, "{{.SelfSub}}", selfSub)
 	result = strings.ReplaceAll(result, "{{.AgentNames}}", agentNamesStr)
@@ -163,7 +169,7 @@ func generateZshCompletion(cmdName string) string {
 	agentNamesZsh := strings.Join(agentEntries, "\n        ")
 
 	base := `_agentbox() {
-    local -a commands agent_cmds self_cmds agent_names shells run_flags ps_flags self_uninstall_flags
+    local -a commands init_cmds agent_cmds self_cmds agent_names shells run_flags ps_flags self_uninstall_flags
 
     commands=(
         'init:Initialize sandbox in current directory'
@@ -186,6 +192,10 @@ func generateZshCompletion(cmdName string) string {
     ps_flags=(
         '--all:Show containers from all projects'
         '-a:Show containers from all projects'
+    )
+
+    init_cmds=(
+        'skeleton:Regenerate language skeleton'
     )
 
     agent_cmds=(
@@ -221,6 +231,9 @@ func generateZshCompletion(cmdName string) string {
             ;;
         3)
             case $cmd in
+                init)
+                    _describe -t commands 'init command' init_cmds
+                    ;;
                 run)
                     _describe -t flags 'flag' run_flags
                     ;;
