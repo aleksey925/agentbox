@@ -1,0 +1,7 @@
+# Go language support
+services:
+  agentbox:
+    environment:
+      - GOPATH=/home/box/go
+    volumes:
+      - ${GOPATH:-~/.go}:/home/box/go

@@ -8,6 +8,8 @@ CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI
   - [Shell Completions](#shell-completions)
 - [Updating](#updating)
 - [How to Use](#how-to-use)
+  - [Language Support](#language-support)
+  - [Customization](#customization)
 
 ## Why use Agentbox?
 
@@ -16,7 +18,7 @@ CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI
 
 ## Installation
 
-Download the latest release from [releases](https://github.com/aleksey925/agentbox/releases) and install it manually 
+Download the latest release from [releases](https://github.com/aleksey925/agentbox/releases) and install it manually
 or you can run the following commands to install the latest version to `~/.local/bin`:
 
 ```bash
@@ -68,19 +70,34 @@ or use `agentbox self update <tab>` to choose a version and install it.
 
 ## How to Use
 
-Navigate to your project directory and run `agentbox init`. This command creates several files in your 
-project and downloads AI agent binaries to `~/.agentbox/bin/`.
+Navigate to your project directory and run `agentbox init`. On first run, you'll be prompted to
+select which programming languages to enable:
 
-The following files will be added to your project:
+```
+$ agentbox init
 
-- `Dockerfile.agentbox` — defines the container image. This file is overwritten on every `agentbox init`, so do not modify it manually.
-- `docker-compose.agentbox.yml` — main compose configuration with volume mounts and environment variables. This file is also overwritten on every `agentbox init`.
-- `docker-compose.agentbox.local.yml` — your personal overrides. This file is created only once and never overwritten. Use it to add custom volumes, environment variables, or any other Docker Compose settings you need.
-- `mise.toml` — configuration for [mise](https://mise.jdx.dev) tool manager. Created only if it doesn't exist. Use it to specify which tools (Python, Node.js, Go, etc.) should be available inside the container.
+No skeleton found. Let's set it up...
 
-All these files are automatically added to `.git/info/exclude` to keep them out of version control.
+Detecting environment...
 
-After initialization, run `agentbox run` to start the container. Your project is mounted at `/home/box/app` inside 
+Enable languages:
+[x] Go      (detected: $GOPATH is set)
+[x] Python  (detected: ~/.cache/uv exists)
+
+Enter numbers to toggle (e.g., 1,3 or 1-3), or press Enter to accept:
+```
+
+The following files will be created in your project's `.agentbox/` directory:
+
+- `core.v*.yml` — main compose configuration
+- `<lang>.v*.yml` — language-specific configurations (e.g., `go.v1.yml`, `python.v1.yml`)
+- `Dockerfile.agentbox` — container image definition
+- `local.yml` — your personal overrides (never overwritten)
+- `mise.toml` — configuration for [mise](https://mise.jdx.dev) tool manager (in project root)
+
+The `.agentbox/` directory is automatically added to `.git/info/exclude` to keep it out of version control.
+
+After initialization, run `agentbox run` to start the container. Your project is mounted at `/home/box/app` inside
 the container. AI agents are available as commands with permissive flags enabled:
 
 ```bash
@@ -101,3 +118,39 @@ vs latest available. Use `agentbox agent update` to update all agents, or `agent
 to update specific ones. To switch to a specific version, use `agentbox agent use claude 2.0.67`.
 
 To remove all agentbox files from the project, run `agentbox clean`.
+
+### Language Support
+
+Agentbox uses modular templates for language support. Each language includes all common tool caches:
+
+| Language | Environment Variables                                                       | Volumes                            |
+|----------|-----------------------------------------------------------------------------|------------------------------------|
+| Go       | `GOPATH=/home/box/go`                                                       | `$GOPATH:/home/box/go`             |
+| Python   | `UV_PROJECT_ENVIRONMENT=/home/box/.venv`<br>`VENV_DIR_PATH=/home/box/.venv` | `~/.cache/uv`, `~/.cache/pypoetry` |
+
+To change language selection after initial setup, run `agentbox init skeleton`. This will backup
+your current skeleton to `~/.agentbox/skeleton.backup/` and let you re-select languages.
+
+### Customization
+
+There are two levels of customization:
+
+**Simple customization** — edit `.agentbox/local.yml` in your project:
+
+```yaml
+services:
+  agentbox:
+    volumes:
+      - ./data:/home/box/data          # mount additional directory
+      - ~/.ssh:/home/box/.ssh:ro       # mount SSH keys (read-only)
+    environment:
+      - MY_API_KEY=secret
+```
+
+The `local.yml` file is never overwritten by agentbox — your changes are safe.
+
+**Advanced customization** — edit files in `~/.agentbox/skeleton/`:
+
+The skeleton directory contains the templates used to generate project configurations.
+You can modify any file there, and changes will be applied when you run `agentbox init`
+in new projects. This is useful for organization-wide customizations.

@@ -46,6 +46,11 @@ func AgentSubcommands() []string {
 	return []string{"update", "use"}
 }
 
+// InitSubcommands returns valid init subcommands.
+func InitSubcommands() []string {
+	return []string{"skeleton"}
+}
+
 // SelfSubcommands returns valid self subcommands.
 func SelfSubcommands() []string {
 	return []string{"update", "uninstall", "versions"}
@@ -66,6 +71,7 @@ func CompletionShells() []string {
 // This ensures tests cover ALL entry points, not just top-level commands.
 func AllSubcommandPaths() [][]string {
 	return [][]string{
+		{"init", "skeleton"},
 		{"agent", "update"},
 		{"agent", "use", "dummy-agent", "1.0.0"}, // need args to pass validation
 		{"self", "update"},

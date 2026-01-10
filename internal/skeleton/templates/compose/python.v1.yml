@@ -1,0 +1,9 @@
+# Python language support
+services:
+  agentbox:
+    environment:
+      - UV_PROJECT_ENVIRONMENT=/home/box/.venv
+      - VENV_DIR_PATH=/home/box/.venv
+    volumes:
+      - ~/.cache/uv:/home/box/.cache/uv
+      - ~/.cache/pypoetry:/home/box/.cache/pypoetry

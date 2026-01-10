@@ -36,18 +36,34 @@ func availableAgentsStr() string {
 }
 
 func (a *App) cmdInit(args []string) int {
+	// check for subcommand first
+	if len(args) > 0 && args[0] == "skeleton" {
+		return a.initSkeleton(args[1:])
+	}
+
 	if hasHelpFlag(args) {
 		fmt.Print(`Initialize sandbox in current directory
 
 Usage:
-  agentbox init
+  agentbox init [command]
 
-This command creates Docker configuration files and downloads AI agent binaries.
+Commands:
+  skeleton                          Regenerate language skeleton
+
+This command creates Docker configuration files in .agentbox/ directory
+and downloads AI agent binaries.
+
 Files created:
-  - Dockerfile.agentbox
-  - docker-compose.agentbox.yml
-  - docker-compose.agentbox.local.yml
-  - mise.toml (if not exists)
+  - .agentbox/core.v*.yml           Core Docker Compose configuration
+  - .agentbox/<lang>.v*.yml         Language-specific configurations
+  - .agentbox/Dockerfile.agentbox   Dockerfile for the sandbox
+  - .agentbox/local.yml             Project-specific overrides (not overwritten)
+  - mise.toml (if not exists)       Tool versions configuration
+
+On first run, you'll be prompted to select which languages to enable.
+Run 'agentbox init skeleton' to change language selection.
+
+Use "agentbox init skeleton --help" for more information.
 `)
 		return 0
 	}
@@ -56,10 +72,74 @@ Files created:
 		return code
 	}
 
-	return a.doInit(true)
+	return a.doInit()
 }
 
-func (a *App) doInit(interactive bool) int {
+func (a *App) initSkeleton(args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Print(`Regenerate language skeleton
+
+Usage:
+  agentbox init skeleton
+
+This command regenerates the skeleton in ~/.agentbox/skeleton/ with new
+language selection. Use this to:
+  - Add or remove language support
+  - Update to latest template versions
+  - Reset skeleton to defaults
+
+The existing skeleton will be backed up to ~/.agentbox/skeleton.backup/
+(only one backup is kept).
+`)
+		return 0
+	}
+
+	if code := RejectUnknownFlags(args); code != 0 {
+		return code
+	}
+
+	paths, err := config.NewPaths()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+
+	manager := skeleton.NewManager(paths)
+
+	// get previously enabled languages BEFORE backup (skeleton will be moved)
+	previousLangs, _ := manager.GetEnabledLanguages()
+
+	// check if skeleton exists and confirm
+	if paths.SkeletonExists() {
+		fmt.Println("Existing skeleton will be backed up and regenerated.")
+		if !a.confirmAction("Continue?") {
+			return 0
+		}
+
+		if err := manager.BackupSkeleton(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error backing up skeleton: %v\n", err)
+			return 1
+		}
+		fmt.Println("Backed up existing skeleton to ~/.agentbox/skeleton.backup/")
+		fmt.Println()
+	}
+
+	// run language selection
+	selectedLangs := a.selectLanguages(paths.HomeDir, previousLangs)
+
+	// create new skeleton
+	if err := manager.CreateSkeleton(selectedLangs); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating skeleton: %v\n", err)
+		return 1
+	}
+
+	fmt.Println()
+	fmt.Println("Updated ~/.agentbox/skeleton/")
+
+	return 0
+}
+
+func (a *App) doInit() int {
 	paths, err := config.NewPaths()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -77,12 +157,59 @@ func (a *App) doInit(interactive bool) int {
 		return 1
 	}
 
-	if interactive && !a.confirmOverwrite(cwd) {
-		return 1
+	manager := skeleton.NewManager(paths)
+
+	// check if skeleton exists
+	if !paths.SkeletonExists() {
+		fmt.Println("No skeleton found. Let's set it up...")
+		fmt.Println()
+		fmt.Println("Detecting environment...")
+		fmt.Println()
+
+		// run language selection
+		selectedLangs := a.selectLanguages(paths.HomeDir, nil)
+
+		// create skeleton
+		if createErr := manager.CreateSkeleton(selectedLangs); createErr != nil {
+			fmt.Fprintf(os.Stderr, "Error creating skeleton: %v\n", createErr)
+			return 1
+		}
+
+		fmt.Println()
+		fmt.Println("Created ~/.agentbox/skeleton/")
+	} else {
+		// check for updates
+		updates, checkErr := manager.CheckUpdates()
+		if checkErr == nil && len(updates) > 0 {
+			fmt.Println("Updates available:")
+			for _, u := range updates {
+				fmt.Printf("  %s: v%d -> v%d\n", u.Name, u.CurrentVersion, u.LatestVersion)
+			}
+			fmt.Println()
+			fmt.Println("Run 'agentbox init skeleton' to update.")
+			fmt.Println()
+		}
 	}
 
-	if code := a.copySkeletonFiles(cwd); code != 0 {
-		return code
+	// check if .agentbox/ already exists in project
+	agentboxDir := filepath.Join(cwd, ".agentbox")
+	if _, statErr := os.Stat(agentboxDir); statErr == nil {
+		fmt.Println("Warning: .agentbox/ already exists and will be overwritten (except local.yml)")
+		if !a.confirmAction("Continue?") {
+			fmt.Println("Aborted")
+			return 0
+		}
+	}
+
+	// copy skeleton to project
+	copiedFiles, err := manager.CopyToProject(cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error copying skeleton to project: %v\n", err)
+		return 1
+	}
+	fmt.Println("Created .agentbox/ (from skeleton)")
+	for _, name := range copiedFiles {
+		fmt.Printf("  %s\n", name)
 	}
 
 	a.setupGitExclude(cwd)
@@ -103,54 +230,124 @@ func (a *App) doInit(interactive bool) int {
 	return 0
 }
 
-func (a *App) confirmOverwrite(cwd string) bool {
-	var existing []string
-	for _, name := range skeleton.OverwriteFiles() {
-		path := filepath.Join(cwd, name)
-		if _, err := os.Stat(path); err == nil {
-			existing = append(existing, name)
+func (a *App) selectLanguages(homeDir string, preSelected []string) []string {
+	detections := skeleton.DetectLanguages(homeDir)
+	languages := skeleton.SupportedLanguages()
+
+	// build pre-selected set
+	preSelectedSet := make(map[string]bool)
+	for _, lang := range preSelected {
+		preSelectedSet[lang] = true
+	}
+
+	// initialize selection based on pre-selected or detection
+	selected := make([]bool, len(languages))
+	for i, det := range detections {
+		if len(preSelected) > 0 {
+			// if we have pre-selected languages, use those
+			selected[i] = preSelectedSet[det.Language.TemplateName]
+		} else {
+			// otherwise use detection
+			selected[i] = det.Detected
 		}
 	}
 
-	if len(existing) == 0 {
-		return true
+	fmt.Println("Enable languages:")
+	for i, det := range detections {
+		checkbox := "[ ]"
+		if selected[i] {
+			checkbox = "[x]"
+		}
+		reason := ""
+		if det.Detected && det.Reason != "" {
+			reason = fmt.Sprintf("  (detected: %s)", det.Reason)
+		}
+		if len(preSelected) > 0 && preSelectedSet[det.Language.TemplateName] {
+			reason = "  (current)"
+		}
+		fmt.Printf("%s %s%s\n", checkbox, det.Language.Name, reason)
 	}
 
-	fmt.Printf("Warning: files already exist: %s\n", strings.Join(existing, ", "))
-	fmt.Print("Overwrite? [y/N] ")
+	fmt.Println()
+	fmt.Print("Enter numbers to toggle (e.g., 1,3 or 1-3), or press Enter to accept: ")
 
+	reader := bufio.NewReader(os.Stdin)
+	input, _ := reader.ReadString('\n')
+	input = strings.TrimSpace(input)
+
+	if input != "" {
+		// parse input and toggle selection
+		a.parseToggleInput(input, selected)
+
+		// show updated selection
+		fmt.Println()
+		fmt.Println("Selected languages:")
+		for i, det := range detections {
+			if selected[i] {
+				fmt.Printf("  [x] %s\n", det.Language.Name)
+			}
+		}
+	}
+
+	// build result
+	var result []string
+	for i, det := range detections {
+		if selected[i] {
+			result = append(result, det.Language.TemplateName)
+		}
+	}
+
+	return result
+}
+
+func (a *App) parseToggleInput(input string, selected []bool) {
+	// parse comma-separated values
+	for part := range strings.SplitSeq(input, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		a.togglePart(part, selected)
+	}
+}
+
+func (a *App) togglePart(part string, selected []bool) {
+	// check for range (e.g., 1-3)
+	if !strings.Contains(part, "-") {
+		// single number
+		idx := parseNumber(part) - 1
+		if idx >= 0 && idx < len(selected) {
+			selected[idx] = !selected[idx]
+		}
+		return
+	}
+
+	rangeParts := strings.Split(part, "-")
+	if len(rangeParts) != 2 {
+		return
+	}
+	start := parseNumber(rangeParts[0]) - 1
+	end := parseNumber(rangeParts[1]) - 1
+	for i := start; i <= end && i < len(selected); i++ {
+		if i >= 0 {
+			selected[i] = !selected[i]
+		}
+	}
+}
+
+func parseNumber(s string) int {
+	s = strings.TrimSpace(s)
+	var n int
+	_, _ = fmt.Sscanf(s, "%d", &n)
+	return n
+}
+
+func (a *App) confirmAction(prompt string) bool {
+	fmt.Printf("%s [Y/n] ", prompt)
 	reader := bufio.NewReader(os.Stdin)
 	answer, _ := reader.ReadString('\n')
 	answer = strings.TrimSpace(strings.ToLower(answer))
-
-	if answer != "y" && answer != "yes" {
-		fmt.Println("Aborted")
-		return false
-	}
-	return true
-}
-
-func (a *App) copySkeletonFiles(cwd string) int {
-	fmt.Println("Initializing agentbox...")
-
-	if err := skeleton.CopyTo(cwd); err != nil {
-		fmt.Fprintf(os.Stderr, "Error copying skeleton files: %v\n", err)
-		return 1
-	}
-	for _, name := range skeleton.OverwriteFiles() {
-		fmt.Printf("  Created: %s\n", name)
-	}
-
-	createdUserFiles, err := skeleton.CopyUserFilesIfMissing(cwd)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error copying user files: %v\n", err)
-		return 1
-	}
-	for _, name := range createdUserFiles {
-		fmt.Printf("  Created: %s\n", name)
-	}
-
-	return 0
+	return answer == "" || answer == "y" || answer == "yes"
 }
 
 func (a *App) setupGitExclude(cwd string) {
@@ -212,16 +409,23 @@ Flags:
 		return code
 	}
 
+	// discover compose files
+	composeFiles, err := docker.DiscoverComposeFiles(cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error discovering compose files: %v\n", err)
+		return 1
+	}
+
 	if opts.build {
 		fmt.Println("Building Docker image...")
-		if err := docker.Build(cwd, opts.noCache); err != nil {
+		if err := docker.Build(cwd, composeFiles, opts.noCache); err != nil {
 			fmt.Fprintf(os.Stderr, "Error building image: %v\n", err)
 			return 1
 		}
 	}
 
 	fmt.Println("Starting agentbox...")
-	if err := docker.Run(cwd); err != nil {
+	if err := docker.Run(cwd, composeFiles); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running container: %v\n", err)
 		return 1
 	}
@@ -318,10 +522,10 @@ func (a *App) attachToContainer(containerID string) int {
 }
 
 func (a *App) ensureProjectReady(cwd string) int {
-	composePath := filepath.Join(cwd, "docker-compose.agentbox.yml")
-	if _, err := os.Stat(composePath); os.IsNotExist(err) {
+	agentboxDir := filepath.Join(cwd, ".agentbox")
+	if _, err := os.Stat(agentboxDir); os.IsNotExist(err) {
 		fmt.Println("Warning: not initialized, running init first...")
-		if code := a.doInit(false); code != 0 {
+		if code := a.doInit(); code != 0 {
 			return code
 		}
 		fmt.Println()
@@ -624,10 +828,7 @@ func (a *App) cmdClean(args []string) int {
 Usage:
   agentbox clean
 
-This command removes all agentbox-generated files from the current directory:
-  - Dockerfile.agentbox
-  - docker-compose.agentbox.yml
-  - docker-compose.agentbox.local.yml
+This command removes the .agentbox/ directory from the current project.
 `)
 		return 0
 	}
@@ -644,30 +845,27 @@ This command removes all agentbox-generated files from the current directory:
 
 	fmt.Println("Cleaning agentbox files...")
 
-	files := skeleton.Files()
-	removed := 0
-	for _, name := range files {
-		path := filepath.Join(cwd, name)
-		if err := os.Remove(path); err != nil {
-			if !os.IsNotExist(err) {
-				fmt.Fprintf(os.Stderr, "Warning: could not remove %s: %v\n", name, err)
-			}
-		} else {
-			fmt.Printf("Removed: %s\n", name)
-			removed++
-		}
+	agentboxDir := filepath.Join(cwd, ".agentbox")
+	if _, err := os.Stat(agentboxDir); os.IsNotExist(err) {
+		fmt.Println("No .agentbox/ directory found")
+		return 0
+	}
 
-		// remove from .git/info/exclude
-		if err := removeFromGitExclude(cwd, name); err == nil {
-			fmt.Printf("Removed from .git/info/exclude: %s\n", name)
+	if err := os.RemoveAll(agentboxDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error removing .agentbox/: %v\n", err)
+		return 1
+	}
+
+	fmt.Println("Removed: .agentbox/")
+
+	// remove from .git/info/exclude
+	for _, entry := range skeleton.GitExcludeEntries() {
+		if err := removeFromGitExclude(cwd, entry); err == nil {
+			fmt.Printf("Removed from .git/info/exclude: %s\n", entry)
 		}
 	}
 
-	if removed == 0 {
-		fmt.Println("No files to remove")
-	} else {
-		fmt.Printf("Cleaned %d file(s)\n", removed)
-	}
+	fmt.Println("Cleaned successfully")
 	return 0
 }
 
@@ -684,12 +882,12 @@ func addToGitExcludeVerbose(projectDir string) ([]string, error) {
 	}
 
 	content := string(existing)
-	files := skeleton.Files()
+	entries := skeleton.GitExcludeEntries()
 
 	var toAdd []string
-	for _, name := range files {
-		if !strings.Contains(content, name) {
-			toAdd = append(toAdd, name)
+	for _, entry := range entries {
+		if !strings.Contains(content, entry) {
+			toAdd = append(toAdd, entry)
 		}
 	}
 
@@ -703,8 +901,8 @@ func addToGitExcludeVerbose(projectDir string) ([]string, error) {
 	}
 	defer f.Close()
 
-	for _, name := range toAdd {
-		if _, err := f.WriteString(name + "\n"); err != nil {
+	for _, entry := range toAdd {
+		if _, err := f.WriteString(entry + "\n"); err != nil {
 			return nil, fmt.Errorf("write to exclude file: %w", err)
 		}
 	}
@@ -725,7 +923,7 @@ func createMiseTomlIfNotExists(projectDir string) error {
 	return nil
 }
 
-func removeFromGitExclude(projectDir, filename string) error {
+func removeFromGitExclude(projectDir, entry string) error {
 	excludePath := filepath.Join(projectDir, ".git", "info", "exclude")
 
 	content, err := os.ReadFile(excludePath)
@@ -738,7 +936,7 @@ func removeFromGitExclude(projectDir, filename string) error {
 	found := false
 
 	for _, line := range lines {
-		if strings.TrimSpace(line) == filename {
+		if strings.TrimSpace(line) == entry {
 			found = true
 			continue
 		}
