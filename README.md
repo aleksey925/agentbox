@@ -70,59 +70,48 @@ or use `agentbox self update <tab>` to choose a version and install it.
 
 ## How to Use
 
-Navigate to your project directory and run `agentbox init`. On first run, you'll be prompted to
-select which programming languages to enable:
-
-```
-$ agentbox init
-
-No skeleton found. Let's set it up...
-
-Detecting environment...
-
-Enable languages:
-[x] Go      (detected: $GOPATH is set)
-[x] Python  (detected: ~/.cache/uv exists)
-
-Enter numbers to toggle (e.g., 1,3 or 1-3), or press Enter to accept:
+```bash
+cd your-project
+agentbox init    # set up sandbox (select languages on first run) and download agents for first time
+agentbox run     # start sandbox
 ```
 
-The following files will be created in your project's `.agentbox/` directory:
-
-- `core.v*.yml` — main compose configuration
-- `<lang>.v*.yml` — language-specific configurations (e.g., `go.v1.yml`, `python.v1.yml`)
-- `Dockerfile.agentbox` — container image definition
-- `local.yml` — your personal overrides (never overwritten)
-- `mise.toml` — configuration for [mise](https://mise.jdx.dev) tool manager (in project root)
-
-The `.agentbox/` directory is automatically added to `.git/info/exclude` to keep it out of version control.
-
-After initialization, run `agentbox run` to start the container. Your project is mounted at `/home/box/app` inside
-the container. AI agents are available as commands with permissive flags enabled:
+Inside the sandbox, AI agents are available with permissive flags:
 
 ```bash
-claude    # runs with --dangerously-skip-permissions
-copilot   # runs with --allow-all-paths --allow-all-tools
-codex     # runs with --full-auto
-gemini    # runs with --yolo
+claude    # --dangerously-skip-permissions
+copilot   # --allow-all-paths --allow-all-tools
+codex     # --full-auto
+gemini    # --yolo
 ```
 
-To rebuild the container image before running, use `agentbox run --build`. For a full rebuild
-without Docker cache, use `agentbox run --build-no-cache`.
+Your project is mounted at `/home/box/app`.
 
-To list running containers, use `agentbox ps`. To attach to an already running container, use
-`agentbox attach` (interactive selection) or `agentbox attach <container-id>`.
+**Other Commands**
 
-Agent binaries are managed separately from the container. Use `agentbox agent` to see installed versions
-vs latest available. Use `agentbox agent update` to update all agents, or `agentbox agent update claude copilot`
-to update specific ones. To switch to a specific version, use `agentbox agent use claude 2.0.67`.
+| Command                         | Description                       |
+|---------------------------------|-----------------------------------|
+| `agentbox run --build`          | Rebuild and run sandbox           |
+| `agentbox run --build-no-cache` | Full rebuild without cache        |
+| `agentbox ps`                   | List running sandboxes            |
+| `agentbox attach`               | Attach to running sandbox         |
+| `agentbox clean`                | Remove sandbox files from project |
 
-To remove all agentbox files from the project, run `agentbox clean`.
+**Managing Agents**
+
+Agent binaries are managed separately from the sandbox:
+
+```bash
+agentbox agent                      # show installed vs latest versions
+agentbox agent update               # update all agents
+agentbox agent update claude        # update specific agent
+agentbox agent use claude 2.0.67    # switch to specific version
+```
 
 ### Modular Sandbox Configuration
 
 Sandbox configuration is modular — it consists of a core config plus language-specific configs you select 
-during `agentbox init`. Language configs mount tool caches from your host into the container, so 
+during `agentbox init`. Language configs mount tool caches from your host into the sandbox, so 
 dependencies aren't re-downloaded on every run.
 
 Currently supported languages:
