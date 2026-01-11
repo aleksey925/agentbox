@@ -3,7 +3,7 @@
 services:
   agentbox:
     build:
-      context: ../..
+      context: ..
       dockerfile: .agentbox/Dockerfile.agentbox
     volumes:
       # ai agents binaries (read-only mount from host)
@@ -15,4 +15,4 @@ services:
       - ~/.codex/:/home/box/.codex/
       - ~/.gemini/:/home/box/.gemini/
       # project files
-      - ../..:/home/box/app
+      - ..:/home/box/app
