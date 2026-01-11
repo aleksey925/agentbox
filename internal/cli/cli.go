@@ -57,19 +57,17 @@ Usage:
   agentbox <command> [options]
 
 Commands:
-  init                              Initialize sandbox in current directory
-  run                               Start sandbox
-  attach                            Attach to running sandbox
-  ps                                List running sandboxes
-  agent                             Manage AI agents
-  self                              Update or uninstall agentbox
-  clean                             Remove sandbox files from project
-  completion                        Generate shell completion script
+`, a.Version)
 
+	for _, cmd := range AllCommandsWithDesc() {
+		fmt.Printf("  %-36s%s\n", cmd.Name, cmd.Description)
+	}
+
+	fmt.Print(`
 Global Flags:
   -h, --help                        Show help
   -v, --version                     Show version
 
 Use "agentbox <command> --help" for more information about a command.
-`, a.Version)
+`)
 }

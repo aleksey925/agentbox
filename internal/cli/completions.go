@@ -10,7 +10,7 @@ import (
 
 func (a *App) cmdCompletion(args []string) int {
 	if len(args) == 0 || hasHelpFlag(args) {
-		fmt.Print(`Generate shell completion script
+		fmt.Print(`Generates autocompletion script for agentbox commands
 
 Usage:
   agentbox completion <shell> [alias]
