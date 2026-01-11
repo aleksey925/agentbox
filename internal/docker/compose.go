@@ -3,6 +3,7 @@ package docker
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -87,6 +88,10 @@ func DiscoverComposeFiles(projectDir string) ([]string, error) {
 		if strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml") {
 			files = append(files, filepath.Join(agentboxDir, name))
 		}
+	}
+
+	if len(files) == 0 {
+		return nil, errors.New("no compose files found in .agentbox/. Run 'agentbox init' to fix")
 	}
 
 	skeleton.SortComposeFiles(files)
