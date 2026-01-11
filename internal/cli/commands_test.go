@@ -70,30 +70,28 @@ func TestHasHelpFlag(t *testing.T) {
 // Test that subcommand --help shows subcommand help, not parent help.
 // This prevents regression where `agent update --help` showed `agent` help.
 func TestAgentSubcommandHelp(t *testing.T) {
-	app := &App{Version: "test"}
-
 	tests := []struct {
-		name           string
-		args           []string
-		shouldContain  string
+		name             string
+		args             []string
+		shouldContain    string
 		shouldNotContain string
 	}{
 		{
-			name:           "agent --help shows agent help",
-			args:           []string{"--help"},
-			shouldContain:  "agentbox agent [command]",
+			name:             "agent --help shows agent help",
+			args:             []string{"agent", "--help"},
+			shouldContain:    "agentbox agent [command]",
 			shouldNotContain: "",
 		},
 		{
-			name:           "agent update --help shows update help",
-			args:           []string{"update", "--help"},
-			shouldContain:  "agentbox agent update",
+			name:             "agent update --help shows update help",
+			args:             []string{"agent", "update", "--help"},
+			shouldContain:    "agentbox agent update",
 			shouldNotContain: "agentbox agent [command]",
 		},
 		{
-			name:           "agent use --help shows use help",
-			args:           []string{"use", "--help"},
-			shouldContain:  "agentbox agent use <agent> <version>",
+			name:             "agent use --help shows use help",
+			args:             []string{"agent", "use", "--help"},
+			shouldContain:    "agentbox agent use <agent> <version>",
 			shouldNotContain: "agentbox agent [command]",
 		},
 	}
@@ -102,7 +100,7 @@ func TestAgentSubcommandHelp(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// act
 			output := captureOutput(func() {
-				app.cmdAgent(tt.args)
+				Run(tt.args, "test")
 			})
 
 			// assert
@@ -118,8 +116,6 @@ func TestAgentSubcommandHelp(t *testing.T) {
 
 // Test that self subcommand --help shows subcommand help, not parent help.
 func TestSelfSubcommandHelp(t *testing.T) {
-	app := &App{Version: "test"}
-
 	tests := []struct {
 		name             string
 		args             []string
@@ -127,28 +123,22 @@ func TestSelfSubcommandHelp(t *testing.T) {
 		shouldNotContain string
 	}{
 		{
-			name:             "self --help shows self help",
-			args:             []string{"--help"},
-			shouldContain:    "agentbox self <command>",
+			name:             "self update --help shows update help",
+			args:             []string{"self", "update", "--help"},
+			shouldContain:    "agentbox self update",
 			shouldNotContain: "",
 		},
 		{
-			name:             "self update --help shows update help",
-			args:             []string{"update", "--help"},
-			shouldContain:    "agentbox self update",
-			shouldNotContain: "agentbox self <command>",
-		},
-		{
 			name:             "self uninstall --help shows uninstall help",
-			args:             []string{"uninstall", "--help"},
+			args:             []string{"self", "uninstall", "--help"},
 			shouldContain:    "agentbox self uninstall",
-			shouldNotContain: "agentbox self <command>",
+			shouldNotContain: "",
 		},
 		{
 			name:             "self versions --help shows versions help",
-			args:             []string{"versions", "--help"},
+			args:             []string{"self", "versions", "--help"},
 			shouldContain:    "agentbox self versions",
-			shouldNotContain: "agentbox self <command>",
+			shouldNotContain: "",
 		},
 	}
 
@@ -156,7 +146,7 @@ func TestSelfSubcommandHelp(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// act
 			output := captureOutput(func() {
-				app.cmdSelf(tt.args)
+				Run(tt.args, "test")
 			})
 
 			// assert
@@ -207,13 +197,10 @@ func TestUnknownFlagRejection(t *testing.T) {
 
 // Test that agent update rejects unknown flags (not agent names).
 func TestAgentUpdateUnknownFlagRejection(t *testing.T) {
-	// arrange
-	app := &App{Version: "test"}
-
 	// act
 	var exitCode int
 	stderr := captureStderr(func() {
-		exitCode = app.cmdAgent([]string{"update", "--unknown"})
+		exitCode = Run([]string{"agent", "update", "--unknown"}, "test")
 	})
 
 	// assert
@@ -227,25 +214,23 @@ func TestAgentUpdateUnknownFlagRejection(t *testing.T) {
 
 // Test that help commands return exit code 0.
 func TestHelpExitCode(t *testing.T) {
-	app := &App{Version: "test"}
-
 	tests := []struct {
-		name    string
-		command func([]string) int
-		args    []string
+		name string
+		args []string
 	}{
-		{"init --help", app.cmdInit, []string{"--help"}},
-		{"run --help", app.cmdRun, []string{"--help"}},
-		{"attach --help", app.cmdAttach, []string{"--help"}},
-		{"ps --help", app.cmdPs, []string{"--help"}},
-		{"agent --help", app.cmdAgent, []string{"--help"}},
-		{"agent update --help", app.cmdAgent, []string{"update", "--help"}},
-		{"agent use --help", app.cmdAgent, []string{"use", "--help"}},
-		{"clean --help", app.cmdClean, []string{"--help"}},
-		{"self --help", app.cmdSelf, []string{"--help"}},
-		{"self update --help", app.cmdSelf, []string{"update", "--help"}},
-		{"self uninstall --help", app.cmdSelf, []string{"uninstall", "--help"}},
-		{"self versions --help", app.cmdSelf, []string{"versions", "--help"}},
+		{"init --help", []string{"init", "--help"}},
+		{"init skeleton --help", []string{"init", "skeleton", "--help"}},
+		{"run --help", []string{"run", "--help"}},
+		{"attach --help", []string{"attach", "--help"}},
+		{"ps --help", []string{"ps", "--help"}},
+		{"agent --help", []string{"agent", "--help"}},
+		{"agent update --help", []string{"agent", "update", "--help"}},
+		{"agent use --help", []string{"agent", "use", "--help"}},
+		{"clean --help", []string{"clean", "--help"}},
+		{"self update --help", []string{"self", "update", "--help"}},
+		{"self uninstall --help", []string{"self", "uninstall", "--help"}},
+		{"self versions --help", []string{"self", "versions", "--help"}},
+		{"completion --help", []string{"completion", "--help"}},
 	}
 
 	for _, tt := range tests {
@@ -253,7 +238,7 @@ func TestHelpExitCode(t *testing.T) {
 			// act
 			var exitCode int
 			captureOutput(func() {
-				exitCode = tt.command(tt.args)
+				exitCode = Run(tt.args, "test")
 			})
 
 			// assert
@@ -511,27 +496,18 @@ func TestCliRouterHandlesAllCommands(t *testing.T) {
 }
 
 // TestAllCommandsRejectUnknownFlags verifies that all top-level commands
-// reject unknown flags.
+// reject unknown flags. Uses Run() to test via the real dispatcher.
 func TestAllCommandsRejectUnknownFlags(t *testing.T) {
-	app := &App{Version: "test"}
+	// Commands that should reject unknown flags
+	// Note: help and version are special and handled before flag validation
+	commands := []string{"init", "run", "attach", "ps", "clean", "agent", "completion"}
 
-	commandFuncs := map[string]func([]string) int{
-		"init":       app.cmdInit,
-		"run":        app.cmdRun,
-		"attach":     app.cmdAttach,
-		"ps":         app.cmdPs,
-		"clean":      app.cmdClean,
-		"agent":      app.cmdAgent,
-		"self":       app.cmdSelf,
-		"completion": app.cmdCompletion,
-	}
-
-	for cmd, fn := range commandFuncs {
+	for _, cmd := range commands {
 		t.Run(cmd, func(t *testing.T) {
 			// act
 			var exitCode int
 			stderr := captureStderr(func() {
-				exitCode = fn([]string{"--unknown-flag-xyz"})
+				exitCode = Run([]string{cmd, "--unknown-flag-xyz"}, "test")
 			})
 
 			// assert

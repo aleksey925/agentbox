@@ -36,11 +36,6 @@ func availableAgentsStr() string {
 }
 
 func (a *App) cmdInit(args []string) int {
-	// check for subcommand first
-	if len(args) > 0 && args[0] == "skeleton" {
-		return a.initSkeleton(args[1:])
-	}
-
 	if hasHelpFlag(args) {
 		fmt.Printf(`%s
 
@@ -74,7 +69,7 @@ Use "agentbox init skeleton --help" for more information.
 	return a.doInit()
 }
 
-func (a *App) initSkeleton(args []string) int {
+func (a *App) cmdInitSkeleton(args []string) int {
 	if hasHelpFlag(args) {
 		fmt.Printf(`%s
 
@@ -99,7 +94,7 @@ The existing configuration will be backed up to ~/.agentbox/skeleton.backup/
 		return code
 	}
 
-	paths, err := config.NewPaths()
+	paths, err := a.Paths()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
@@ -141,7 +136,7 @@ The existing configuration will be backed up to ~/.agentbox/skeleton.backup/
 }
 
 func (a *App) doInit() int {
-	paths, err := config.NewPaths()
+	paths, err := a.Paths()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
@@ -531,7 +526,7 @@ func (a *App) ensureProjectReady(cwd string) int {
 		fmt.Println()
 	}
 
-	paths, err := config.NewPaths()
+	paths, err := a.Paths()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
@@ -554,8 +549,8 @@ func (a *App) ensureProjectReady(cwd string) int {
 	return 0
 }
 
-func (a *App) cmdAgent(args []string) int {
-	if len(args) > 0 && hasHelpFlag(args[:1]) {
+func (a *App) cmdAgentStatus(args []string) int {
+	if hasHelpFlag(args) {
 		fmt.Printf(`%s
 
 Usage:
@@ -579,41 +574,17 @@ Use "agentbox agent <command> --help" for more information about a command.
 		return 0
 	}
 
-	// check for unknown flags at agent level (before subcommand dispatch)
-	if len(args) > 0 {
-		if code := RejectUnknownFlags(args[:1]); code != 0 {
-			return code
-		}
+	if code := RejectUnknownFlags(args); code != 0 {
+		return code
 	}
 
-	paths, err := config.NewPaths()
+	manager, err := a.AgentManager()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
 	}
 
-	manager, err := agents.NewManager(paths)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return 1
-	}
-
-	if len(args) == 0 {
-		return a.showAgentStatus(manager)
-	}
-
-	subcmd := args[0]
-	subargs := args[1:]
-
-	switch subcmd {
-	case "update":
-		return a.agentUpdate(manager, subargs)
-	case "use":
-		return a.agentUse(manager, subargs)
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown agent subcommand: %s\n", subcmd)
-		return 1
-	}
+	return a.showAgentStatus(manager)
 }
 
 func (a *App) showAgentStatus(manager *agents.Manager) int {
@@ -654,7 +625,7 @@ func (a *App) showAgentStatus(manager *agents.Manager) int {
 	return 0
 }
 
-func (a *App) agentUpdate(manager *agents.Manager, args []string) int {
+func (a *App) cmdAgentUpdate(args []string) int {
 	if hasHelpFlag(args) {
 		fmt.Printf(`%s
 
@@ -676,6 +647,12 @@ Examples:
 
 	if code := RejectUnknownFlags(args); code != 0 {
 		return code
+	}
+
+	manager, err := a.AgentManager()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
 	}
 
 	// all remaining args are agent names (flags already validated)
@@ -718,7 +695,7 @@ Examples:
 	return 0
 }
 
-func (a *App) agentUse(manager *agents.Manager, args []string) int {
+func (a *App) cmdAgentUse(args []string) int {
 	if hasHelpFlag(args) {
 		fmt.Printf(`%s
 
@@ -744,6 +721,12 @@ Examples:
 
 	if len(args) < 2 {
 		fmt.Fprintf(os.Stderr, "Usage: agentbox agent use <agent> <version>\n")
+		return 1
+	}
+
+	manager, err := a.AgentManager()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
 	}
 
@@ -1024,58 +1007,10 @@ func ensureAgentConfigs() error {
 
 const githubRepo = "aleksey925/agentbox"
 
-func (a *App) cmdSelf(args []string) int {
-	if len(args) > 0 && hasHelpFlag(args[:1]) {
-		fmt.Printf(`%s
+// Note: cmdSelf is not used directly - "self" command requires subcommand
+// The help is shown via dispatcher when no subcommand is provided
 
-Usage:
-  agentbox self <command>
-
-Commands:
-  update [version]                  Update to latest or specified version
-  uninstall                         Remove agentbox from system
-  versions                          List available versions
-
-Examples:
-  agentbox self update              Update to latest version
-  agentbox self update 1.2.0        Update to specific version
-  agentbox self uninstall           Remove agentbox
-  agentbox self uninstall --purge   Remove agentbox and all data
-
-Use "agentbox self <command> --help" for more information about a command.
-`, CommandDesc("self"))
-		return 0
-	}
-
-	if len(args) > 0 {
-		if code := RejectUnknownFlags(args[:1]); code != 0 {
-			return code
-		}
-	}
-
-	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: agentbox self <command>\n")
-		fmt.Fprintf(os.Stderr, "Available commands: update, uninstall, versions\n")
-		return 1
-	}
-
-	subcmd := args[0]
-	subargs := args[1:]
-
-	switch subcmd {
-	case "update":
-		return a.selfUpdate(subargs)
-	case "uninstall":
-		return a.selfUninstall(subargs)
-	case "versions":
-		return a.selfVersions(subargs)
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown self subcommand: %s\n", subcmd)
-		return 1
-	}
-}
-
-func (a *App) selfUpdate(args []string) int {
+func (a *App) cmdSelfUpdate(args []string) int {
 	if hasHelpFlag(args) {
 		fmt.Printf(`%s
 
@@ -1191,7 +1126,7 @@ Examples:
 	return 0
 }
 
-func (a *App) selfUninstall(args []string) int {
+func (a *App) cmdSelfUninstall(args []string) int {
 	if hasHelpFlag(args) {
 		fmt.Printf(`%s
 
@@ -1264,7 +1199,7 @@ Flags:
 	return 0
 }
 
-func (a *App) selfVersions(args []string) int {
+func (a *App) cmdSelfVersions(args []string) int {
 	if hasHelpFlag(args) {
 		fmt.Printf(`%s
 

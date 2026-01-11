@@ -7,21 +7,227 @@ import (
 	"strings"
 )
 
-// Command metadata for consistency between help, completions, and validation.
-// This is the single source of truth for CLI structure.
+// =============================================================================
+// CLI METADATA - Single Source of Truth
+// =============================================================================
+//
+// When adding a new command/subcommand:
+// 1. Add entry to commandTree below
+// 2. Implement handler method on *App
+//
+// Everything else (router, help, completions, tests) derives from commandTree.
+// =============================================================================
+
+// Command represents a CLI command with optional subcommands.
+type Command struct {
+	Name        string
+	Description string
+	Handler     func(app *App, args []string) int
+	Subcommands []Command
+	Flags       []Flag
+}
+
+// Flag represents a command flag with description.
+type Flag struct {
+	Name        string // e.g., "-a, --all" or "--build"
+	Description string
+}
+
+// commandTree returns the single source of truth for CLI structure.
+// All routing, help, completions, and tests derive from this.
+// Note: This is a function to avoid initialization cycles with handlers
+// that reference metadata functions.
+func commandTree() []Command {
+	return []Command{
+	{
+		Name:        "init",
+		Description: "Initialize sandbox in current directory",
+		Handler:     (*App).cmdInit,
+		Subcommands: []Command{
+			{Name: "skeleton", Description: "(Re)init global sandbox configs", Handler: (*App).cmdInitSkeleton},
+		},
+	},
+	{
+		Name:        "run",
+		Description: "Start sandbox",
+		Handler:     (*App).cmdRun,
+		Flags: []Flag{
+			{"--build", "Rebuild image before running"},
+			{"--build-no-cache", "Rebuild image without Docker cache"},
+		},
+	},
+	{
+		Name:        "attach",
+		Description: "Attach to running sandbox",
+		Handler:     (*App).cmdAttach,
+	},
+	{
+		Name:        "ps",
+		Description: "List running sandboxes",
+		Handler:     (*App).cmdPs,
+		Flags: []Flag{
+			{"-a, --all", "Show sandboxes from all projects"},
+		},
+	},
+	{
+		Name:        "agent",
+		Description: "Manage AI agents",
+		Handler:     (*App).cmdAgentStatus,
+		Subcommands: []Command{
+			{Name: "update", Description: "Update agents to latest version", Handler: (*App).cmdAgentUpdate},
+			{Name: "use", Description: "Switch agent to specific version", Handler: (*App).cmdAgentUse},
+		},
+	},
+	{
+		Name:        "self",
+		Description: "Update or uninstall agentbox",
+		Handler:     nil, // requires subcommand
+		Subcommands: []Command{
+			{Name: "update", Description: "Update to latest or specified version", Handler: (*App).cmdSelfUpdate},
+			{Name: "uninstall", Description: "Remove agentbox from system", Handler: (*App).cmdSelfUninstall, Flags: []Flag{
+				{"--purge", "Also remove ~/.agentbox directory"},
+			}},
+			{Name: "versions", Description: "List available versions", Handler: (*App).cmdSelfVersions},
+		},
+	},
+	{
+		Name:        "clean",
+		Description: "Remove sandbox files from project",
+		Handler:     (*App).cmdClean,
+	},
+	{
+		Name:        "completion",
+		Description: "Generate shell completion script",
+		Handler:     (*App).cmdCompletion,
+	},
+	{
+		Name:        "help",
+		Description: "Show help",
+		Handler:     nil, // handled specially in dispatcher
+	},
+	{
+		Name:        "version",
+		Description: "Show version",
+		Handler:     nil, // handled specially in dispatcher
+	},
+	}
+}
 
 // =============================================================================
-// Core types and helpers
+// Command tree access
 // =============================================================================
 
-// Subcommand represents a subcommand with its description for completions.
+// CommandTree returns the command tree (for completions and tests).
+func CommandTree() []Command {
+	return commandTree()
+}
+
+// FindCommand finds a command by name in a command slice.
+func FindCommand(commands []Command, name string) *Command {
+	for i := range commands {
+		if commands[i].Name == name {
+			return &commands[i]
+		}
+	}
+	return nil
+}
+
+// =============================================================================
+// Derived metadata (for backward compatibility and convenience)
+// =============================================================================
+
+// AllCommands returns all top-level command names.
+func AllCommands() []string {
+	tree := commandTree()
+	names := make([]string, len(tree))
+	for i, cmd := range tree {
+		names[i] = cmd.Name
+	}
+	return names
+}
+
+// AllCommandsWithDesc returns all top-level commands with descriptions.
+func AllCommandsWithDesc() []Subcommand {
+	tree := commandTree()
+	subs := make([]Subcommand, len(tree))
+	for i, cmd := range tree {
+		subs[i] = Subcommand{cmd.Name, cmd.Description}
+	}
+	return subs
+}
+
+// Subcommand is a legacy type for backward compatibility.
 type Subcommand struct {
 	Name        string
 	Description string
 }
 
-// extractNames extracts just the names from a slice of Subcommands.
-func extractNames(subs []Subcommand) []string {
+// CommandFlags returns flag names for each command.
+func CommandFlags() map[string][]string {
+	result := make(map[string][]string)
+	for _, cmd := range commandTree() {
+		result[cmd.Name] = extractFlagNames(cmd.Flags)
+	}
+	return result
+}
+
+// SubcommandFlags returns flag names for a subcommand.
+func SubcommandFlags(parent, sub string) []string {
+	parentCmd := FindCommand(commandTree(), parent)
+	if parentCmd == nil {
+		return nil
+	}
+	subCmd := FindCommand(parentCmd.Subcommands, sub)
+	if subCmd == nil {
+		return nil
+	}
+	return extractFlagNames(subCmd.Flags)
+}
+
+func extractFlagNames(flags []Flag) []string {
+	names := make([]string, 0, len(flags)*2)
+	for _, f := range flags {
+		// Handle combined flags like "-a, --all"
+		for part := range strings.SplitSeq(f.Name, ", ") {
+			names = append(names, strings.TrimSpace(part))
+		}
+	}
+	return names
+}
+
+// InitSubcommands returns init subcommand names.
+func InitSubcommands() []string {
+	cmd := FindCommand(commandTree(), "init")
+	if cmd == nil {
+		return nil
+	}
+	return extractSubcommandNames(cmd.Subcommands)
+}
+
+// AgentSubcommands returns agent subcommand names.
+func AgentSubcommands() []string {
+	cmd := FindCommand(commandTree(), "agent")
+	if cmd == nil {
+		return nil
+	}
+	return extractSubcommandNames(cmd.Subcommands)
+}
+
+// SelfSubcommands returns self subcommand names.
+func SelfSubcommands() []string {
+	cmd := FindCommand(commandTree(), "self")
+	if cmd == nil {
+		return nil
+	}
+	return extractSubcommandNames(cmd.Subcommands)
+}
+
+// SelfUninstallFlags returns self uninstall flag names.
+func SelfUninstallFlags() []string {
+	return SubcommandFlags("self", "uninstall")
+}
+
+func extractSubcommandNames(subs []Command) []string {
 	names := make([]string, len(subs))
 	for i, s := range subs {
 		names[i] = s.Name
@@ -29,159 +235,90 @@ func extractNames(subs []Subcommand) []string {
 	return names
 }
 
-// =============================================================================
-// Top-level commands
-// =============================================================================
-
-// AllCommandsWithDesc returns all available top-level commands with descriptions.
-// This is the single source of truth for top-level commands.
-func AllCommandsWithDesc() []Subcommand {
-	return []Subcommand{
-		{"init", "Initialize sandbox in current directory"},
-		{"run", "Start sandbox"},
-		{"attach", "Attach to running sandbox"},
-		{"ps", "List running sandboxes"},
-		{"agent", "Manage AI agents"},
-		{"self", "Update or uninstall agentbox"},
-		{"clean", "Remove sandbox files from project"},
-		{"completion", "Generate shell completion script"},
-		{"help", "Show help"},
-		{"version", "Show version"},
-	}
-}
-
-// AllCommands returns all available top-level command names.
-func AllCommands() []string {
-	return extractNames(AllCommandsWithDesc())
-}
-
-// CommandDesc returns the description for a top-level command.
-func CommandDesc(name string) string {
-	for _, cmd := range AllCommandsWithDesc() {
-		if cmd.Name == name {
-			return cmd.Description
-		}
-	}
-	return ""
-}
-
-// SubcommandDesc returns the description for a subcommand.
-func SubcommandDesc(parent, name string) string {
-	var subs []Subcommand
-	switch parent {
-	case "init":
-		subs = InitSubcommandsWithDesc()
-	case "agent":
-		subs = AgentSubcommandsWithDesc()
-	case "self":
-		subs = SelfSubcommandsWithDesc()
-	}
-	for _, sub := range subs {
-		if sub.Name == name {
-			return sub.Description
-		}
-	}
-	return ""
-}
-
-// =============================================================================
-// Command flags
-// =============================================================================
-
-// RunFlagsWithDesc returns run command flags with descriptions.
-// This is the single source of truth for run flags.
-func RunFlagsWithDesc() []Subcommand {
-	return []Subcommand{
-		{"--build", "Rebuild image before running"},
-		{"--build-no-cache", "Rebuild image without Docker cache"},
-	}
-}
-
-// PsFlagsWithDesc returns ps command flags with descriptions.
-// This is the single source of truth for ps flags.
-func PsFlagsWithDesc() []Subcommand {
-	return []Subcommand{
-		{"-a", "Show sandboxes from all projects"},
-		{"--all", "Show sandboxes from all projects"},
-	}
-}
-
-// CommandFlags returns valid flags for each command.
-// Empty slice means no flags (except global -h/--help).
-func CommandFlags() map[string][]string {
-	return map[string][]string{
-		"init":       {}, // no flags
-		"run":        extractNames(RunFlagsWithDesc()),
-		"attach":     {}, // no flags, only positional args
-		"ps":         extractNames(PsFlagsWithDesc()),
-		"agent":      {}, // has subcommands, not flags
-		"self":       {}, // has subcommands, not flags
-		"clean":      {}, // no flags
-		"completion": {}, // no flags, only positional args
-	}
-}
-
-// =============================================================================
-// Subcommands
-// =============================================================================
-
 // InitSubcommandsWithDesc returns init subcommands with descriptions.
-// This is the single source of truth for init subcommands.
 func InitSubcommandsWithDesc() []Subcommand {
-	return []Subcommand{
-		{"skeleton", "(Re)init global sandbox configs"},
+	cmd := FindCommand(commandTree(), "init")
+	if cmd == nil {
+		return nil
 	}
-}
-
-// InitSubcommands returns valid init subcommand names.
-func InitSubcommands() []string {
-	return extractNames(InitSubcommandsWithDesc())
+	return commandsToSubcommands(cmd.Subcommands)
 }
 
 // AgentSubcommandsWithDesc returns agent subcommands with descriptions.
-// This is the single source of truth for agent subcommands.
 func AgentSubcommandsWithDesc() []Subcommand {
-	return []Subcommand{
-		{"update", "Update agents to latest version"},
-		{"use", "Switch agent to specific version"},
+	cmd := FindCommand(commandTree(), "agent")
+	if cmd == nil {
+		return nil
 	}
-}
-
-// AgentSubcommands returns valid agent subcommand names.
-func AgentSubcommands() []string {
-	return extractNames(AgentSubcommandsWithDesc())
+	return commandsToSubcommands(cmd.Subcommands)
 }
 
 // SelfSubcommandsWithDesc returns self subcommands with descriptions.
-// This is the single source of truth for self subcommands.
 func SelfSubcommandsWithDesc() []Subcommand {
-	return []Subcommand{
-		{"update", "Update to latest or specified version"},
-		{"uninstall", "Remove agentbox from system"},
-		{"versions", "List available versions"},
+	cmd := FindCommand(commandTree(), "self")
+	if cmd == nil {
+		return nil
 	}
-}
-
-// SelfSubcommands returns valid self subcommand names.
-func SelfSubcommands() []string {
-	return extractNames(SelfSubcommandsWithDesc())
+	return commandsToSubcommands(cmd.Subcommands)
 }
 
 // SelfUninstallFlagsWithDesc returns self uninstall flags with descriptions.
-// This is the single source of truth for self uninstall flags.
 func SelfUninstallFlagsWithDesc() []Subcommand {
-	return []Subcommand{
-		{"--purge", "Also remove ~/.agentbox directory"},
+	parentCmd := FindCommand(commandTree(), "self")
+	if parentCmd == nil {
+		return nil
 	}
+	subCmd := FindCommand(parentCmd.Subcommands, "uninstall")
+	if subCmd == nil {
+		return nil
+	}
+	return flagsToSubcommands(subCmd.Flags)
 }
 
-// SelfUninstallFlags returns valid flags for self uninstall subcommand.
-func SelfUninstallFlags() []string {
-	return extractNames(SelfUninstallFlagsWithDesc())
+// RunFlagsWithDesc returns run flags with descriptions.
+func RunFlagsWithDesc() []Subcommand {
+	cmd := FindCommand(commandTree(), "run")
+	if cmd == nil {
+		return nil
+	}
+	return flagsToSubcommands(cmd.Flags)
 }
 
-// CompletionShellsWithDesc returns valid shells with descriptions.
-// This is the single source of truth for completion shells.
+// PsFlagsWithDesc returns ps flags with descriptions.
+func PsFlagsWithDesc() []Subcommand {
+	cmd := FindCommand(commandTree(), "ps")
+	if cmd == nil {
+		return nil
+	}
+	return flagsToSubcommands(cmd.Flags)
+}
+
+func commandsToSubcommands(cmds []Command) []Subcommand {
+	subs := make([]Subcommand, len(cmds))
+	for i, c := range cmds {
+		subs[i] = Subcommand{c.Name, c.Description}
+	}
+	return subs
+}
+
+func flagsToSubcommands(flags []Flag) []Subcommand {
+	// Expand combined flags like "-a, --all" into separate entries
+	var subs []Subcommand
+	for _, f := range flags {
+		for part := range strings.SplitSeq(f.Name, ", ") {
+			name := strings.TrimSpace(part)
+			subs = append(subs, Subcommand{name, f.Description})
+		}
+	}
+	return subs
+}
+
+// CompletionShells returns valid shell names.
+func CompletionShells() []string {
+	return []string{"bash", "zsh"}
+}
+
+// CompletionShellsWithDesc returns shells with descriptions.
 func CompletionShellsWithDesc() []Subcommand {
 	return []Subcommand{
 		{"bash", "Bash shell"},
@@ -189,23 +326,42 @@ func CompletionShellsWithDesc() []Subcommand {
 	}
 }
 
-// CompletionShells returns valid shells for completion command.
-func CompletionShells() []string {
-	return extractNames(CompletionShellsWithDesc())
+// CommandDesc returns the description for a command.
+func CommandDesc(name string) string {
+	cmd := FindCommand(commandTree(), name)
+	if cmd == nil {
+		return ""
+	}
+	return cmd.Description
+}
+
+// SubcommandDesc returns the description for a subcommand.
+func SubcommandDesc(parent, name string) string {
+	parentCmd := FindCommand(commandTree(), parent)
+	if parentCmd == nil {
+		return ""
+	}
+	subCmd := FindCommand(parentCmd.Subcommands, name)
+	if subCmd == nil {
+		return ""
+	}
+	return subCmd.Description
 }
 
 // AllSubcommandPaths returns all subcommand paths for testing.
-// Each path is a slice of arguments to reach the subcommand.
-// This ensures tests cover ALL entry points, not just top-level commands.
 func AllSubcommandPaths() [][]string {
-	return [][]string{
-		{"init", "skeleton"},
-		{"agent", "update"},
-		{"agent", "use", "dummy-agent", "1.0.0"}, // need args to pass validation
-		{"self", "update"},
-		{"self", "uninstall"},
-		{"self", "versions"},
+	var paths [][]string
+	for _, cmd := range commandTree() {
+		for _, sub := range cmd.Subcommands {
+			path := []string{cmd.Name, sub.Name}
+			// Add required args for commands that need them
+			if cmd.Name == "agent" && sub.Name == "use" {
+				path = append(path, "dummy-agent", "1.0.0")
+			}
+			paths = append(paths, path)
+		}
 	}
+	return paths
 }
 
 // =============================================================================
@@ -222,8 +378,6 @@ func (e UnknownFlagError) Error() string {
 }
 
 // ValidateNoUnknownFlags checks that args contain no unknown flags.
-// Returns UnknownFlagError if unknown flag found.
-// Help flags (-h, --help) are allowed and should be handled before calling this.
 func ValidateNoUnknownFlags(args, allowedFlags []string) error {
 	allowed := make(map[string]bool)
 	for _, f := range allowedFlags {
@@ -243,15 +397,12 @@ func ValidateNoUnknownFlags(args, allowedFlags []string) error {
 	return nil
 }
 
-// RejectUnknownFlags validates args and prints error to stderr if unknown flag found.
-// Returns exit code: 0 if valid, 1 if unknown flag found.
-// This is a convenience wrapper for commands that don't accept any flags.
+// RejectUnknownFlags validates args and prints error if unknown flag found.
 func RejectUnknownFlags(args []string) int {
 	return RejectUnknownFlagsWithAllowed(args, nil)
 }
 
 // RejectUnknownFlagsWithAllowed validates args against allowed flags.
-// Returns exit code: 0 if valid, 1 if unknown flag found.
 func RejectUnknownFlagsWithAllowed(args, allowedFlags []string) int {
 	if err := ValidateNoUnknownFlags(args, allowedFlags); err != nil {
 		var flagErr UnknownFlagError
