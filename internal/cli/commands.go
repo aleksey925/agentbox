@@ -50,7 +50,7 @@ Usage:
 Commands:
   skeleton                          (Re)init global sandbox configs
 
-This command copies sandbox configurations into the project.
+Copies sandbox configurations into the project.
 
 Files created:
   - .agentbox/core.v*.yml           Core Docker Compose configuration
@@ -81,14 +81,15 @@ func (a *App) initSkeleton(args []string) int {
 Usage:
   agentbox init skeleton
 
-This command regenerates the skeleton in ~/.agentbox/skeleton/ with new
-sandbox configs.
+Reinitializes the base sandbox configuration (~/.agentbox/skeleton/).
+This configuration is used for project initialization with 'agentbox init'.
+
 Use this to:
   - Change language support (Go, Python, etc.)
-  - Update to latest template versions
-  - Reset skeleton to defaults
+  - Update to latest versions
+  - Reset to defaults
 
-The existing skeleton will be backed up to ~/.agentbox/skeleton.backup/
+The existing configuration will be backed up to ~/.agentbox/skeleton.backup/
 (only one backup is kept).
 `)
 		return 0
