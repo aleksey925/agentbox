@@ -8,7 +8,7 @@ CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI
   - [Shell Completions](#shell-completions)
 - [Updating](#updating)
 - [How to Use](#how-to-use)
-  - [Language Support](#language-support)
+  - [Modular Sandbox Configuration](#modular-sandbox-configuration)
   - [Customization](#customization)
 
 ## Why use Agentbox?
@@ -119,16 +119,20 @@ to update specific ones. To switch to a specific version, use `agentbox agent us
 
 To remove all agentbox files from the project, run `agentbox clean`.
 
-### Language Support
+### Modular Sandbox Configuration
 
-Agentbox uses modular templates for language support. Each language includes all common tool caches:
+Sandbox configuration is modular — it consists of a core config plus language-specific configs you select 
+during `agentbox init`. Language configs mount tool caches from your host into the container, so 
+dependencies aren't re-downloaded on every run.
 
-| Language | Environment Variables                                                       | Volumes                            |
-|----------|-----------------------------------------------------------------------------|------------------------------------|
-| Go       | `GOPATH=/home/box/go`                                                       | `$GOPATH:/home/box/go`             |
-| Python   | `UV_PROJECT_ENVIRONMENT=/home/box/.venv`<br>`VENV_DIR_PATH=/home/box/.venv` | `~/.cache/uv`, `~/.cache/pypoetry` |
+Currently supported languages:
 
-To change language selection after initial setup, run `agentbox init skeleton`. This will backup
+| Language | 
+|----------|
+| Go       | 
+| Python   | 
+
+To change language selection after initial setup, run `agentbox init skeleton`. This will backup 
 your current skeleton to `~/.agentbox/skeleton.backup/` and let you re-select languages.
 
 ### Customization
