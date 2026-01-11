@@ -1,4 +1,4 @@
-# Python language support
+# Python environment preset
 services:
   agentbox:
     environment:

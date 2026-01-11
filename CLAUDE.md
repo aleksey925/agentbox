@@ -177,6 +177,34 @@ return 1
 - **Flags**: lowercase, hyphen-separated (`--no-cache`, `--build-no-cache`)
 - **Handlers**: `cmd` + command path (`cmdInit`, `cmdAgentUpdate`, `cmdSelfUninstall`)
 
+## Environment Presets Terminology
+
+Sandbox supports multiple development tools (Go, Python, etc.) via **environment presets**.
+Presets mount host caches and configs into the sandbox for better performance.
+
+### Terminology by Context
+
+| Context                | Term                  | Example                                    |
+|------------------------|-----------------------|--------------------------------------------|
+| **Global concept**     | Sandbox configuration | "Update sandbox configuration"             |
+| **Components**         | Environment presets   | "Available presets: Go, Python"            |
+| **UI (user-friendly)** | Development tools     | "Select your development tools"            |
+| **Code (internal)**    | `Preset`              | `type Preset struct`, `SupportedPresets()` |
+
+### Examples
+
+**UI Prompt:**
+```
+Configure sandbox
+Select your development tools — sandbox will mount
+their caches and configs for better performance
+```
+
+**Help text:**
+```
+Update sandbox configuration (change enabled Go, Python presets)
+```
+
 ## Code Style
 
 - All comments in English

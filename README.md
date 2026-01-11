@@ -72,7 +72,7 @@ or use `agentbox self update <tab>` to choose a version and install it.
 
 ```bash
 cd your-project
-agentbox init    # set up sandbox (select languages on first run) and download agents for first time
+agentbox init    # set up sandbox (configure presets on first run) and download agents for first time
 agentbox run     # start sandbox
 ```
 
@@ -110,19 +110,19 @@ agentbox agent use claude 2.0.67    # switch to specific version
 
 ### Modular Sandbox Configuration
 
-Sandbox configuration is modular — it consists of a core config plus language-specific configs you select 
-during `agentbox init`. Language configs mount tool caches from your host into the sandbox, so 
+Sandbox configuration is modular — it consists of a core config plus environment presets you select
+during `agentbox init`. Presets mount tool caches from your host into the sandbox, so
 dependencies aren't re-downloaded on every run.
 
-Currently supported languages:
+Available presets:
 
-| Language | 
+| Preset   |
 |----------|
-| Go       | 
-| Python   | 
+| Go       |
+| Python   |
 
-To change language selection after initial setup, run `agentbox init skeleton`. This will backup 
-your current skeleton to `~/.agentbox/skeleton.backup/` and let you re-select languages.
+To change enabled presets after initial setup, run `agentbox init skeleton`. This will backup
+your current skeleton to `~/.agentbox/skeleton.backup/` and let you re-configure.
 
 ### Customization
 

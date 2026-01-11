@@ -19,9 +19,9 @@ func NewManager(paths *config.Paths) *Manager {
 	return &Manager{paths: paths}
 }
 
-// CreateSkeleton creates a new skeleton with the specified languages.
+// CreateSkeleton creates a new skeleton with the specified presets.
 // If skeleton already exists, it must be backed up first using BackupSkeleton.
-func (m *Manager) CreateSkeleton(languages []string) error {
+func (m *Manager) CreateSkeleton(presets []string) error {
 	// ensure skeleton directories exist
 	if err := os.MkdirAll(m.paths.SkeletonComposeDir, 0o755); err != nil {
 		return fmt.Errorf("create skeleton compose dir: %w", err)
@@ -37,15 +37,15 @@ func (m *Manager) CreateSkeleton(languages []string) error {
 		return fmt.Errorf("write core template: %w", writeErr)
 	}
 
-	// copy language templates
-	for _, lang := range languages {
-		langTemplate, langErr := GetLanguageTemplate(lang)
-		if langErr != nil {
-			return fmt.Errorf("get language template %s: %w", lang, langErr)
+	// copy preset templates
+	for _, preset := range presets {
+		presetTemplate, presetErr := GetPresetTemplate(preset)
+		if presetErr != nil {
+			return fmt.Errorf("get preset template %s: %w", preset, presetErr)
 		}
-		langPath := filepath.Join(m.paths.SkeletonComposeDir, langTemplate.Filename)
-		if writeErr := os.WriteFile(langPath, langTemplate.Content, 0o644); writeErr != nil {
-			return fmt.Errorf("write language template %s: %w", lang, writeErr)
+		presetPath := filepath.Join(m.paths.SkeletonComposeDir, presetTemplate.Filename)
+		if writeErr := os.WriteFile(presetPath, presetTemplate.Content, 0o644); writeErr != nil {
+			return fmt.Errorf("write preset template %s: %w", preset, writeErr)
 		}
 	}
 
@@ -83,9 +83,9 @@ func (m *Manager) BackupSkeleton() error {
 	return nil
 }
 
-// GetEnabledLanguages returns languages currently enabled in skeleton.
+// GetEnabledPresets returns presets currently enabled in skeleton.
 // It parses existing files in skeleton/compose/ directory.
-func (m *Manager) GetEnabledLanguages() ([]string, error) {
+func (m *Manager) GetEnabledPresets() ([]string, error) {
 	entries, err := os.ReadDir(m.paths.SkeletonComposeDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -94,10 +94,10 @@ func (m *Manager) GetEnabledLanguages() ([]string, error) {
 		return nil, fmt.Errorf("read skeleton compose dir: %w", err)
 	}
 
-	var languages []string
-	supportedLangs := make(map[string]bool)
-	for _, lang := range SupportedLanguages() {
-		supportedLangs[lang.TemplateName] = true
+	var presets []string
+	supportedPresets := make(map[string]bool)
+	for _, preset := range SupportedPresets() {
+		supportedPresets[preset.TemplateName] = true
 	}
 
 	for _, e := range entries {
@@ -105,13 +105,13 @@ func (m *Manager) GetEnabledLanguages() ([]string, error) {
 			continue
 		}
 		name, _ := ParseTemplateName(e.Name())
-		// skip core and non-language files
-		if name != "core" && supportedLangs[name] {
-			languages = append(languages, name)
+		// skip core and non-preset files
+		if name != "core" && supportedPresets[name] {
+			presets = append(presets, name)
 		}
 	}
 
-	return languages, nil
+	return presets, nil
 }
 
 // CopyToProject copies skeleton files to project's .agentbox/ directory.

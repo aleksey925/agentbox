@@ -143,20 +143,20 @@ func GetCoreTemplate() (Template, error) {
 	return Template{}, errors.New("core template not found")
 }
 
-// GetLanguageTemplate returns a language-specific compose template.
-func GetLanguageTemplate(langTemplate string) (Template, error) {
+// GetPresetTemplate returns a preset-specific compose template.
+func GetPresetTemplate(presetTemplate string) (Template, error) {
 	templates, err := GetEmbeddedComposeTemplates()
 	if err != nil {
 		return Template{}, err
 	}
 
 	for _, t := range templates {
-		if t.Name == langTemplate {
+		if t.Name == presetTemplate {
 			return t, nil
 		}
 	}
 
-	return Template{}, fmt.Errorf("template %s not found", langTemplate)
+	return Template{}, fmt.Errorf("template %s not found", presetTemplate)
 }
 
 // SortComposeFiles sorts compose files in the correct order for Docker Compose.
@@ -166,11 +166,14 @@ func SortComposeFiles(files []string) {
 		nameI := filepath.Base(files[i])
 		nameJ := filepath.Base(files[j])
 
+		iIsCore := strings.HasPrefix(nameI, "core.")
+		jIsCore := strings.HasPrefix(nameJ, "core.")
+
 		// core.* always first
-		if strings.HasPrefix(nameI, "core.") {
+		if iIsCore && !jIsCore {
 			return true
 		}
-		if strings.HasPrefix(nameJ, "core.") {
+		if jIsCore && !iIsCore {
 			return false
 		}
 		// local.yml always last

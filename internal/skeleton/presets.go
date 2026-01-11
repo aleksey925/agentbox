@@ -5,41 +5,41 @@ import (
 	"path/filepath"
 )
 
-// Language represents a supported programming language with its detection rules.
-type Language struct {
+// Preset represents a supported environment preset with its detection rules.
+type Preset struct {
 	Name         string
 	TemplateName string // name in template filename (e.g., "go", "python")
 }
 
-// SupportedLanguages returns all supported languages in display order.
-func SupportedLanguages() []Language {
-	return []Language{
+// SupportedPresets returns all supported presets in display order.
+func SupportedPresets() []Preset {
+	return []Preset{
 		{Name: "Go", TemplateName: "go"},
 		{Name: "Python", TemplateName: "python"},
 	}
 }
 
-// DetectionResult contains information about language detection.
+// DetectionResult contains information about preset detection.
 type DetectionResult struct {
-	Language Language
+	Preset   Preset
 	Detected bool
-	Reason   string // explanation why language was detected
+	Reason   string // explanation why preset was detected
 }
 
-// DetectLanguages checks the user's environment for installed languages.
-func DetectLanguages(homeDir string) []DetectionResult {
-	languages := SupportedLanguages()
-	results := make([]DetectionResult, len(languages))
+// DetectPresets checks the user's environment for installed development tools.
+func DetectPresets(homeDir string) []DetectionResult {
+	presets := SupportedPresets()
+	results := make([]DetectionResult, len(presets))
 
-	for i, lang := range languages {
-		results[i] = DetectionResult{Language: lang}
-		results[i].Detected, results[i].Reason = detectLanguage(lang.TemplateName, homeDir)
+	for i, preset := range presets {
+		results[i] = DetectionResult{Preset: preset}
+		results[i].Detected, results[i].Reason = detectPreset(preset.TemplateName, homeDir)
 	}
 
 	return results
 }
 
-func detectLanguage(templateName, homeDir string) (detected bool, reason string) {
+func detectPreset(templateName, homeDir string) (detected bool, reason string) {
 	switch templateName {
 	case "go":
 		return detectGo(homeDir)

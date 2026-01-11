@@ -62,7 +62,7 @@ func TestCreateSkeleton(t *testing.T) {
 	}
 }
 
-func TestCreateSkeleton__no_languages(t *testing.T) {
+func TestCreateSkeleton__no_presets(t *testing.T) {
 	// arrange
 	paths := createTestPaths(t)
 	manager := NewManager(paths)
@@ -81,7 +81,7 @@ func TestCreateSkeleton__no_languages(t *testing.T) {
 		t.Error("core.v1.yml not created")
 	}
 
-	// check no language files
+	// check no preset files
 	entries, _ := os.ReadDir(paths.SkeletonComposeDir)
 	if len(entries) != 1 {
 		t.Errorf("expected 1 file (core only), got %d", len(entries))
@@ -176,7 +176,7 @@ func TestBackupSkeleton__replaces_old_backup(t *testing.T) {
 	}
 }
 
-func TestGetEnabledLanguages(t *testing.T) {
+func TestGetEnabledPresets(t *testing.T) {
 	// arrange
 	paths := createTestPaths(t)
 	manager := NewManager(paths)
@@ -185,45 +185,45 @@ func TestGetEnabledLanguages(t *testing.T) {
 	}
 
 	// act
-	languages, err := manager.GetEnabledLanguages()
+	presets, err := manager.GetEnabledPresets()
 
 	// assert
 	if err != nil {
-		t.Fatalf("GetEnabledLanguages error: %v", err)
+		t.Fatalf("GetEnabledPresets error: %v", err)
 	}
 
-	if len(languages) != 2 {
-		t.Fatalf("expected 2 languages, got %d", len(languages))
+	if len(presets) != 2 {
+		t.Fatalf("expected 2 presets, got %d", len(presets))
 	}
 
-	// check both languages present (order may vary)
-	langSet := make(map[string]bool)
-	for _, l := range languages {
-		langSet[l] = true
+	// check both presets present (order may vary)
+	presetSet := make(map[string]bool)
+	for _, p := range presets {
+		presetSet[p] = true
 	}
-	if !langSet["go"] {
-		t.Error("go not in enabled languages")
+	if !presetSet["go"] {
+		t.Error("go not in enabled presets")
 	}
-	if !langSet["python"] {
-		t.Error("python not in enabled languages")
+	if !presetSet["python"] {
+		t.Error("python not in enabled presets")
 	}
 }
 
-func TestGetEnabledLanguages__no_skeleton(t *testing.T) {
+func TestGetEnabledPresets__no_skeleton(t *testing.T) {
 	// arrange
 	paths := createTestPaths(t)
 	manager := NewManager(paths)
 
 	// act
-	languages, err := manager.GetEnabledLanguages()
+	presets, err := manager.GetEnabledPresets()
 
 	// assert
 	if err != nil {
-		t.Fatalf("GetEnabledLanguages error: %v", err)
+		t.Fatalf("GetEnabledPresets error: %v", err)
 	}
 
-	if languages != nil {
-		t.Errorf("expected nil, got %v", languages)
+	if presets != nil {
+		t.Errorf("expected nil, got %v", presets)
 	}
 }
 
@@ -349,5 +349,22 @@ func TestCheckUpdates__no_skeleton(t *testing.T) {
 
 	if updates != nil {
 		t.Errorf("expected nil, got %v", updates)
+	}
+}
+
+func TestGitExcludeEntries(t *testing.T) {
+	// act
+	entries := GitExcludeEntries()
+
+	// assert
+	expected := []string{".agentbox/"}
+	if len(entries) != len(expected) {
+		t.Fatalf("len(entries) = %d, want %d", len(entries), len(expected))
+	}
+
+	for i, e := range entries {
+		if e != expected[i] {
+			t.Errorf("entries[%d] = %s, want %s", i, e, expected[i])
+		}
 	}
 }

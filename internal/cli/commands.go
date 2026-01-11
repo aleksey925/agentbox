@@ -20,6 +20,7 @@ import (
 	"github.com/aleksey925/agentbox/internal/config"
 	"github.com/aleksey925/agentbox/internal/docker"
 	"github.com/aleksey925/agentbox/internal/skeleton"
+	"github.com/charmbracelet/huh"
 )
 
 func hasHelpFlag(args []string) bool {
@@ -49,7 +50,7 @@ Copies sandbox configurations into the project.
 
 Files created:
   - .agentbox/core.v*.yml           Core Docker Compose configuration
-  - .agentbox/<lang>.v*.yml         Language-specific configurations
+  - .agentbox/<preset>.v*.yml       Environment preset configurations (Go, Python)
   - .agentbox/Dockerfile.agentbox   Dockerfile for the sandbox
   - .agentbox/local.yml             Project-specific overrides (not overwritten)
   - mise.toml (if not exists)       Tool versions configuration
@@ -80,7 +81,7 @@ Reinitializes the base sandbox configuration (~/.agentbox/skeleton/).
 This configuration is used for project initialization with 'agentbox init'.
 
 Use this to:
-  - Change language support (Go, Python, etc.)
+  - Update sandbox configuration (change enabled Go, Python presets)
   - Update to latest versions
   - Reset to defaults
 
@@ -102,8 +103,8 @@ The existing configuration will be backed up to ~/.agentbox/skeleton.backup/
 
 	manager := skeleton.NewManager(paths)
 
-	// get previously enabled languages BEFORE backup (skeleton will be moved)
-	previousLangs, _ := manager.GetEnabledLanguages()
+	// get previously enabled presets BEFORE backup (skeleton will be moved)
+	previousPresets, _ := manager.GetEnabledPresets()
 
 	// check if skeleton exists and confirm
 	if paths.SkeletonExists() {
@@ -120,11 +121,11 @@ The existing configuration will be backed up to ~/.agentbox/skeleton.backup/
 		fmt.Println()
 	}
 
-	// run language selection
-	selectedLangs := a.selectLanguages(paths.HomeDir, previousLangs)
+	// run preset selection
+	selectedPresets := a.selectPresets(paths.HomeDir, previousPresets)
 
 	// create new skeleton
-	if err := manager.CreateSkeleton(selectedLangs); err != nil {
+	if err := manager.CreateSkeleton(selectedPresets); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating skeleton: %v\n", err)
 		return 1
 	}
@@ -162,11 +163,11 @@ func (a *App) doInit() int {
 		fmt.Println("Detecting environment...")
 		fmt.Println()
 
-		// run language selection
-		selectedLangs := a.selectLanguages(paths.HomeDir, nil)
+		// run preset selection
+		selectedPresets := a.selectPresets(paths.HomeDir, nil)
 
 		// create skeleton
-		if createErr := manager.CreateSkeleton(selectedLangs); createErr != nil {
+		if createErr := manager.CreateSkeleton(selectedPresets); createErr != nil {
 			fmt.Fprintf(os.Stderr, "Error creating skeleton: %v\n", createErr)
 			return 1
 		}
@@ -226,122 +227,148 @@ func (a *App) doInit() int {
 	return 0
 }
 
-func (a *App) selectLanguages(homeDir string, preSelected []string) []string {
-	detections := skeleton.DetectLanguages(homeDir)
-	languages := skeleton.SupportedLanguages()
+type presetSelectState struct {
+	detections  []skeleton.DetectionResult
+	names       map[string]string
+	labels      map[string]string
+	selectedSet map[string]bool
+}
 
-	// build pre-selected set
-	preSelectedSet := make(map[string]bool)
-	for _, lang := range preSelected {
-		preSelectedSet[lang] = true
+func newPresetSelectState(homeDir string, preSelected []string) *presetSelectState {
+	detections := skeleton.DetectPresets(homeDir)
+	preSelectedSet := sliceToSet(preSelected)
+
+	state := &presetSelectState{
+		detections:  detections,
+		names:       make(map[string]string),
+		labels:      make(map[string]string),
+		selectedSet: make(map[string]bool),
 	}
 
-	// initialize selection based on pre-selected or detection
-	selected := make([]bool, len(languages))
-	for i, det := range detections {
-		if len(preSelected) > 0 {
-			// if we have pre-selected languages, use those
-			selected[i] = preSelectedSet[det.Language.TemplateName]
-		} else {
-			// otherwise use detection
-			selected[i] = det.Detected
-		}
+	for _, det := range detections {
+		state.names[det.Preset.TemplateName] = det.Preset.Name
+		state.labels[det.Preset.TemplateName] = buildLabel(det, preSelectedSet)
+		state.selectedSet[det.Preset.TemplateName] = shouldSelect(det, preSelectedSet)
 	}
 
-	fmt.Println("Enable languages:")
-	for i, det := range detections {
-		checkbox := "[ ]"
-		if selected[i] {
-			checkbox = "[x]"
-		}
-		reason := ""
-		if det.Detected && det.Reason != "" {
-			reason = fmt.Sprintf("  (detected: %s)", det.Reason)
-		}
-		if len(preSelected) > 0 && preSelectedSet[det.Language.TemplateName] {
-			reason = "  (current)"
-		}
-		fmt.Printf("%s %s%s\n", checkbox, det.Language.Name, reason)
-	}
+	return state
+}
 
+func buildLabel(det skeleton.DetectionResult, preSelectedSet map[string]bool) string {
+	label := det.Preset.Name
+	if preSelectedSet[det.Preset.TemplateName] {
+		label += " (current)"
+	} else if det.Detected && det.Reason != "" {
+		label += fmt.Sprintf(" (detected: %s)", det.Reason)
+	}
+	return label
+}
+
+func shouldSelect(det skeleton.DetectionResult, preSelectedSet map[string]bool) bool {
+	if len(preSelectedSet) > 0 {
+		return preSelectedSet[det.Preset.TemplateName]
+	}
+	return det.Detected
+}
+
+func (s *presetSelectState) buildOptions() []huh.Option[string] {
+	options := make([]huh.Option[string], 0, len(s.detections))
+
+	// selected items first
+	for _, det := range s.detections {
+		if s.selectedSet[det.Preset.TemplateName] {
+			opt := huh.NewOption(s.labels[det.Preset.TemplateName], det.Preset.TemplateName).Selected(true)
+			options = append(options, opt)
+		}
+	}
+	// then unselected
+	for _, det := range s.detections {
+		if !s.selectedSet[det.Preset.TemplateName] {
+			opt := huh.NewOption(s.labels[det.Preset.TemplateName], det.Preset.TemplateName)
+			options = append(options, opt)
+		}
+	}
+	return options
+}
+
+func (s *presetSelectState) updateSelection(selected []string) {
+	s.selectedSet = sliceToSet(selected)
+}
+
+func (s *presetSelectState) printSelection(selected []string) {
 	fmt.Println()
-	fmt.Print("Enter numbers to toggle (e.g., 1,3 or 1-3), or press Enter to accept: ")
-
-	reader := bufio.NewReader(os.Stdin)
-	input, _ := reader.ReadString('\n')
-	input = strings.TrimSpace(input)
-
-	if input != "" {
-		// parse input and toggle selection
-		a.parseToggleInput(input, selected)
-
-		// show updated selection
-		fmt.Println()
-		fmt.Println("Selected languages:")
-		for i, det := range detections {
-			if selected[i] {
-				fmt.Printf("  [x] %s\n", det.Language.Name)
-			}
+	if len(selected) == 0 {
+		fmt.Println("No presets enabled.")
+	} else {
+		fmt.Println("Enabled presets:")
+		for _, preset := range selected {
+			fmt.Printf("  - %s\n", s.names[preset])
 		}
 	}
+	fmt.Println()
+}
 
-	// build result
-	var result []string
-	for i, det := range detections {
-		if selected[i] {
-			result = append(result, det.Language.TemplateName)
+func (a *App) selectPresets(homeDir string, preSelected []string) []string {
+	state := newPresetSelectState(homeDir, preSelected)
+
+	for {
+		var selected []string
+		err := huh.NewMultiSelect[string]().
+			Title("Configure sandbox").
+			Description("Select your development tools — sandbox will mount their caches and configs").
+			Options(state.buildOptions()...).
+			Value(&selected).
+			Run()
+
+		if err != nil {
+			return setToSlice(state.selectedSet)
+		}
+
+		state.updateSelection(selected)
+
+		var confirm bool
+		err = huh.NewConfirm().
+			Title("Continue with this selection?").
+			Affirmative("Yes, continue").
+			Negative("No, edit selection").
+			Value(&confirm).
+			Run()
+
+		if err != nil {
+			return setToSlice(state.selectedSet)
+		}
+
+		if confirm {
+			state.printSelection(selected)
+			return selected
 		}
 	}
+}
 
+func sliceToSet(slice []string) map[string]bool {
+	set := make(map[string]bool)
+	for _, s := range slice {
+		set[s] = true
+	}
+	return set
+}
+
+func setToSlice(set map[string]bool) []string {
+	result := make([]string, 0, len(set))
+	for k := range set {
+		result = append(result, k)
+	}
 	return result
-}
-
-func (a *App) parseToggleInput(input string, selected []bool) {
-	// parse comma-separated values
-	for part := range strings.SplitSeq(input, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		a.togglePart(part, selected)
-	}
-}
-
-func (a *App) togglePart(part string, selected []bool) {
-	// check for range (e.g., 1-3)
-	if !strings.Contains(part, "-") {
-		// single number
-		idx := parseNumber(part) - 1
-		if idx >= 0 && idx < len(selected) {
-			selected[idx] = !selected[idx]
-		}
-		return
-	}
-
-	rangeParts := strings.Split(part, "-")
-	if len(rangeParts) != 2 {
-		return
-	}
-	start := parseNumber(rangeParts[0]) - 1
-	end := parseNumber(rangeParts[1]) - 1
-	for i := start; i <= end && i < len(selected); i++ {
-		if i >= 0 {
-			selected[i] = !selected[i]
-		}
-	}
-}
-
-func parseNumber(s string) int {
-	s = strings.TrimSpace(s)
-	var n int
-	_, _ = fmt.Sscanf(s, "%d", &n)
-	return n
 }
 
 func (a *App) confirmAction(prompt string) bool {
 	fmt.Printf("%s [Y/n] ", prompt)
 	reader := bufio.NewReader(os.Stdin)
-	answer, _ := reader.ReadString('\n')
+	answer, err := reader.ReadString('\n')
+	if err != nil {
+		// EOF or read error - don't auto-confirm
+		return false
+	}
 	answer = strings.TrimSpace(strings.ToLower(answer))
 	return answer == "" || answer == "y" || answer == "yes"
 }
