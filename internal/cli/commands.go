@@ -48,10 +48,9 @@ Usage:
   agentbox init [command]
 
 Commands:
-  skeleton                          Regenerate language skeleton
+  skeleton                          (Re)init global sandbox configs
 
-This command creates Docker configuration files in .agentbox/ directory
-and downloads AI agent binaries.
+This command copies sandbox configurations into the project.
 
 Files created:
   - .agentbox/core.v*.yml           Core Docker Compose configuration
@@ -77,14 +76,15 @@ Use "agentbox init skeleton --help" for more information.
 
 func (a *App) initSkeleton(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Regenerate language skeleton
+		fmt.Print(`(Re)init global sandbox configs
 
 Usage:
   agentbox init skeleton
 
 This command regenerates the skeleton in ~/.agentbox/skeleton/ with new
-language selection. Use this to:
-  - Add or remove language support
+sandbox configs.
+Use this to:
+  - Change language support (Go, Python, etc.)
   - Update to latest template versions
   - Reset skeleton to defaults
 
@@ -225,7 +225,7 @@ func (a *App) doInit() int {
 	}
 
 	fmt.Println("\nSandbox initialized successfully!")
-	fmt.Println("Run 'agentbox run' to start the container.")
+	fmt.Println("Run 'agentbox run' to start the sandbox.")
 
 	return 0
 }
@@ -381,7 +381,7 @@ var runAllowedFlags = []string{"--build", "--build-no-cache"}
 
 func (a *App) cmdRun(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Start a new container
+		fmt.Print(`Start sandbox
 
 Usage:
   agentbox run [flags]
@@ -451,16 +451,15 @@ func (a *App) parseRunFlags(args []string) runOptions {
 
 func (a *App) cmdAttach(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Attach to running container
+		fmt.Print(`Attach to running sandbox
 
 Usage:
   agentbox attach [container-id]
 
 Arguments:
-  container-id                      Container ID (optional, interactive if omitted)
+  container-id                      Container ID (optional, auto-select if only one)
 
-If no container ID is provided and multiple containers are running,
-you will be prompted to select one.
+If multiple sandboxes are running, you will be prompted to select one.
 `)
 		return 0
 	}
@@ -486,7 +485,7 @@ you will be prompted to select one.
 	}
 
 	if len(containers) == 0 {
-		fmt.Println("No running agentbox containers in this project")
+		fmt.Println("No running sandboxes in this project")
 		return 1
 	}
 
@@ -498,7 +497,7 @@ you will be prompted to select one.
 }
 
 func (a *App) selectAndAttach(containers []docker.Container) int {
-	fmt.Println("Multiple running containers found:")
+	fmt.Println("Multiple running sandboxes found:")
 	for i, c := range containers {
 		fmt.Printf("  %d) %s (started %s)\n", i+1, c.ID, c.Started)
 	}
@@ -763,15 +762,15 @@ var psAllowedFlags = []string{"-a", "--all"}
 
 func (a *App) cmdPs(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`List running agentbox containers
+		fmt.Print(`List running sandboxes
 
 Usage:
   agentbox ps [flags]
 
 Flags:
-  -a, --all                         Show containers from all projects
+  -a, --all                         Show sandboxes from all projects
 
-By default, only containers from the current project directory are shown.
+By default, only sandboxes from the current project are shown.
 `)
 		return 0
 	}
@@ -805,9 +804,9 @@ By default, only containers from the current project directory are shown.
 
 	if len(containers) == 0 {
 		if showAll {
-			fmt.Println("No running agentbox containers")
+			fmt.Println("No running sandboxes")
 		} else {
-			fmt.Println("No running agentbox containers in this project")
+			fmt.Println("No running sandboxes in this project")
 		}
 		return 0
 	}

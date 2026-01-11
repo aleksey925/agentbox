@@ -38,9 +38,9 @@ func extractNames(subs []Subcommand) []string {
 func AllCommandsWithDesc() []Subcommand {
 	return []Subcommand{
 		{"init", "Initialize sandbox in current directory"},
-		{"run", "Start a new container"},
-		{"attach", "Attach to running container"},
-		{"ps", "List running agentbox containers"},
+		{"run", "Start sandbox"},
+		{"attach", "Attach to running sandbox"},
+		{"ps", "List running sandboxes"},
 		{"agent", "Manage AI agents"},
 		{"self", "Update or uninstall agentbox"},
 		{"clean", "Remove sandbox files from project"},
@@ -72,8 +72,8 @@ func RunFlagsWithDesc() []Subcommand {
 // This is the single source of truth for ps flags.
 func PsFlagsWithDesc() []Subcommand {
 	return []Subcommand{
-		{"-a", "Show containers from all projects"},
-		{"--all", "Show containers from all projects"},
+		{"-a", "Show sandboxes from all projects"},
+		{"--all", "Show sandboxes from all projects"},
 	}
 }
 
@@ -100,7 +100,7 @@ func CommandFlags() map[string][]string {
 // This is the single source of truth for init subcommands.
 func InitSubcommandsWithDesc() []Subcommand {
 	return []Subcommand{
-		{"skeleton", "Regenerate language skeleton"},
+		{"skeleton", "(Re)init global sandbox configs"},
 	}
 }
 

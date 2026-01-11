@@ -58,9 +58,9 @@ Usage:
 
 Commands:
   init                              Initialize sandbox in current directory
-  run                               Start a new container
-  attach                            Attach to running container
-  ps                                List running agentbox containers
+  run                               Start sandbox
+  attach                            Attach to running sandbox
+  ps                                List running sandboxes
   agent                             Manage AI agents
   self                              Update or uninstall agentbox
   clean                             Remove sandbox files from project
