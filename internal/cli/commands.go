@@ -59,8 +59,8 @@ Files created:
   - .agentbox/local.yml             Project-specific overrides (not overwritten)
   - mise.toml (if not exists)       Tool versions configuration
 
-On first run, you'll be prompted to select which languages to enable.
-Run 'agentbox init skeleton' to change language selection.
+On first run, you'll set up the base sandbox configuration.
+Run 'agentbox init skeleton' to reconfigure.
 
 Use "agentbox init skeleton --help" for more information.
 `)
