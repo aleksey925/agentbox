@@ -55,6 +55,35 @@ func AllCommands() []string {
 	return extractNames(AllCommandsWithDesc())
 }
 
+// CommandDesc returns the description for a top-level command.
+func CommandDesc(name string) string {
+	for _, cmd := range AllCommandsWithDesc() {
+		if cmd.Name == name {
+			return cmd.Description
+		}
+	}
+	return ""
+}
+
+// SubcommandDesc returns the description for a subcommand.
+func SubcommandDesc(parent, name string) string {
+	var subs []Subcommand
+	switch parent {
+	case "init":
+		subs = InitSubcommandsWithDesc()
+	case "agent":
+		subs = AgentSubcommandsWithDesc()
+	case "self":
+		subs = SelfSubcommandsWithDesc()
+	}
+	for _, sub := range subs {
+		if sub.Name == name {
+			return sub.Description
+		}
+	}
+	return ""
+}
+
 // =============================================================================
 // Command flags
 // =============================================================================

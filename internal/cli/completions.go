@@ -10,7 +10,7 @@ import (
 
 func (a *App) cmdCompletion(args []string) int {
 	if len(args) == 0 || hasHelpFlag(args) {
-		fmt.Print(`Generates autocompletion script for agentbox commands
+		fmt.Printf(`%s
 
 Usage:
   agentbox completion <shell> [alias]
@@ -30,7 +30,7 @@ To enable completions, add to your shell config:
 
   # Zsh (~/.zshrc)
   eval "$(agentbox completion zsh)"
-`)
+`, CommandDesc("completion"))
 		if len(args) == 0 {
 			return 1
 		}

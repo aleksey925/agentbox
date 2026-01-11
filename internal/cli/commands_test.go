@@ -577,3 +577,54 @@ func TestAllSubcommandsRejectUnknownFlags(t *testing.T) {
 		})
 	}
 }
+
+func TestCommandDesc(t *testing.T) {
+	tests := []struct {
+		name     string
+		cmd      string
+		expected string
+	}{
+		{"init", "init", "Initialize sandbox in current directory"},
+		{"run", "run", "Start sandbox"},
+		{"nonexistent", "nonexistent", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// act
+			result := CommandDesc(tt.cmd)
+
+			// assert
+			if result != tt.expected {
+				t.Errorf("CommandDesc(%q) = %q, want %q", tt.cmd, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestSubcommandDesc(t *testing.T) {
+	tests := []struct {
+		name     string
+		parent   string
+		sub      string
+		expected string
+	}{
+		{"init skeleton", "init", "skeleton", "(Re)init global sandbox configs"},
+		{"agent update", "agent", "update", "Update agents to latest version"},
+		{"self uninstall", "self", "uninstall", "Remove agentbox from system"},
+		{"unknown parent", "unknown", "sub", ""},
+		{"nonexistent sub", "init", "nonexistent", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// act
+			result := SubcommandDesc(tt.parent, tt.sub)
+
+			// assert
+			if result != tt.expected {
+				t.Errorf("SubcommandDesc(%q, %q) = %q, want %q", tt.parent, tt.sub, result, tt.expected)
+			}
+		})
+	}
+}

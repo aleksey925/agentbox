@@ -42,13 +42,13 @@ func (a *App) cmdInit(args []string) int {
 	}
 
 	if hasHelpFlag(args) {
-		fmt.Print(`Initialize sandbox in current directory
+		fmt.Printf(`%s
 
 Usage:
   agentbox init [command]
 
 Commands:
-  skeleton                          (Re)init global sandbox configs
+  skeleton                          %s
 
 Copies sandbox configurations into the project.
 
@@ -63,7 +63,7 @@ On first run, you'll set up the base sandbox configuration.
 Run 'agentbox init skeleton' to reconfigure.
 
 Use "agentbox init skeleton --help" for more information.
-`)
+`, CommandDesc("init"), SubcommandDesc("init", "skeleton"))
 		return 0
 	}
 
@@ -76,7 +76,7 @@ Use "agentbox init skeleton --help" for more information.
 
 func (a *App) initSkeleton(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`(Re)init global sandbox configs
+		fmt.Printf(`%s
 
 Usage:
   agentbox init skeleton
@@ -91,7 +91,7 @@ Use this to:
 
 The existing configuration will be backed up to ~/.agentbox/skeleton.backup/
 (only one backup is kept).
-`)
+`, SubcommandDesc("init", "skeleton"))
 		return 0
 	}
 
@@ -382,7 +382,7 @@ var runAllowedFlags = []string{"--build", "--build-no-cache"}
 
 func (a *App) cmdRun(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Start sandbox
+		fmt.Printf(`%s
 
 Usage:
   agentbox run [flags]
@@ -390,7 +390,7 @@ Usage:
 Flags:
   --build                           Rebuild image before running
   --build-no-cache                  Rebuild image without Docker cache
-`)
+`, CommandDesc("run"))
 		return 0
 	}
 
@@ -452,7 +452,7 @@ func (a *App) parseRunFlags(args []string) runOptions {
 
 func (a *App) cmdAttach(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Attach to running sandbox
+		fmt.Printf(`%s
 
 Usage:
   agentbox attach [container-id]
@@ -461,7 +461,7 @@ Arguments:
   container-id                      Container ID (optional, auto-select if only one)
 
 If multiple sandboxes are running, you will be prompted to select one.
-`)
+`, CommandDesc("attach"))
 		return 0
 	}
 
@@ -556,7 +556,7 @@ func (a *App) ensureProjectReady(cwd string) int {
 
 func (a *App) cmdAgent(args []string) int {
 	if len(args) > 0 && hasHelpFlag(args[:1]) {
-		fmt.Printf(`Manage AI agents
+		fmt.Printf(`%s
 
 Usage:
   agentbox agent [command]
@@ -575,7 +575,7 @@ Examples:
   agentbox agent use claude 1.0.0   Switch Claude to version 1.0.0
 
 Use "agentbox agent <command> --help" for more information about a command.
-`, availableAgentsStr())
+`, CommandDesc("agent"), availableAgentsStr())
 		return 0
 	}
 
@@ -656,7 +656,7 @@ func (a *App) showAgentStatus(manager *agents.Manager) int {
 
 func (a *App) agentUpdate(manager *agents.Manager, args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Printf(`Update agents to latest version
+		fmt.Printf(`%s
 
 Usage:
   agentbox agent update [agent...]
@@ -670,7 +670,7 @@ Examples:
   agentbox agent update             Update all agents
   agentbox agent update claude      Update only Claude
   agentbox agent update claude copilot  Update Claude and Copilot
-`, availableAgentsStr())
+`, SubcommandDesc("agent", "update"), availableAgentsStr())
 		return 0
 	}
 
@@ -720,7 +720,7 @@ Examples:
 
 func (a *App) agentUse(manager *agents.Manager, args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Printf(`Switch agent to specific version
+		fmt.Printf(`%s
 
 Usage:
   agentbox agent use <agent> <version>
@@ -734,7 +734,7 @@ Available agents: %s
 Examples:
   agentbox agent use claude 1.0.0
   agentbox agent use copilot 0.5.0
-`, availableAgentsStr())
+`, SubcommandDesc("agent", "use"), availableAgentsStr())
 		return 0
 	}
 
@@ -763,7 +763,7 @@ var psAllowedFlags = []string{"-a", "--all"}
 
 func (a *App) cmdPs(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`List running sandboxes
+		fmt.Printf(`%s
 
 Usage:
   agentbox ps [flags]
@@ -772,7 +772,7 @@ Flags:
   -a, --all                         Show sandboxes from all projects
 
 By default, only sandboxes from the current project are shown.
-`)
+`, CommandDesc("ps"))
 		return 0
 	}
 
@@ -823,13 +823,13 @@ By default, only sandboxes from the current project are shown.
 
 func (a *App) cmdClean(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Remove sandbox files from project
+		fmt.Printf(`%s
 
 Usage:
   agentbox clean
 
 This command removes the .agentbox/ directory from the current project.
-`)
+`, CommandDesc("clean"))
 		return 0
 	}
 
@@ -1026,7 +1026,7 @@ const githubRepo = "aleksey925/agentbox"
 
 func (a *App) cmdSelf(args []string) int {
 	if len(args) > 0 && hasHelpFlag(args[:1]) {
-		fmt.Print(`Update or uninstall agentbox
+		fmt.Printf(`%s
 
 Usage:
   agentbox self <command>
@@ -1043,7 +1043,7 @@ Examples:
   agentbox self uninstall --purge   Remove agentbox and all data
 
 Use "agentbox self <command> --help" for more information about a command.
-`)
+`, CommandDesc("self"))
 		return 0
 	}
 
@@ -1077,7 +1077,7 @@ Use "agentbox self <command> --help" for more information about a command.
 
 func (a *App) selfUpdate(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Update agentbox to latest or specified version
+		fmt.Printf(`%s
 
 Usage:
   agentbox self update [version]
@@ -1088,7 +1088,7 @@ Arguments:
 Examples:
   agentbox self update              Update to latest version
   agentbox self update 1.2.0        Update to version 1.2.0
-`)
+`, SubcommandDesc("self", "update"))
 		return 0
 	}
 
@@ -1193,14 +1193,14 @@ Examples:
 
 func (a *App) selfUninstall(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Remove agentbox from system
+		fmt.Printf(`%s
 
 Usage:
   agentbox self uninstall [flags]
 
 Flags:
   --purge                           Also remove ~/.agentbox directory
-`)
+`, SubcommandDesc("self", "uninstall"))
 		return 0
 	}
 
@@ -1266,11 +1266,11 @@ Flags:
 
 func (a *App) selfVersions(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`List available agentbox versions
+		fmt.Printf(`%s
 
 Usage:
   agentbox self versions
-`)
+`, SubcommandDesc("self", "versions"))
 		return 0
 	}
 
