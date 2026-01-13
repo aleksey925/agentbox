@@ -110,40 +110,25 @@ agentbox agent use claude 2.0.67    # switch to specific version
 
 ### Modular Sandbox Configuration
 
-Sandbox configuration is modular — it consists of a core config plus environment presets you select
-during `agentbox init`. Presets mount tool caches from your host into the sandbox, so
-dependencies aren't re-downloaded on every run.
+Sandbox configuration is modular — it consists of a core config (`core.*.yml`) plus environment presets 
+(like `go.v<x>.yml`) you select during `agentbox init`. Presets mount tool caches from your host into 
+the sandbox, so dependencies aren't re-downloaded on every run.
 
-Available presets:
-
-| Preset   |
-|----------|
-| Go       |
-| Python   |
+Available presets: `Go`, `Python`.
 
 To change enabled presets after initial setup, run `agentbox init skeleton`. This will backup
 your current skeleton to `~/.agentbox/skeleton.backup/` and let you re-configure.
 
 ### Customization
 
-There are two levels of customization:
+> Each project, after initialization, contains a `.agentbox/` directory with Compose files. 
+> The CLI automatically discovers all `.yml` files in this directory and merges them when 
+> running the sandbox.
+> 
+> Only `core.*.yml` and `Dockerfile.agentbox` are required — preset files are optional and can
+> be safely deleted if you don't need them. You can also add your own compose files here.
 
-**Simple customization** — edit `.agentbox/local.yml` in your project:
+**`<project>/.agentbox/local.yml`** — project-specific overrides that are never overwritten by agentbox.
 
-```yaml
-services:
-  agentbox:
-    volumes:
-      - ./data:/home/box/data          # mount additional directory
-      - ~/.ssh:/home/box/.ssh:ro       # mount SSH keys (read-only)
-    environment:
-      - MY_API_KEY=secret
-```
-
-The `local.yml` file is never overwritten by agentbox — your changes are safe.
-
-**Advanced customization** — edit files in `~/.agentbox/skeleton/`:
-
-The skeleton directory contains the templates used to generate project configurations.
-You can modify any file there, and changes will be applied when you run `agentbox init`
-in new projects. This is useful for organization-wide customizations.
+**`~/.agentbox/skeleton/`** — global templates for `agentbox init`. Can be customized, but will
+be backed up and recreated when running `agentbox init skeleton`.

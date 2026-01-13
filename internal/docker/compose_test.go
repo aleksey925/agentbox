@@ -1,6 +1,8 @@
 package docker
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -93,5 +95,172 @@ func TestParseContainersOutput__single_container(t *testing.T) {
 	expected := Container{ID: "abc123def456", Name: "my-project-agentbox-1", Started: "2 hours ago"}
 	if containers[0] != expected {
 		t.Errorf("containers[0] = %+v, want %+v", containers[0], expected)
+	}
+}
+
+func TestDiscoverComposeFiles__core_only(t *testing.T) {
+	// arrange
+	tmpDir := t.TempDir()
+	agentboxDir := filepath.Join(tmpDir, ".agentbox")
+	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentboxDir, "core.v1.yml"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	files, err := DiscoverComposeFiles(tmpDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := []string{filepath.Join(agentboxDir, "core.v1.yml")}
+	if len(files) != len(expected) {
+		t.Fatalf("len(files) = %d, want %d", len(files), len(expected))
+	}
+	for i, f := range files {
+		if f != expected[i] {
+			t.Errorf("files[%d] = %s, want %s", i, f, expected[i])
+		}
+	}
+}
+
+func TestDiscoverComposeFiles__core_with_presets(t *testing.T) {
+	// arrange
+	tmpDir := t.TempDir()
+	agentboxDir := filepath.Join(tmpDir, ".agentbox")
+	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"core.v1.yml", "go.v1.yml", "python.v1.yml", "local.yml"} {
+		if err := os.WriteFile(filepath.Join(agentboxDir, name), []byte(""), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// act
+	files, err := DiscoverComposeFiles(tmpDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// expected order: core first, then alphabetically, local.yml last
+	expected := []string{
+		filepath.Join(agentboxDir, "core.v1.yml"),
+		filepath.Join(agentboxDir, "go.v1.yml"),
+		filepath.Join(agentboxDir, "python.v1.yml"),
+		filepath.Join(agentboxDir, "local.yml"),
+	}
+	if len(files) != len(expected) {
+		t.Fatalf("len(files) = %d, want %d", len(files), len(expected))
+	}
+	for i, f := range files {
+		if f != expected[i] {
+			t.Errorf("files[%d] = %s, want %s", i, f, expected[i])
+		}
+	}
+}
+
+func TestDiscoverComposeFiles__preset_removed__still_works(t *testing.T) {
+	// arrange
+	tmpDir := t.TempDir()
+	agentboxDir := filepath.Join(tmpDir, ".agentbox")
+	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// only core and local, no presets — simulates user deleting preset files
+	for _, name := range []string{"core.v1.yml", "local.yml"} {
+		if err := os.WriteFile(filepath.Join(agentboxDir, name), []byte(""), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// act
+	files, err := DiscoverComposeFiles(tmpDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := []string{
+		filepath.Join(agentboxDir, "core.v1.yml"),
+		filepath.Join(agentboxDir, "local.yml"),
+	}
+	if len(files) != len(expected) {
+		t.Fatalf("len(files) = %d, want %d", len(files), len(expected))
+	}
+	for i, f := range files {
+		if f != expected[i] {
+			t.Errorf("files[%d] = %s, want %s", i, f, expected[i])
+		}
+	}
+}
+
+func TestDiscoverComposeFiles__empty_directory__returns_error(t *testing.T) {
+	// arrange
+	tmpDir := t.TempDir()
+	agentboxDir := filepath.Join(tmpDir, ".agentbox")
+	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	_, err := DiscoverComposeFiles(tmpDir)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error for empty .agentbox directory")
+	}
+	expectedMsg := "no compose files found in .agentbox/. Run 'agentbox init' to fix"
+	if err.Error() != expectedMsg {
+		t.Errorf("error = %q, want %q", err.Error(), expectedMsg)
+	}
+}
+
+func TestDiscoverComposeFiles__no_agentbox_dir__returns_error(t *testing.T) {
+	// arrange
+	tmpDir := t.TempDir()
+
+	// act
+	_, err := DiscoverComposeFiles(tmpDir)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error when .agentbox directory doesn't exist")
+	}
+}
+
+func TestDiscoverComposeFiles__ignores_non_yml_files(t *testing.T) {
+	// arrange
+	tmpDir := t.TempDir()
+	agentboxDir := filepath.Join(tmpDir, ".agentbox")
+	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// yml files
+	if err := os.WriteFile(filepath.Join(agentboxDir, "core.v1.yml"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// non-yml files should be ignored
+	if err := os.WriteFile(filepath.Join(agentboxDir, "Dockerfile.agentbox"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentboxDir, "README.md"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	files, err := DiscoverComposeFiles(tmpDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := []string{filepath.Join(agentboxDir, "core.v1.yml")}
+	if len(files) != len(expected) {
+		t.Fatalf("len(files) = %d, want %d; got %v", len(files), len(expected), files)
 	}
 }
