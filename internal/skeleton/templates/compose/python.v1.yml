@@ -8,4 +8,3 @@ services:
       - VENV_DIR_PATH=/home/box/.venv
     volumes:
       - ~/.cache/uv:/home/box/.cache/uv
-      - ~/.cache/pypoetry:/home/box/.cache/pypoetry
