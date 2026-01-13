@@ -122,7 +122,11 @@ The existing configuration will be backed up to ~/.agentbox/skeleton.backup/
 	}
 
 	// run preset selection
-	selectedPresets := a.selectPresets(paths.HomeDir, previousPresets)
+	selectedPresets, canceled := a.selectPresets(paths.HomeDir, previousPresets)
+	if canceled {
+		fmt.Println("Canceled")
+		return 0
+	}
 
 	// create new skeleton
 	if err := manager.CreateSkeleton(selectedPresets); err != nil {
@@ -164,7 +168,11 @@ func (a *App) doInit() int {
 		fmt.Println()
 
 		// run preset selection
-		selectedPresets := a.selectPresets(paths.HomeDir, nil)
+		selectedPresets, canceled := a.selectPresets(paths.HomeDir, nil)
+		if canceled {
+			fmt.Println("Canceled")
+			return 0
+		}
 
 		// create skeleton
 		if createErr := manager.CreateSkeleton(selectedPresets); createErr != nil {
@@ -308,7 +316,9 @@ func (s *presetSelectState) printSelection(selected []string) {
 	fmt.Println()
 }
 
-func (a *App) selectPresets(homeDir string, preSelected []string) []string {
+// selectPresets shows interactive preset selection UI.
+// Returns selected presets and canceled flag (true if user pressed Ctrl+C).
+func (a *App) selectPresets(homeDir string, preSelected []string) ([]string, bool) {
 	state := newPresetSelectState(homeDir, preSelected)
 
 	for {
@@ -321,7 +331,7 @@ func (a *App) selectPresets(homeDir string, preSelected []string) []string {
 			Run()
 
 		if err != nil {
-			return setToSlice(state.selectedSet)
+			return nil, true
 		}
 
 		state.updateSelection(selected)
@@ -335,12 +345,12 @@ func (a *App) selectPresets(homeDir string, preSelected []string) []string {
 			Run()
 
 		if err != nil {
-			return setToSlice(state.selectedSet)
+			return nil, true
 		}
 
 		if confirm {
 			state.printSelection(selected)
-			return selected
+			return selected, false
 		}
 	}
 }
@@ -351,14 +361,6 @@ func sliceToSet(slice []string) map[string]bool {
 		set[s] = true
 	}
 	return set
-}
-
-func setToSlice(set map[string]bool) []string {
-	result := make([]string, 0, len(set))
-	for k := range set {
-		result = append(result, k)
-	}
-	return result
 }
 
 func (a *App) confirmAction(prompt string) bool {
