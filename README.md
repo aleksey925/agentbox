@@ -8,6 +8,8 @@ CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI
   - [Shell Completions](#shell-completions)
 - [Updating](#updating)
 - [How to Use](#how-to-use)
+  - [Modular Sandbox Configuration](#modular-sandbox-configuration)
+  - [Customization](#customization)
 
 ## Why use Agentbox?
 
@@ -16,7 +18,7 @@ CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI
 
 ## Installation
 
-Download the latest release from [releases](https://github.com/aleksey925/agentbox/releases) and install it manually 
+Download the latest release from [releases](https://github.com/aleksey925/agentbox/releases) and install it manually
 or you can run the following commands to install the latest version to `~/.local/bin`:
 
 ```bash
@@ -68,36 +70,65 @@ or use `agentbox self update <tab>` to choose a version and install it.
 
 ## How to Use
 
-Navigate to your project directory and run `agentbox init`. This command creates several files in your 
-project and downloads AI agent binaries to `~/.agentbox/bin/`.
-
-The following files will be added to your project:
-
-- `Dockerfile.agentbox` — defines the container image. This file is overwritten on every `agentbox init`, so do not modify it manually.
-- `docker-compose.agentbox.yml` — main compose configuration with volume mounts and environment variables. This file is also overwritten on every `agentbox init`.
-- `docker-compose.agentbox.local.yml` — your personal overrides. This file is created only once and never overwritten. Use it to add custom volumes, environment variables, or any other Docker Compose settings you need.
-- `mise.toml` — configuration for [mise](https://mise.jdx.dev) tool manager. Created only if it doesn't exist. Use it to specify which tools (Python, Node.js, Go, etc.) should be available inside the container.
-
-All these files are automatically added to `.git/info/exclude` to keep them out of version control.
-
-After initialization, run `agentbox run` to start the container. Your project is mounted at `/home/box/app` inside 
-the container. AI agents are available as commands with permissive flags enabled:
-
 ```bash
-claude    # runs with --dangerously-skip-permissions
-copilot   # runs with --allow-all-paths --allow-all-tools
-codex     # runs with --full-auto
-gemini    # runs with --yolo
+cd your-project
+agentbox init    # set up sandbox (configure presets on first run) and download agents for first time
+agentbox run     # start sandbox
 ```
 
-To rebuild the container image before running, use `agentbox run --build`. For a full rebuild
-without Docker cache, use `agentbox run --build-no-cache`.
+Inside the sandbox, AI agents are available with permissive flags:
 
-To list running containers, use `agentbox ps`. To attach to an already running container, use
-`agentbox attach` (interactive selection) or `agentbox attach <container-id>`.
+```bash
+claude    # --dangerously-skip-permissions
+copilot   # --allow-all-paths --allow-all-tools
+codex     # --full-auto
+gemini    # --yolo
+```
 
-Agent binaries are managed separately from the container. Use `agentbox agent` to see installed versions
-vs latest available. Use `agentbox agent update` to update all agents, or `agentbox agent update claude copilot`
-to update specific ones. To switch to a specific version, use `agentbox agent use claude 2.0.67`.
+Your project is mounted at `/home/box/app`.
 
-To remove all agentbox files from the project, run `agentbox clean`.
+**Other Commands**
+
+| Command                         | Description                       |
+|---------------------------------|-----------------------------------|
+| `agentbox run --build`          | Rebuild and run sandbox           |
+| `agentbox run --build-no-cache` | Full rebuild without cache        |
+| `agentbox ps`                   | List running sandboxes            |
+| `agentbox attach`               | Attach to running sandbox         |
+| `agentbox clean`                | Remove sandbox files from project |
+
+**Managing Agents**
+
+Agent binaries are managed separately from the sandbox:
+
+```bash
+agentbox agent                      # show installed vs latest versions
+agentbox agent update               # update all agents
+agentbox agent update claude        # update specific agent
+agentbox agent use claude 2.0.67    # switch to specific version
+```
+
+### Modular Sandbox Configuration
+
+Sandbox configuration is modular — it consists of a core config (`core.*.yml`) plus environment presets 
+(like `go.v<x>.yml`) you select during `agentbox init`. Presets mount tool caches from your host into 
+the sandbox, so dependencies aren't re-downloaded on every run.
+
+Available presets: `Go`, `Python`.
+
+To change enabled presets after initial setup, run `agentbox init skeleton`. This will backup
+your current skeleton to `~/.agentbox/skeleton.backup/` and let you re-configure.
+
+### Customization
+
+> Each project, after initialization, contains a `.agentbox/` directory with Compose files. 
+> The CLI automatically discovers all `.yml` files in this directory and merges them when 
+> running the sandbox.
+> 
+> Only `core.*.yml` and `Dockerfile.agentbox` are required — preset files are optional and can
+> be safely deleted if you don't need them. You can also add your own compose files here.
+
+**`<project>/.agentbox/local.yml`** — project-specific overrides that are never overwritten by agentbox.
+
+**`~/.agentbox/skeleton/`** — global templates for `agentbox init`. Can be customized, but will
+be backed up and recreated when running `agentbox init skeleton`.

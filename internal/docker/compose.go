@@ -3,21 +3,25 @@ package docker
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+
+	"github.com/aleksey925/agentbox/internal/skeleton"
 )
 
-func Run(projectDir string) error {
+// Run starts a container using compose files from .agentbox/ directory.
+func Run(projectDir string, composeFiles []string) error {
 	ctx := context.Background()
-	args := []string{
-		"compose",
-		"-f", "docker-compose.agentbox.yml",
-		"-f", "docker-compose.agentbox.local.yml",
-		"run", "--rm",
-		"agentbox",
+	args := []string{"compose"}
+
+	for _, f := range composeFiles {
+		args = append(args, "-f", f)
 	}
+	args = append(args, "run", "--rm", "agentbox")
 
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = projectDir
@@ -44,14 +48,15 @@ func Attach(containerID string) error {
 	return nil
 }
 
-func Build(projectDir string, noCache bool) error {
+// Build builds the container image using compose files from .agentbox/ directory.
+func Build(projectDir string, composeFiles []string, noCache bool) error {
 	ctx := context.Background()
-	args := []string{
-		"compose",
-		"-f", "docker-compose.agentbox.yml",
-		"-f", "docker-compose.agentbox.local.yml",
-		"build",
+	args := []string{"compose"}
+
+	for _, f := range composeFiles {
+		args = append(args, "-f", f)
 	}
+	args = append(args, "build")
 
 	if noCache {
 		args = append(args, "--no-cache")
@@ -66,6 +71,31 @@ func Build(projectDir string, noCache bool) error {
 		return fmt.Errorf("docker compose build: %w", err)
 	}
 	return nil
+}
+
+// DiscoverComposeFiles finds all compose files in .agentbox/ directory and sorts them.
+// Order: core first, then alphabetically, local.yml always last.
+func DiscoverComposeFiles(projectDir string) ([]string, error) {
+	agentboxDir := filepath.Join(projectDir, ".agentbox")
+	entries, err := os.ReadDir(agentboxDir)
+	if err != nil {
+		return nil, fmt.Errorf("read .agentbox directory: %w", err)
+	}
+
+	var files []string
+	for _, e := range entries {
+		name := e.Name()
+		if strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml") {
+			files = append(files, filepath.Join(agentboxDir, name))
+		}
+	}
+
+	if len(files) == 0 {
+		return nil, errors.New("no compose files found in .agentbox/. Run 'agentbox init' to fix")
+	}
+
+	skeleton.SortComposeFiles(files)
+	return files, nil
 }
 
 type Container struct {

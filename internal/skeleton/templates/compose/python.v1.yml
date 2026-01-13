@@ -1,0 +1,10 @@
+# Python environment preset
+services:
+  agentbox:
+    environment:
+      - UV_PROJECT_ENVIRONMENT=/home/box/.venv
+      - UV_LINK_MODE=copy
+      - POETRY_VIRTUALENVS_CREATE=false
+      - VENV_DIR_PATH=/home/box/.venv
+    volumes:
+      - ~/.cache/uv:/home/box/.cache/uv

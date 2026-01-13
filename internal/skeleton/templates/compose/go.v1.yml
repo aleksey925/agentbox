@@ -1,0 +1,7 @@
+# Go environment preset
+services:
+  agentbox:
+    environment:
+      - GOPATH=/home/box/go
+    volumes:
+      - ${GOPATH:-~/.go}:/home/box/go

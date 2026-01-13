@@ -1,13 +1,10 @@
-# docker compose -f docker-compose.agentbox.yml run --rm --build agentbox
+# agentbox core configuration
+# This file is managed by agentbox and will be overwritten on updates.
 services:
   agentbox:
     build:
-      context: .
-      dockerfile: Dockerfile.agentbox
-    environment:
-      - VENV_DIR_PATH=/home/box/.venv
-      - UV_PROJECT_ENVIRONMENT=/home/box/.venv
-      - GOPATH=/home/box/go
+      context: ..
+      dockerfile: .agentbox/Dockerfile.agentbox
     volumes:
       # ai agents binaries (read-only mount from host)
       - ~/.agentbox/bin:/opt/agentbox/bin:ro
@@ -18,7 +15,4 @@ services:
       - ~/.codex/:/home/box/.codex/
       - ~/.gemini/:/home/box/.gemini/
       # project files
-      - ./:/home/box/app
-      # caches
-      - ~/.go/:/home/box/go
-      - ~/.cache/uv:/home/box/.cache/uv
+      - ..:/home/box/app

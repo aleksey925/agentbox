@@ -20,6 +20,7 @@ import (
 	"github.com/aleksey925/agentbox/internal/config"
 	"github.com/aleksey925/agentbox/internal/docker"
 	"github.com/aleksey925/agentbox/internal/skeleton"
+	"github.com/charmbracelet/huh"
 )
 
 func hasHelpFlag(args []string) bool {
@@ -37,18 +38,28 @@ func availableAgentsStr() string {
 
 func (a *App) cmdInit(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Initialize sandbox in current directory
+		fmt.Printf(`%s
 
 Usage:
-  agentbox init
+  agentbox init [command]
 
-This command creates Docker configuration files and downloads AI agent binaries.
+Commands:
+  skeleton                          %s
+
+Copies sandbox configurations into the project.
+
 Files created:
-  - Dockerfile.agentbox
-  - docker-compose.agentbox.yml
-  - docker-compose.agentbox.local.yml
-  - mise.toml (if not exists)
-`)
+  - .agentbox/core.v*.yml           Core Docker Compose configuration
+  - .agentbox/<preset>.v*.yml       Environment preset configurations (Go, Python)
+  - .agentbox/Dockerfile.agentbox   Dockerfile for the sandbox
+  - .agentbox/local.yml             Project-specific overrides (not overwritten)
+  - mise.toml (if not exists)       Tool versions configuration
+
+On first run, you'll set up the base sandbox configuration.
+Run 'agentbox init skeleton' to reconfigure.
+
+Use "agentbox init skeleton --help" for more information.
+`, CommandDesc("init"), SubcommandDesc("init", "skeleton"))
 		return 0
 	}
 
@@ -56,11 +67,81 @@ Files created:
 		return code
 	}
 
-	return a.doInit(true)
+	return a.doInit()
 }
 
-func (a *App) doInit(interactive bool) int {
-	paths, err := config.NewPaths()
+func (a *App) cmdInitSkeleton(args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Printf(`%s
+
+Usage:
+  agentbox init skeleton
+
+Reinitializes the base sandbox configuration (~/.agentbox/skeleton/).
+This configuration is used for project initialization with 'agentbox init'.
+
+Use this to:
+  - Update sandbox configuration (change enabled Go, Python presets)
+  - Update to latest versions
+  - Reset to defaults
+
+The existing configuration will be backed up to ~/.agentbox/skeleton.backup/
+(only one backup is kept).
+`, SubcommandDesc("init", "skeleton"))
+		return 0
+	}
+
+	if code := RejectUnknownFlags(args); code != 0 {
+		return code
+	}
+
+	paths, err := a.Paths()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+
+	manager := skeleton.NewManager(paths)
+
+	// get previously enabled presets BEFORE backup (skeleton will be moved)
+	previousPresets, _ := manager.GetEnabledPresets()
+
+	// check if skeleton exists and confirm
+	if paths.SkeletonExists() {
+		fmt.Println("Existing skeleton will be backed up and regenerated.")
+		if !a.confirmAction("Continue?") {
+			return 0
+		}
+
+		if err := manager.BackupSkeleton(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error backing up skeleton: %v\n", err)
+			return 1
+		}
+		fmt.Println("Backed up existing skeleton to ~/.agentbox/skeleton.backup/")
+		fmt.Println()
+	}
+
+	// run preset selection
+	selectedPresets, canceled := a.selectPresets(paths.HomeDir, previousPresets)
+	if canceled {
+		fmt.Println("Canceled")
+		return 0
+	}
+
+	// create new skeleton
+	if err := manager.CreateSkeleton(selectedPresets); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating skeleton: %v\n", err)
+		return 1
+	}
+
+	fmt.Println()
+	fmt.Println("Updated ~/.agentbox/skeleton/")
+
+	return 0
+}
+
+func (a *App) doInit() int {
+	paths, err := a.Paths()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
@@ -77,12 +158,63 @@ func (a *App) doInit(interactive bool) int {
 		return 1
 	}
 
-	if interactive && !a.confirmOverwrite(cwd) {
-		return 1
+	manager := skeleton.NewManager(paths)
+
+	// check if skeleton exists
+	if !paths.SkeletonExists() {
+		fmt.Println("No skeleton found. Let's set it up...")
+		fmt.Println()
+		fmt.Println("Detecting environment...")
+		fmt.Println()
+
+		// run preset selection
+		selectedPresets, canceled := a.selectPresets(paths.HomeDir, nil)
+		if canceled {
+			fmt.Println("Canceled")
+			return 0
+		}
+
+		// create skeleton
+		if createErr := manager.CreateSkeleton(selectedPresets); createErr != nil {
+			fmt.Fprintf(os.Stderr, "Error creating skeleton: %v\n", createErr)
+			return 1
+		}
+
+		fmt.Println()
+		fmt.Println("Created ~/.agentbox/skeleton/")
+	} else {
+		// check for updates
+		updates, checkErr := manager.CheckUpdates()
+		if checkErr == nil && len(updates) > 0 {
+			fmt.Println("Updates available:")
+			for _, u := range updates {
+				fmt.Printf("  %s: v%d -> v%d\n", u.Name, u.CurrentVersion, u.LatestVersion)
+			}
+			fmt.Println()
+			fmt.Println("Run 'agentbox init skeleton' to update.")
+			fmt.Println()
+		}
 	}
 
-	if code := a.copySkeletonFiles(cwd); code != 0 {
-		return code
+	// check if .agentbox/ already exists in project
+	agentboxDir := filepath.Join(cwd, ".agentbox")
+	if _, statErr := os.Stat(agentboxDir); statErr == nil {
+		fmt.Println("Warning: .agentbox/ already exists and will be overwritten (except local.yml)")
+		if !a.confirmAction("Continue?") {
+			fmt.Println("Aborted")
+			return 0
+		}
+	}
+
+	// copy skeleton to project
+	copiedFiles, err := manager.CopyToProject(cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error copying skeleton to project: %v\n", err)
+		return 1
+	}
+	fmt.Println("Created .agentbox/ (from skeleton)")
+	for _, name := range copiedFiles {
+		fmt.Printf("  %s\n", name)
 	}
 
 	a.setupGitExclude(cwd)
@@ -98,59 +230,149 @@ func (a *App) doInit(interactive bool) int {
 	}
 
 	fmt.Println("\nSandbox initialized successfully!")
-	fmt.Println("Run 'agentbox run' to start the container.")
+	fmt.Println("Run 'agentbox run' to start the sandbox.")
 
 	return 0
 }
 
-func (a *App) confirmOverwrite(cwd string) bool {
-	var existing []string
-	for _, name := range skeleton.OverwriteFiles() {
-		path := filepath.Join(cwd, name)
-		if _, err := os.Stat(path); err == nil {
-			existing = append(existing, name)
+type presetSelectState struct {
+	detections  []skeleton.DetectionResult
+	names       map[string]string
+	labels      map[string]string
+	selectedSet map[string]bool
+}
+
+func newPresetSelectState(homeDir string, preSelected []string) *presetSelectState {
+	detections := skeleton.DetectPresets(homeDir)
+	preSelectedSet := sliceToSet(preSelected)
+
+	state := &presetSelectState{
+		detections:  detections,
+		names:       make(map[string]string),
+		labels:      make(map[string]string),
+		selectedSet: make(map[string]bool),
+	}
+
+	for _, det := range detections {
+		state.names[det.Preset.TemplateName] = det.Preset.Name
+		state.labels[det.Preset.TemplateName] = buildLabel(det, preSelectedSet)
+		state.selectedSet[det.Preset.TemplateName] = shouldSelect(det, preSelectedSet)
+	}
+
+	return state
+}
+
+func buildLabel(det skeleton.DetectionResult, preSelectedSet map[string]bool) string {
+	label := det.Preset.Name
+	if preSelectedSet[det.Preset.TemplateName] {
+		label += " (current)"
+	} else if det.Detected && det.Reason != "" {
+		label += fmt.Sprintf(" (detected: %s)", det.Reason)
+	}
+	return label
+}
+
+func shouldSelect(det skeleton.DetectionResult, preSelectedSet map[string]bool) bool {
+	if len(preSelectedSet) > 0 {
+		return preSelectedSet[det.Preset.TemplateName]
+	}
+	return det.Detected
+}
+
+func (s *presetSelectState) buildOptions() []huh.Option[string] {
+	options := make([]huh.Option[string], 0, len(s.detections))
+
+	// selected items first
+	for _, det := range s.detections {
+		if s.selectedSet[det.Preset.TemplateName] {
+			opt := huh.NewOption(s.labels[det.Preset.TemplateName], det.Preset.TemplateName).Selected(true)
+			options = append(options, opt)
 		}
 	}
-
-	if len(existing) == 0 {
-		return true
+	// then unselected
+	for _, det := range s.detections {
+		if !s.selectedSet[det.Preset.TemplateName] {
+			opt := huh.NewOption(s.labels[det.Preset.TemplateName], det.Preset.TemplateName)
+			options = append(options, opt)
+		}
 	}
-
-	fmt.Printf("Warning: files already exist: %s\n", strings.Join(existing, ", "))
-	fmt.Print("Overwrite? [y/N] ")
-
-	reader := bufio.NewReader(os.Stdin)
-	answer, _ := reader.ReadString('\n')
-	answer = strings.TrimSpace(strings.ToLower(answer))
-
-	if answer != "y" && answer != "yes" {
-		fmt.Println("Aborted")
-		return false
-	}
-	return true
+	return options
 }
 
-func (a *App) copySkeletonFiles(cwd string) int {
-	fmt.Println("Initializing agentbox...")
+func (s *presetSelectState) updateSelection(selected []string) {
+	s.selectedSet = sliceToSet(selected)
+}
 
-	if err := skeleton.CopyTo(cwd); err != nil {
-		fmt.Fprintf(os.Stderr, "Error copying skeleton files: %v\n", err)
-		return 1
+func (s *presetSelectState) printSelection(selected []string) {
+	fmt.Println()
+	if len(selected) == 0 {
+		fmt.Println("No presets enabled.")
+	} else {
+		fmt.Println("Enabled presets:")
+		for _, preset := range selected {
+			fmt.Printf("  - %s\n", s.names[preset])
+		}
 	}
-	for _, name := range skeleton.OverwriteFiles() {
-		fmt.Printf("  Created: %s\n", name)
-	}
+	fmt.Println()
+}
 
-	createdUserFiles, err := skeleton.CopyUserFilesIfMissing(cwd)
+// selectPresets shows interactive preset selection UI.
+// Returns selected presets and canceled flag (true if user pressed Ctrl+C).
+func (a *App) selectPresets(homeDir string, preSelected []string) ([]string, bool) {
+	state := newPresetSelectState(homeDir, preSelected)
+
+	for {
+		var selected []string
+		err := huh.NewMultiSelect[string]().
+			Title("Configure sandbox").
+			Description("Select your development tools — sandbox will mount their caches and configs").
+			Options(state.buildOptions()...).
+			Value(&selected).
+			Run()
+
+		if err != nil {
+			return nil, true
+		}
+
+		state.updateSelection(selected)
+
+		var confirm bool
+		err = huh.NewConfirm().
+			Title("Continue with this selection?").
+			Affirmative("Yes, continue").
+			Negative("No, edit selection").
+			Value(&confirm).
+			Run()
+
+		if err != nil {
+			return nil, true
+		}
+
+		if confirm {
+			state.printSelection(selected)
+			return selected, false
+		}
+	}
+}
+
+func sliceToSet(slice []string) map[string]bool {
+	set := make(map[string]bool)
+	for _, s := range slice {
+		set[s] = true
+	}
+	return set
+}
+
+func (a *App) confirmAction(prompt string) bool {
+	fmt.Printf("%s [Y/n] ", prompt)
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error copying user files: %v\n", err)
-		return 1
+		// EOF or read error - don't auto-confirm
+		return false
 	}
-	for _, name := range createdUserFiles {
-		fmt.Printf("  Created: %s\n", name)
-	}
-
-	return 0
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	return answer == "" || answer == "y" || answer == "yes"
 }
 
 func (a *App) setupGitExclude(cwd string) {
@@ -184,7 +406,7 @@ var runAllowedFlags = []string{"--build", "--build-no-cache"}
 
 func (a *App) cmdRun(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Start a new container
+		fmt.Printf(`%s
 
 Usage:
   agentbox run [flags]
@@ -192,7 +414,7 @@ Usage:
 Flags:
   --build                           Rebuild image before running
   --build-no-cache                  Rebuild image without Docker cache
-`)
+`, CommandDesc("run"))
 		return 0
 	}
 
@@ -212,16 +434,23 @@ Flags:
 		return code
 	}
 
+	// discover compose files
+	composeFiles, err := docker.DiscoverComposeFiles(cwd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error discovering compose files: %v\n", err)
+		return 1
+	}
+
 	if opts.build {
 		fmt.Println("Building Docker image...")
-		if err := docker.Build(cwd, opts.noCache); err != nil {
+		if err := docker.Build(cwd, composeFiles, opts.noCache); err != nil {
 			fmt.Fprintf(os.Stderr, "Error building image: %v\n", err)
 			return 1
 		}
 	}
 
 	fmt.Println("Starting agentbox...")
-	if err := docker.Run(cwd); err != nil {
+	if err := docker.Run(cwd, composeFiles); err != nil {
 		fmt.Fprintf(os.Stderr, "Error running container: %v\n", err)
 		return 1
 	}
@@ -247,17 +476,16 @@ func (a *App) parseRunFlags(args []string) runOptions {
 
 func (a *App) cmdAttach(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Attach to running container
+		fmt.Printf(`%s
 
 Usage:
   agentbox attach [container-id]
 
 Arguments:
-  container-id                      Container ID (optional, interactive if omitted)
+  container-id                      Container ID (optional, auto-select if only one)
 
-If no container ID is provided and multiple containers are running,
-you will be prompted to select one.
-`)
+If multiple sandboxes are running, you will be prompted to select one.
+`, CommandDesc("attach"))
 		return 0
 	}
 
@@ -282,7 +510,7 @@ you will be prompted to select one.
 	}
 
 	if len(containers) == 0 {
-		fmt.Println("No running agentbox containers in this project")
+		fmt.Println("No running sandboxes in this project")
 		return 1
 	}
 
@@ -294,7 +522,7 @@ you will be prompted to select one.
 }
 
 func (a *App) selectAndAttach(containers []docker.Container) int {
-	fmt.Println("Multiple running containers found:")
+	fmt.Println("Multiple running sandboxes found:")
 	for i, c := range containers {
 		fmt.Printf("  %d) %s (started %s)\n", i+1, c.ID, c.Started)
 	}
@@ -318,16 +546,16 @@ func (a *App) attachToContainer(containerID string) int {
 }
 
 func (a *App) ensureProjectReady(cwd string) int {
-	composePath := filepath.Join(cwd, "docker-compose.agentbox.yml")
-	if _, err := os.Stat(composePath); os.IsNotExist(err) {
+	agentboxDir := filepath.Join(cwd, ".agentbox")
+	if _, err := os.Stat(agentboxDir); os.IsNotExist(err) {
 		fmt.Println("Warning: not initialized, running init first...")
-		if code := a.doInit(false); code != 0 {
+		if code := a.doInit(); code != 0 {
 			return code
 		}
 		fmt.Println()
 	}
 
-	paths, err := config.NewPaths()
+	paths, err := a.Paths()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
@@ -350,9 +578,9 @@ func (a *App) ensureProjectReady(cwd string) int {
 	return 0
 }
 
-func (a *App) cmdAgent(args []string) int {
-	if len(args) > 0 && hasHelpFlag(args[:1]) {
-		fmt.Printf(`Manage AI agents
+func (a *App) cmdAgentStatus(args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Printf(`%s
 
 Usage:
   agentbox agent [command]
@@ -371,45 +599,21 @@ Examples:
   agentbox agent use claude 1.0.0   Switch Claude to version 1.0.0
 
 Use "agentbox agent <command> --help" for more information about a command.
-`, availableAgentsStr())
+`, CommandDesc("agent"), availableAgentsStr())
 		return 0
 	}
 
-	// check for unknown flags at agent level (before subcommand dispatch)
-	if len(args) > 0 {
-		if code := RejectUnknownFlags(args[:1]); code != 0 {
-			return code
-		}
+	if code := RejectUnknownFlags(args); code != 0 {
+		return code
 	}
 
-	paths, err := config.NewPaths()
+	manager, err := a.AgentManager()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
 	}
 
-	manager, err := agents.NewManager(paths)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return 1
-	}
-
-	if len(args) == 0 {
-		return a.showAgentStatus(manager)
-	}
-
-	subcmd := args[0]
-	subargs := args[1:]
-
-	switch subcmd {
-	case "update":
-		return a.agentUpdate(manager, subargs)
-	case "use":
-		return a.agentUse(manager, subargs)
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown agent subcommand: %s\n", subcmd)
-		return 1
-	}
+	return a.showAgentStatus(manager)
 }
 
 func (a *App) showAgentStatus(manager *agents.Manager) int {
@@ -450,9 +654,9 @@ func (a *App) showAgentStatus(manager *agents.Manager) int {
 	return 0
 }
 
-func (a *App) agentUpdate(manager *agents.Manager, args []string) int {
+func (a *App) cmdAgentUpdate(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Printf(`Update agents to latest version
+		fmt.Printf(`%s
 
 Usage:
   agentbox agent update [agent...]
@@ -466,12 +670,18 @@ Examples:
   agentbox agent update             Update all agents
   agentbox agent update claude      Update only Claude
   agentbox agent update claude copilot  Update Claude and Copilot
-`, availableAgentsStr())
+`, SubcommandDesc("agent", "update"), availableAgentsStr())
 		return 0
 	}
 
 	if code := RejectUnknownFlags(args); code != 0 {
 		return code
+	}
+
+	manager, err := a.AgentManager()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
 	}
 
 	// all remaining args are agent names (flags already validated)
@@ -514,9 +724,9 @@ Examples:
 	return 0
 }
 
-func (a *App) agentUse(manager *agents.Manager, args []string) int {
+func (a *App) cmdAgentUse(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Printf(`Switch agent to specific version
+		fmt.Printf(`%s
 
 Usage:
   agentbox agent use <agent> <version>
@@ -530,7 +740,7 @@ Available agents: %s
 Examples:
   agentbox agent use claude 1.0.0
   agentbox agent use copilot 0.5.0
-`, availableAgentsStr())
+`, SubcommandDesc("agent", "use"), availableAgentsStr())
 		return 0
 	}
 
@@ -540,6 +750,12 @@ Examples:
 
 	if len(args) < 2 {
 		fmt.Fprintf(os.Stderr, "Usage: agentbox agent use <agent> <version>\n")
+		return 1
+	}
+
+	manager, err := a.AgentManager()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
 	}
 
@@ -559,16 +775,16 @@ var psAllowedFlags = []string{"-a", "--all"}
 
 func (a *App) cmdPs(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`List running agentbox containers
+		fmt.Printf(`%s
 
 Usage:
   agentbox ps [flags]
 
 Flags:
-  -a, --all                         Show containers from all projects
+  -a, --all                         Show sandboxes from all projects
 
-By default, only containers from the current project directory are shown.
-`)
+By default, only sandboxes from the current project are shown.
+`, CommandDesc("ps"))
 		return 0
 	}
 
@@ -601,9 +817,9 @@ By default, only containers from the current project directory are shown.
 
 	if len(containers) == 0 {
 		if showAll {
-			fmt.Println("No running agentbox containers")
+			fmt.Println("No running sandboxes")
 		} else {
-			fmt.Println("No running agentbox containers in this project")
+			fmt.Println("No running sandboxes in this project")
 		}
 		return 0
 	}
@@ -619,16 +835,13 @@ By default, only containers from the current project directory are shown.
 
 func (a *App) cmdClean(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Remove sandbox files from project
+		fmt.Printf(`%s
 
 Usage:
   agentbox clean
 
-This command removes all agentbox-generated files from the current directory:
-  - Dockerfile.agentbox
-  - docker-compose.agentbox.yml
-  - docker-compose.agentbox.local.yml
-`)
+This command removes the .agentbox/ directory from the current project.
+`, CommandDesc("clean"))
 		return 0
 	}
 
@@ -644,30 +857,27 @@ This command removes all agentbox-generated files from the current directory:
 
 	fmt.Println("Cleaning agentbox files...")
 
-	files := skeleton.Files()
-	removed := 0
-	for _, name := range files {
-		path := filepath.Join(cwd, name)
-		if err := os.Remove(path); err != nil {
-			if !os.IsNotExist(err) {
-				fmt.Fprintf(os.Stderr, "Warning: could not remove %s: %v\n", name, err)
-			}
-		} else {
-			fmt.Printf("Removed: %s\n", name)
-			removed++
-		}
+	agentboxDir := filepath.Join(cwd, ".agentbox")
+	if _, err := os.Stat(agentboxDir); os.IsNotExist(err) {
+		fmt.Println("No .agentbox/ directory found")
+		return 0
+	}
 
-		// remove from .git/info/exclude
-		if err := removeFromGitExclude(cwd, name); err == nil {
-			fmt.Printf("Removed from .git/info/exclude: %s\n", name)
+	if err := os.RemoveAll(agentboxDir); err != nil {
+		fmt.Fprintf(os.Stderr, "Error removing .agentbox/: %v\n", err)
+		return 1
+	}
+
+	fmt.Println("Removed: .agentbox/")
+
+	// remove from .git/info/exclude
+	for _, entry := range skeleton.GitExcludeEntries() {
+		if err := removeFromGitExclude(cwd, entry); err == nil {
+			fmt.Printf("Removed from .git/info/exclude: %s\n", entry)
 		}
 	}
 
-	if removed == 0 {
-		fmt.Println("No files to remove")
-	} else {
-		fmt.Printf("Cleaned %d file(s)\n", removed)
-	}
+	fmt.Println("Cleaned successfully")
 	return 0
 }
 
@@ -684,12 +894,12 @@ func addToGitExcludeVerbose(projectDir string) ([]string, error) {
 	}
 
 	content := string(existing)
-	files := skeleton.Files()
+	entries := skeleton.GitExcludeEntries()
 
 	var toAdd []string
-	for _, name := range files {
-		if !strings.Contains(content, name) {
-			toAdd = append(toAdd, name)
+	for _, entry := range entries {
+		if !strings.Contains(content, entry) {
+			toAdd = append(toAdd, entry)
 		}
 	}
 
@@ -703,8 +913,8 @@ func addToGitExcludeVerbose(projectDir string) ([]string, error) {
 	}
 	defer f.Close()
 
-	for _, name := range toAdd {
-		if _, err := f.WriteString(name + "\n"); err != nil {
+	for _, entry := range toAdd {
+		if _, err := f.WriteString(entry + "\n"); err != nil {
 			return nil, fmt.Errorf("write to exclude file: %w", err)
 		}
 	}
@@ -725,7 +935,7 @@ func createMiseTomlIfNotExists(projectDir string) error {
 	return nil
 }
 
-func removeFromGitExclude(projectDir, filename string) error {
+func removeFromGitExclude(projectDir, entry string) error {
 	excludePath := filepath.Join(projectDir, ".git", "info", "exclude")
 
 	content, err := os.ReadFile(excludePath)
@@ -738,7 +948,7 @@ func removeFromGitExclude(projectDir, filename string) error {
 	found := false
 
 	for _, line := range lines {
-		if strings.TrimSpace(line) == filename {
+		if strings.TrimSpace(line) == entry {
 			found = true
 			continue
 		}
@@ -826,60 +1036,12 @@ func ensureAgentConfigs() error {
 
 const githubRepo = "aleksey925/agentbox"
 
-func (a *App) cmdSelf(args []string) int {
-	if len(args) > 0 && hasHelpFlag(args[:1]) {
-		fmt.Print(`Update or uninstall agentbox
+// Note: cmdSelf is not used directly - "self" command requires subcommand
+// The help is shown via dispatcher when no subcommand is provided
 
-Usage:
-  agentbox self <command>
-
-Commands:
-  update [version]                  Update to latest or specified version
-  uninstall                         Remove agentbox from system
-  versions                          List available versions
-
-Examples:
-  agentbox self update              Update to latest version
-  agentbox self update 1.2.0        Update to specific version
-  agentbox self uninstall           Remove agentbox
-  agentbox self uninstall --purge   Remove agentbox and all data
-
-Use "agentbox self <command> --help" for more information about a command.
-`)
-		return 0
-	}
-
-	if len(args) > 0 {
-		if code := RejectUnknownFlags(args[:1]); code != 0 {
-			return code
-		}
-	}
-
-	if len(args) == 0 {
-		fmt.Fprintf(os.Stderr, "Usage: agentbox self <command>\n")
-		fmt.Fprintf(os.Stderr, "Available commands: update, uninstall, versions\n")
-		return 1
-	}
-
-	subcmd := args[0]
-	subargs := args[1:]
-
-	switch subcmd {
-	case "update":
-		return a.selfUpdate(subargs)
-	case "uninstall":
-		return a.selfUninstall(subargs)
-	case "versions":
-		return a.selfVersions(subargs)
-	default:
-		fmt.Fprintf(os.Stderr, "Unknown self subcommand: %s\n", subcmd)
-		return 1
-	}
-}
-
-func (a *App) selfUpdate(args []string) int {
+func (a *App) cmdSelfUpdate(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Update agentbox to latest or specified version
+		fmt.Printf(`%s
 
 Usage:
   agentbox self update [version]
@@ -890,7 +1052,7 @@ Arguments:
 Examples:
   agentbox self update              Update to latest version
   agentbox self update 1.2.0        Update to version 1.2.0
-`)
+`, SubcommandDesc("self", "update"))
 		return 0
 	}
 
@@ -993,16 +1155,16 @@ Examples:
 	return 0
 }
 
-func (a *App) selfUninstall(args []string) int {
+func (a *App) cmdSelfUninstall(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`Remove agentbox from system
+		fmt.Printf(`%s
 
 Usage:
   agentbox self uninstall [flags]
 
 Flags:
   --purge                           Also remove ~/.agentbox directory
-`)
+`, SubcommandDesc("self", "uninstall"))
 		return 0
 	}
 
@@ -1066,13 +1228,13 @@ Flags:
 	return 0
 }
 
-func (a *App) selfVersions(args []string) int {
+func (a *App) cmdSelfVersions(args []string) int {
 	if hasHelpFlag(args) {
-		fmt.Print(`List available agentbox versions
+		fmt.Printf(`%s
 
 Usage:
   agentbox self versions
-`)
+`, SubcommandDesc("self", "versions"))
 		return 0
 	}
 
