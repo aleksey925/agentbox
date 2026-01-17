@@ -118,6 +118,9 @@ Available presets: `Go`, `Python`.
 
 To change enabled presets after initial setup, run `agentbox init skeleton`.
 
+**Auto-updates:** When you run `agentbox init`, the skeleton is automatically updated if newer
+template versions are available. Your preset selection is preserved during auto-updates.
+
 ### Customization
 
 Agentbox uses a layered configuration system:

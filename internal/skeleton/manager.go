@@ -1,6 +1,7 @@
 package skeleton
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -134,9 +135,9 @@ func (m *Manager) CopyToProject(projectDir string) ([]string, error) {
 	}
 	copiedFiles = append(copiedFiles, skeletonFiles...)
 
-	// 2. Copy compose files from skeleton.local/ (overwrites skeleton/ on conflict)
-	localFiles, err := m.copyComposeFiles(m.paths.SkeletonLocalComposeDir, agentboxDir, "")
-	if err != nil && !os.IsNotExist(err) {
+	// 2. Copy compose files from skeleton.local/ (overwrites skeleton/ on conflict, except local.yml)
+	localFiles, err := m.copyComposeFiles(m.paths.SkeletonLocalComposeDir, agentboxDir, "local.yml")
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
 	for _, f := range localFiles {
@@ -215,17 +216,26 @@ func (m *Manager) copyDockerfile(dstDir string) (string, error) {
 	return "", nil
 }
 
-// copyLocalYml copies local.yml template to dstDir if it doesn't exist.
+// copyLocalYml copies local.yml from skeleton to dstDir if it doesn't exist.
+// Priority: skeleton.local/compose/local.yml > skeleton/compose/local.yml
 func (m *Manager) copyLocalYml(dstDir string) (bool, error) {
 	localPath := filepath.Join(dstDir, "local.yml")
-	if _, err := os.Stat(localPath); !os.IsNotExist(err) {
-		return false, nil
+	if _, err := os.Stat(localPath); err == nil {
+		return false, nil // file exists
+	} else if !os.IsNotExist(err) {
+		return false, fmt.Errorf("check local.yml: %w", err)
 	}
 
-	content, err := GetEmbeddedLocalYml()
+	// try skeleton.local/ first
+	content, err := os.ReadFile(filepath.Join(m.paths.SkeletonLocalComposeDir, "local.yml"))
 	if err != nil {
-		return false, fmt.Errorf("get local.yml template: %w", err)
+		// fall back to skeleton/
+		content, err = os.ReadFile(filepath.Join(m.paths.SkeletonComposeDir, "local.yml"))
+		if err != nil {
+			return false, fmt.Errorf("read local.yml from skeleton: %w", err)
+		}
 	}
+
 	if err := os.WriteFile(localPath, content, 0o644); err != nil {
 		return false, fmt.Errorf("write local.yml: %w", err)
 	}

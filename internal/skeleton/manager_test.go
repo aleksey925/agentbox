@@ -372,6 +372,46 @@ func TestCopyToProject__skeleton_local_priority(t *testing.T) {
 	}
 }
 
+func TestCopyToProject__local_yml_from_skeleton_local(t *testing.T) {
+	// arrange
+	paths := createTestPaths(t)
+	manager := NewManager(paths)
+	if err := manager.CreateSkeleton([]string{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// create custom local.yml in skeleton.local/compose/
+	customLocalYml := []byte("# custom local.yml from skeleton.local\nservices:\n  agentbox: {}")
+	customLocalPath := filepath.Join(paths.SkeletonLocalComposeDir, "local.yml")
+	if err := os.WriteFile(customLocalPath, customLocalYml, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := t.TempDir()
+
+	// act
+	copiedFiles, err := manager.CopyToProject(projectDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("CopyToProject error: %v", err)
+	}
+
+	// check local.yml has content from skeleton.local/ (priority over skeleton/)
+	localFile := filepath.Join(projectDir, ".agentbox", "local.yml")
+	content, err := os.ReadFile(localFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(content, customLocalYml) {
+		t.Errorf("local.yml should be from skeleton.local/, got: %s", content)
+	}
+
+	if !slices.Contains(copiedFiles, "local.yml") {
+		t.Error("local.yml not in copied files list")
+	}
+}
+
 func TestCreateSkeleton__preserves_skeleton_local(t *testing.T) {
 	// arrange
 	paths := createTestPaths(t)

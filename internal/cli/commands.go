@@ -23,6 +23,13 @@ import (
 	"github.com/charmbracelet/huh"
 )
 
+// exit codes
+const (
+	exitOK       = 0
+	exitError    = 1
+	exitCanceled = -1 // user canceled operation, exit gracefully
+)
+
 func hasHelpFlag(args []string) bool {
 	for _, arg := range args {
 		if arg == "-h" || arg == "--help" {
@@ -57,6 +64,8 @@ Files created:
 
 On first run, you'll set up the base sandbox configuration.
 Run 'agentbox init skeleton' to reconfigure.
+
+Skeleton is auto-updated when newer template versions are available.
 
 Use "agentbox init skeleton --help" for more information.
 `, CommandDesc("init"), SubcommandDesc("init", "skeleton"))
@@ -144,9 +153,9 @@ func (a *App) doInit() int {
 	manager := skeleton.NewManager(paths)
 
 	// create skeleton or auto-update if needed
-	if code := a.ensureSkeletonReady(paths, manager); code != 0 {
-		if code < 0 {
-			return 0 // user canceled - exit gracefully
+	if code := a.ensureSkeletonReady(paths, manager); code != exitOK {
+		if code == exitCanceled {
+			return exitOK
 		}
 		return code
 	}
@@ -208,7 +217,7 @@ func (a *App) createInitialSkeleton(paths *config.Paths, manager *skeleton.Manag
 	selectedPresets, canceled := a.selectPresets(paths.HomeDir, nil)
 	if canceled {
 		fmt.Println("Canceled")
-		return -1 // special code to indicate early exit without error
+		return exitCanceled
 	}
 
 	if err := manager.CreateSkeleton(selectedPresets); err != nil {
@@ -227,7 +236,12 @@ func (a *App) autoUpdateSkeleton(manager *skeleton.Manager) {
 		return
 	}
 
-	currentPresets, _ := manager.GetEnabledPresets()
+	currentPresets, err := manager.GetEnabledPresets()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to read current presets, skipping auto-update: %v\n", err)
+		return
+	}
+
 	if err := manager.CreateSkeleton(currentPresets); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to auto-update skeleton: %v\n", err)
 		return
