@@ -446,3 +446,65 @@ func TestCreateSkeleton__preserves_skeleton_local(t *testing.T) {
 		t.Errorf("user preset content changed, got: %s", content)
 	}
 }
+
+func TestIsSystemFile(t *testing.T) {
+	tests := []struct {
+		name     string
+		filename string
+		expected bool
+	}{
+		{"DS_Store is system file", ".DS_Store", true},
+		{"AppleDouble file", "._something", true},
+		{"normal yml file", "core.v1.yml", false},
+		{"dotfile preset allowed", ".custom-preset.yml", false},
+		{"local.yml allowed", "local.yml", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// act
+			result := isSystemFile(tt.filename)
+
+			// assert
+			if result != tt.expected {
+				t.Errorf("isSystemFile(%q) = %v, want %v", tt.filename, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestCopyToProject__skips_system_files(t *testing.T) {
+	// arrange
+	paths := createTestPaths(t)
+	manager := NewManager(paths)
+	if err := manager.CreateSkeleton([]string{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// create .DS_Store in skeleton.local/compose/
+	dsStorePath := filepath.Join(paths.SkeletonLocalComposeDir, ".DS_Store")
+	if err := os.WriteFile(dsStorePath, []byte("fake ds_store"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := t.TempDir()
+
+	// act
+	copiedFiles, err := manager.CopyToProject(projectDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("CopyToProject error: %v", err)
+	}
+
+	// .DS_Store should not be in copied files
+	if slices.Contains(copiedFiles, ".DS_Store") {
+		t.Error(".DS_Store should not be in copied files list")
+	}
+
+	// .DS_Store should not exist in project
+	projectDSStore := filepath.Join(projectDir, ".agentbox", ".DS_Store")
+	if _, err := os.Stat(projectDSStore); !os.IsNotExist(err) {
+		t.Error(".DS_Store should not be copied to project")
+	}
+}

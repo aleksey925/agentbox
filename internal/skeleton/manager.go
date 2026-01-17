@@ -11,6 +11,19 @@ import (
 	"github.com/aleksey925/agentbox/internal/config"
 )
 
+// isSystemFile returns true for OS-generated files that should be ignored during copying.
+func isSystemFile(name string) bool {
+	// macOS Finder metadata
+	if name == ".DS_Store" {
+		return true
+	}
+	// macOS AppleDouble resource fork files (._filename)
+	if strings.HasPrefix(name, "._") {
+		return true
+	}
+	return false
+}
+
 // Manager handles skeleton creation and copying operations.
 type Manager struct {
 	paths *config.Paths
@@ -172,7 +185,7 @@ func (m *Manager) copyComposeFiles(srcDir, dstDir, excludeFile string) ([]string
 
 	copied := make([]string, 0, len(entries))
 	for _, e := range entries {
-		if e.IsDir() || e.Name() == excludeFile {
+		if e.IsDir() || e.Name() == excludeFile || isSystemFile(e.Name()) {
 			continue
 		}
 		srcPath := filepath.Join(srcDir, e.Name())
