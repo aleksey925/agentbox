@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/aleksey925/agentbox/internal/config"
 )
 
-// Manager handles skeleton creation, backup, and copying operations.
+// Manager handles skeleton creation and copying operations.
 type Manager struct {
 	paths *config.Paths
 }
@@ -20,9 +21,15 @@ func NewManager(paths *config.Paths) *Manager {
 }
 
 // CreateSkeleton creates a new skeleton with the specified presets.
-// If skeleton already exists, it must be backed up first using BackupSkeleton.
+// Existing skeleton/ is deleted completely and recreated.
+// skeleton.local/ is never touched (user data).
 func (m *Manager) CreateSkeleton(presets []string) error {
-	// ensure skeleton directories exist
+	// delete existing skeleton/ (fully managed by agentbox)
+	if err := os.RemoveAll(m.paths.SkeletonDir); err != nil {
+		return fmt.Errorf("remove old skeleton: %w", err)
+	}
+
+	// create skeleton directories
 	if err := os.MkdirAll(m.paths.SkeletonComposeDir, 0o755); err != nil {
 		return fmt.Errorf("create skeleton compose dir: %w", err)
 	}
@@ -59,25 +66,19 @@ func (m *Manager) CreateSkeleton(presets []string) error {
 		return fmt.Errorf("write Dockerfile template: %w", writeErr)
 	}
 
-	return nil
-}
-
-// BackupSkeleton moves existing skeleton to skeleton.backup directory.
-// If backup already exists, it is removed first (only one backup is kept).
-func (m *Manager) BackupSkeleton() error {
-	// check if skeleton exists
-	if _, err := os.Stat(m.paths.SkeletonDir); os.IsNotExist(err) {
-		return nil // nothing to backup
+	// copy local.yml template to skeleton/compose/
+	localContent, err := GetEmbeddedLocalYml()
+	if err != nil {
+		return fmt.Errorf("get local.yml template: %w", err)
+	}
+	localPath := filepath.Join(m.paths.SkeletonComposeDir, "local.yml")
+	if writeErr := os.WriteFile(localPath, localContent, 0o644); writeErr != nil {
+		return fmt.Errorf("write local.yml template: %w", writeErr)
 	}
 
-	// remove existing backup if any
-	if err := os.RemoveAll(m.paths.SkeletonBackupDir); err != nil {
-		return fmt.Errorf("remove old backup: %w", err)
-	}
-
-	// move skeleton to backup
-	if err := os.Rename(m.paths.SkeletonDir, m.paths.SkeletonBackupDir); err != nil {
-		return fmt.Errorf("backup skeleton: %w", err)
+	// create skeleton.local/compose/ if not exists (user data, never deleted)
+	if err := os.MkdirAll(m.paths.SkeletonLocalComposeDir, 0o755); err != nil {
+		return fmt.Errorf("create skeleton.local compose dir: %w", err)
 	}
 
 	return nil
@@ -115,78 +116,120 @@ func (m *Manager) GetEnabledPresets() ([]string, error) {
 }
 
 // CopyToProject copies skeleton files to project's .agentbox/ directory.
-// local.yml is only created if it doesn't exist.
+// Files from skeleton.local/ have priority over skeleton/.
+// local.yml is only created if it doesn't exist in project.
 func (m *Manager) CopyToProject(projectDir string) ([]string, error) {
 	agentboxDir := filepath.Join(projectDir, ".agentbox")
 
-	// ensure .agentbox directory exists
 	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create .agentbox dir: %w", err)
 	}
 
-	// copy compose files from skeleton
-	composeEntries, err := os.ReadDir(m.paths.SkeletonComposeDir)
+	copiedFiles := make([]string, 0, 10)
+
+	// 1. Copy compose files from skeleton/ (except local.yml)
+	skeletonFiles, err := m.copyComposeFiles(m.paths.SkeletonComposeDir, agentboxDir, "local.yml")
 	if err != nil {
-		return nil, fmt.Errorf("read skeleton compose dir: %w", err)
+		return nil, err
+	}
+	copiedFiles = append(copiedFiles, skeletonFiles...)
+
+	// 2. Copy compose files from skeleton.local/ (overwrites skeleton/ on conflict)
+	localFiles, err := m.copyComposeFiles(m.paths.SkeletonLocalComposeDir, agentboxDir, "")
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	for _, f := range localFiles {
+		if !slices.Contains(copiedFiles, f) {
+			copiedFiles = append(copiedFiles, f)
+		}
 	}
 
-	copiedFiles := make([]string, 0, len(composeEntries)+2) // compose files + Dockerfile + local.yml
-
-	for _, e := range composeEntries {
-		if e.IsDir() {
-			continue
-		}
-		srcPath := filepath.Join(m.paths.SkeletonComposeDir, e.Name())
-		dstPath := filepath.Join(agentboxDir, e.Name())
-
-		fileContent, readErr := os.ReadFile(srcPath)
-		if readErr != nil {
-			return nil, fmt.Errorf("read %s: %w", e.Name(), readErr)
-		}
-		if writeErr := os.WriteFile(dstPath, fileContent, 0o644); writeErr != nil {
-			return nil, fmt.Errorf("write %s: %w", e.Name(), writeErr)
-		}
-		copiedFiles = append(copiedFiles, e.Name())
+	// 3. Copy Dockerfile from skeleton/
+	if dockerName, err := m.copyDockerfile(agentboxDir); err != nil {
+		return nil, err
+	} else if dockerName != "" {
+		copiedFiles = append(copiedFiles, dockerName)
 	}
 
-	// copy Dockerfile from skeleton
-	dockerfiles, err := os.ReadDir(m.paths.SkeletonDir)
-	if err != nil {
-		return nil, fmt.Errorf("read skeleton dir: %w", err)
-	}
-
-	for _, e := range dockerfiles {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".agentbox") {
-			continue
-		}
-		srcPath := filepath.Join(m.paths.SkeletonDir, e.Name())
-		// in project, save without version: Dockerfile.agentbox
-		dstPath := filepath.Join(agentboxDir, "Dockerfile.agentbox")
-
-		content, err := os.ReadFile(srcPath)
-		if err != nil {
-			return nil, fmt.Errorf("read Dockerfile: %w", err)
-		}
-		if err := os.WriteFile(dstPath, content, 0o644); err != nil {
-			return nil, fmt.Errorf("write Dockerfile: %w", err)
-		}
-		copiedFiles = append(copiedFiles, "Dockerfile.agentbox")
-	}
-
-	// create local.yml only if it doesn't exist
-	localPath := filepath.Join(agentboxDir, "local.yml")
-	if _, err := os.Stat(localPath); os.IsNotExist(err) {
-		localContent, err := GetEmbeddedLocalYml()
-		if err != nil {
-			return nil, fmt.Errorf("get local.yml template: %w", err)
-		}
-		if err := os.WriteFile(localPath, localContent, 0o644); err != nil {
-			return nil, fmt.Errorf("write local.yml: %w", err)
-		}
+	// 4. Copy local.yml only if it doesn't exist in project
+	if localCreated, err := m.copyLocalYml(agentboxDir); err != nil {
+		return nil, err
+	} else if localCreated {
 		copiedFiles = append(copiedFiles, "local.yml")
 	}
 
 	return copiedFiles, nil
+}
+
+// copyComposeFiles copies compose files from srcDir to dstDir, skipping excludeFile.
+func (m *Manager) copyComposeFiles(srcDir, dstDir, excludeFile string) ([]string, error) {
+	entries, err := os.ReadDir(srcDir)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", srcDir, err)
+	}
+
+	copied := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if e.IsDir() || e.Name() == excludeFile {
+			continue
+		}
+		srcPath := filepath.Join(srcDir, e.Name())
+		dstPath := filepath.Join(dstDir, e.Name())
+
+		content, err := os.ReadFile(srcPath)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", e.Name(), err)
+		}
+		if err := os.WriteFile(dstPath, content, 0o644); err != nil {
+			return nil, fmt.Errorf("write %s: %w", e.Name(), err)
+		}
+		copied = append(copied, e.Name())
+	}
+	return copied, nil
+}
+
+// copyDockerfile copies the Dockerfile from skeleton/ to dstDir.
+func (m *Manager) copyDockerfile(dstDir string) (string, error) {
+	entries, err := os.ReadDir(m.paths.SkeletonDir)
+	if err != nil {
+		return "", fmt.Errorf("read skeleton dir: %w", err)
+	}
+
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".agentbox") {
+			continue
+		}
+		srcPath := filepath.Join(m.paths.SkeletonDir, e.Name())
+		dstPath := filepath.Join(dstDir, "Dockerfile.agentbox")
+
+		content, err := os.ReadFile(srcPath)
+		if err != nil {
+			return "", fmt.Errorf("read Dockerfile: %w", err)
+		}
+		if err := os.WriteFile(dstPath, content, 0o644); err != nil {
+			return "", fmt.Errorf("write Dockerfile: %w", err)
+		}
+		return "Dockerfile.agentbox", nil
+	}
+	return "", nil
+}
+
+// copyLocalYml copies local.yml template to dstDir if it doesn't exist.
+func (m *Manager) copyLocalYml(dstDir string) (bool, error) {
+	localPath := filepath.Join(dstDir, "local.yml")
+	if _, err := os.Stat(localPath); !os.IsNotExist(err) {
+		return false, nil
+	}
+
+	content, err := GetEmbeddedLocalYml()
+	if err != nil {
+		return false, fmt.Errorf("get local.yml template: %w", err)
+	}
+	if err := os.WriteFile(localPath, content, 0o644); err != nil {
+		return false, fmt.Errorf("write local.yml: %w", err)
+	}
+	return true, nil
 }
 
 // UpdateInfo contains information about available template updates.

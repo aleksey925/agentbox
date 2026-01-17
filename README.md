@@ -110,25 +110,46 @@ agentbox agent use claude 2.0.67    # switch to specific version
 
 ### Modular Sandbox Configuration
 
-Sandbox configuration is modular — it consists of a core config (`core.*.yml`) plus environment presets 
-(like `go.v<x>.yml`) you select during `agentbox init`. Presets mount tool caches from your host into 
+Sandbox configuration is modular — it consists of a core config (`core.*.yml`) plus environment presets
+(like `go.v<x>.yml`) you select during `agentbox init`. Presets mount tool caches from your host into
 the sandbox, so dependencies aren't re-downloaded on every run.
 
 Available presets: `Go`, `Python`.
 
-To change enabled presets after initial setup, run `agentbox init skeleton`. This will backup
-your current skeleton to `~/.agentbox/skeleton.backup/` and let you re-configure.
+To change enabled presets after initial setup, run `agentbox init skeleton`.
 
 ### Customization
 
-> Each project, after initialization, contains a `.agentbox/` directory with Compose files. 
-> The CLI automatically discovers all `.yml` files in this directory and merges them when 
-> running the sandbox.
-> 
-> Only `core.*.yml` and `Dockerfile.agentbox` are required — preset files are optional and can
-> be safely deleted if you don't need them. You can also add your own compose files here.
+Agentbox uses a layered configuration system:
 
-**`<project>/.agentbox/local.yml`** — project-specific overrides that are never overwritten by agentbox.
+```
+~/.agentbox/skeleton/          ← system templates (managed by agentbox)
+~/.agentbox/skeleton.local/    ← your global presets (never touched by agentbox)
+<project>/.agentbox/           ← project config (copied from skeleton + skeleton.local)
+```
 
-**`~/.agentbox/skeleton/`** — global templates for `agentbox init`. Can be customized, but will
-be backed up and recreated when running `agentbox init skeleton`.
+#### Global Configuration (`~/.agentbox/skeleton.local/`)
+
+Add your own compose files to `~/.agentbox/skeleton.local/compose/` — they will be copied
+to every project on `agentbox init`. This is the recommended way to add global settings, such 
+as supporting development environments that Agentbox doesn't support yet.
+
+After adding files to `skeleton.local/`, run `agentbox init` in your projects to apply them.
+
+#### Project Configuration (`<project>/.agentbox/`)
+
+Each project has a `.agentbox/` directory with compose files. The CLI automatically discovers
+all `.yml` files and merges them when running the sandbox.
+
+- **`local.yml`** — project-specific overrides, never overwritten by agentbox
+- **`core.*.yml`** — core sandbox config (required)
+- **`<preset>.*.yml`** — environment presets (optional)
+
+You can add custom compose files directly to `.agentbox/` for project-specific needs.
+
+#### Configuration Priority
+
+When `agentbox init` copies files to a project:
+1. Files from `skeleton/` are copied first
+2. Files from `skeleton.local/` overwrite on name conflict
+3. `local.yml` is created only if it doesn't exist (preserves your changes)

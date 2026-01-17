@@ -81,12 +81,10 @@ Reinitializes the base sandbox configuration (~/.agentbox/skeleton/).
 This configuration is used for project initialization with 'agentbox init'.
 
 Use this to:
-  - Update sandbox configuration (change enabled Go, Python presets)
-  - Update to latest versions
+  - Change enabled presets (Go, Python)
   - Reset to defaults
 
-The existing configuration will be backed up to ~/.agentbox/skeleton.backup/
-(only one backup is kept).
+Note: skeleton/ is fully recreated. Your custom presets in skeleton.local/ are preserved.
 `, SubcommandDesc("init", "skeleton"))
 		return 0
 	}
@@ -103,23 +101,8 @@ The existing configuration will be backed up to ~/.agentbox/skeleton.backup/
 
 	manager := skeleton.NewManager(paths)
 
-	// get previously enabled presets BEFORE backup (skeleton will be moved)
+	// get previously enabled presets to pre-select them in TUI
 	previousPresets, _ := manager.GetEnabledPresets()
-
-	// check if skeleton exists and confirm
-	if paths.SkeletonExists() {
-		fmt.Println("Existing skeleton will be backed up and regenerated.")
-		if !a.confirmAction("Continue?") {
-			return 0
-		}
-
-		if err := manager.BackupSkeleton(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error backing up skeleton: %v\n", err)
-			return 1
-		}
-		fmt.Println("Backed up existing skeleton to ~/.agentbox/skeleton.backup/")
-		fmt.Println()
-	}
 
 	// run preset selection
 	selectedPresets, canceled := a.selectPresets(paths.HomeDir, previousPresets)
@@ -160,40 +143,12 @@ func (a *App) doInit() int {
 
 	manager := skeleton.NewManager(paths)
 
-	// check if skeleton exists
-	if !paths.SkeletonExists() {
-		fmt.Println("No skeleton found. Let's set it up...")
-		fmt.Println()
-		fmt.Println("Detecting environment...")
-		fmt.Println()
-
-		// run preset selection
-		selectedPresets, canceled := a.selectPresets(paths.HomeDir, nil)
-		if canceled {
-			fmt.Println("Canceled")
-			return 0
+	// create skeleton or auto-update if needed
+	if code := a.ensureSkeletonReady(paths, manager); code != 0 {
+		if code < 0 {
+			return 0 // user canceled - exit gracefully
 		}
-
-		// create skeleton
-		if createErr := manager.CreateSkeleton(selectedPresets); createErr != nil {
-			fmt.Fprintf(os.Stderr, "Error creating skeleton: %v\n", createErr)
-			return 1
-		}
-
-		fmt.Println()
-		fmt.Println("Created ~/.agentbox/skeleton/")
-	} else {
-		// check for updates
-		updates, checkErr := manager.CheckUpdates()
-		if checkErr == nil && len(updates) > 0 {
-			fmt.Println("Updates available:")
-			for _, u := range updates {
-				fmt.Printf("  %s: v%d -> v%d\n", u.Name, u.CurrentVersion, u.LatestVersion)
-			}
-			fmt.Println()
-			fmt.Println("Run 'agentbox init skeleton' to update.")
-			fmt.Println()
-		}
+		return code
 	}
 
 	// check if .agentbox/ already exists in project
@@ -233,6 +188,56 @@ func (a *App) doInit() int {
 	fmt.Println("Run 'agentbox run' to start the sandbox.")
 
 	return 0
+}
+
+// ensureSkeletonReady creates skeleton if missing, or auto-updates if embedded versions are newer.
+func (a *App) ensureSkeletonReady(paths *config.Paths, manager *skeleton.Manager) int {
+	if !paths.SkeletonExists() {
+		return a.createInitialSkeleton(paths, manager)
+	}
+	a.autoUpdateSkeleton(manager)
+	return 0
+}
+
+func (a *App) createInitialSkeleton(paths *config.Paths, manager *skeleton.Manager) int {
+	fmt.Println("No skeleton found. Let's set it up...")
+	fmt.Println()
+	fmt.Println("Detecting environment...")
+	fmt.Println()
+
+	selectedPresets, canceled := a.selectPresets(paths.HomeDir, nil)
+	if canceled {
+		fmt.Println("Canceled")
+		return -1 // special code to indicate early exit without error
+	}
+
+	if err := manager.CreateSkeleton(selectedPresets); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating skeleton: %v\n", err)
+		return 1
+	}
+
+	fmt.Println()
+	fmt.Println("Created ~/.agentbox/skeleton/")
+	return 0
+}
+
+func (a *App) autoUpdateSkeleton(manager *skeleton.Manager) {
+	updates, err := manager.CheckUpdates()
+	if err != nil || len(updates) == 0 {
+		return
+	}
+
+	currentPresets, _ := manager.GetEnabledPresets()
+	if err := manager.CreateSkeleton(currentPresets); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to auto-update skeleton: %v\n", err)
+		return
+	}
+
+	fmt.Println("Updated skeleton:")
+	for _, u := range updates {
+		fmt.Printf("  %s: v%d -> v%d\n", u.Name, u.CurrentVersion, u.LatestVersion)
+	}
+	fmt.Println()
 }
 
 type presetSelectState struct {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/aleksey925/agentbox/internal/config"
@@ -13,14 +14,16 @@ func createTestPaths(t *testing.T) *config.Paths {
 	tmpDir := t.TempDir()
 	agentboxDir := filepath.Join(tmpDir, ".agentbox")
 	skeletonDir := filepath.Join(agentboxDir, "skeleton")
+	skeletonLocalDir := filepath.Join(agentboxDir, "skeleton.local")
 
 	return &config.Paths{
-		HomeDir:            tmpDir,
-		AgentboxDir:        agentboxDir,
-		BinDir:             filepath.Join(agentboxDir, "bin"),
-		SkeletonDir:        skeletonDir,
-		SkeletonBackupDir:  filepath.Join(agentboxDir, "skeleton.backup"),
-		SkeletonComposeDir: filepath.Join(skeletonDir, "compose"),
+		HomeDir:                 tmpDir,
+		AgentboxDir:             agentboxDir,
+		BinDir:                  filepath.Join(agentboxDir, "bin"),
+		SkeletonDir:             skeletonDir,
+		SkeletonComposeDir:      filepath.Join(skeletonDir, "compose"),
+		SkeletonLocalDir:        skeletonLocalDir,
+		SkeletonLocalComposeDir: filepath.Join(skeletonLocalDir, "compose"),
 	}
 }
 
@@ -60,6 +63,17 @@ func TestCreateSkeleton(t *testing.T) {
 	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
 		t.Error("Dockerfile.v1.agentbox not created")
 	}
+
+	// check local.yml exists
+	localFile := filepath.Join(paths.SkeletonComposeDir, "local.yml")
+	if _, err := os.Stat(localFile); os.IsNotExist(err) {
+		t.Error("local.yml not created")
+	}
+
+	// check skeleton.local/compose/ created
+	if _, err := os.Stat(paths.SkeletonLocalComposeDir); os.IsNotExist(err) {
+		t.Error("skeleton.local/compose/ not created")
+	}
 }
 
 func TestCreateSkeleton__no_presets(t *testing.T) {
@@ -81,98 +95,21 @@ func TestCreateSkeleton__no_presets(t *testing.T) {
 		t.Error("core.v1.yml not created")
 	}
 
-	// check no preset files
+	// check local.yml exists
+	localFile := filepath.Join(paths.SkeletonComposeDir, "local.yml")
+	if _, err := os.Stat(localFile); os.IsNotExist(err) {
+		t.Error("local.yml not created")
+	}
+
+	// check only core + local.yml (no preset files)
 	entries, _ := os.ReadDir(paths.SkeletonComposeDir)
-	if len(entries) != 1 {
-		t.Errorf("expected 1 file (core only), got %d", len(entries))
-	}
-}
-
-func TestBackupSkeleton(t *testing.T) {
-	// arrange
-	paths := createTestPaths(t)
-	manager := NewManager(paths)
-
-	// create skeleton first
-	if err := manager.CreateSkeleton([]string{"go"}); err != nil {
-		t.Fatal(err)
+	if len(entries) != 2 {
+		t.Errorf("expected 2 files (core + local.yml), got %d", len(entries))
 	}
 
-	// act
-	err := manager.BackupSkeleton()
-
-	// assert
-	if err != nil {
-		t.Fatalf("BackupSkeleton error: %v", err)
-	}
-
-	// skeleton dir should not exist
-	if _, err := os.Stat(paths.SkeletonDir); !os.IsNotExist(err) {
-		t.Error("skeleton dir should be moved")
-	}
-
-	// backup dir should exist
-	if _, err := os.Stat(paths.SkeletonBackupDir); os.IsNotExist(err) {
-		t.Error("backup dir not created")
-	}
-
-	// backup should contain compose files
-	backupComposeDir := filepath.Join(paths.SkeletonBackupDir, "compose")
-	coreFile := filepath.Join(backupComposeDir, "core.v1.yml")
-	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v1.yml not in backup")
-	}
-}
-
-func TestBackupSkeleton__no_skeleton(t *testing.T) {
-	// arrange
-	paths := createTestPaths(t)
-	manager := NewManager(paths)
-
-	// act (no skeleton exists)
-	err := manager.BackupSkeleton()
-
-	// assert
-	if err != nil {
-		t.Fatalf("BackupSkeleton should not error when no skeleton: %v", err)
-	}
-}
-
-func TestBackupSkeleton__replaces_old_backup(t *testing.T) {
-	// arrange
-	paths := createTestPaths(t)
-	manager := NewManager(paths)
-
-	// create first skeleton and backup
-	if err := manager.CreateSkeleton([]string{"go"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := manager.BackupSkeleton(); err != nil {
-		t.Fatal(err)
-	}
-
-	// create marker file in backup to verify it gets replaced
-	markerFile := filepath.Join(paths.SkeletonBackupDir, "marker.txt")
-	if err := os.WriteFile(markerFile, []byte("old"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// create new skeleton
-	if err := manager.CreateSkeleton([]string{"python"}); err != nil {
-		t.Fatal(err)
-	}
-
-	// act
-	err := manager.BackupSkeleton()
-
-	// assert
-	if err != nil {
-		t.Fatalf("BackupSkeleton error: %v", err)
-	}
-
-	// marker file should be gone (old backup replaced)
-	if _, err := os.Stat(markerFile); !os.IsNotExist(err) {
-		t.Error("old backup should be replaced")
+	// check skeleton.local/compose/ created
+	if _, err := os.Stat(paths.SkeletonLocalComposeDir); os.IsNotExist(err) {
+		t.Error("skeleton.local/compose/ not created")
 	}
 }
 
@@ -192,20 +129,10 @@ func TestGetEnabledPresets(t *testing.T) {
 		t.Fatalf("GetEnabledPresets error: %v", err)
 	}
 
-	if len(presets) != 2 {
-		t.Fatalf("expected 2 presets, got %d", len(presets))
-	}
-
-	// check both presets present (order may vary)
-	presetSet := make(map[string]bool)
-	for _, p := range presets {
-		presetSet[p] = true
-	}
-	if !presetSet["go"] {
-		t.Error("go not in enabled presets")
-	}
-	if !presetSet["python"] {
-		t.Error("python not in enabled presets")
+	slices.Sort(presets)
+	expected := []string{"go", "python"}
+	if !slices.Equal(presets, expected) {
+		t.Errorf("presets = %v, want %v", presets, expected)
 	}
 }
 
@@ -358,13 +285,124 @@ func TestGitExcludeEntries(t *testing.T) {
 
 	// assert
 	expected := []string{".agentbox/"}
-	if len(entries) != len(expected) {
-		t.Fatalf("len(entries) = %d, want %d", len(entries), len(expected))
+	if !slices.Equal(entries, expected) {
+		t.Errorf("entries = %v, want %v", entries, expected)
+	}
+}
+
+func TestCopyToProject__copies_skeleton_local(t *testing.T) {
+	// arrange
+	paths := createTestPaths(t)
+	manager := NewManager(paths)
+	if err := manager.CreateSkeleton([]string{"go"}); err != nil {
+		t.Fatal(err)
 	}
 
-	for i, e := range entries {
-		if e != expected[i] {
-			t.Errorf("entries[%d] = %s, want %s", i, e, expected[i])
-		}
+	// create user preset in skeleton.local/compose/
+	userPreset := []byte("# ssh-agent preset\nservices:\n  agentbox: {}")
+	userPresetPath := filepath.Join(paths.SkeletonLocalComposeDir, "ssh-agent.yml")
+	if err := os.WriteFile(userPresetPath, userPreset, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := t.TempDir()
+
+	// act
+	copiedFiles, err := manager.CopyToProject(projectDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("CopyToProject error: %v", err)
+	}
+
+	// check ssh-agent.yml copied
+	sshAgentFile := filepath.Join(projectDir, ".agentbox", "ssh-agent.yml")
+	if _, statErr := os.Stat(sshAgentFile); os.IsNotExist(statErr) {
+		t.Error("ssh-agent.yml not copied from skeleton.local/")
+	}
+
+	// check content matches
+	content, readErr := os.ReadFile(sshAgentFile)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !bytes.Equal(content, userPreset) {
+		t.Errorf("ssh-agent.yml content mismatch, got: %s", content)
+	}
+
+	// check file is in copied list
+	if !slices.Contains(copiedFiles, "ssh-agent.yml") {
+		t.Error("ssh-agent.yml not in copied files list")
+	}
+}
+
+func TestCopyToProject__skeleton_local_priority(t *testing.T) {
+	// arrange
+	paths := createTestPaths(t)
+	manager := NewManager(paths)
+	if err := manager.CreateSkeleton([]string{"go"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// create user override in skeleton.local/compose/ with same name as system preset
+	userOverride := []byte("# user override for go\nservices:\n  agentbox:\n    volumes:\n      - ~/my-go:/go")
+	userOverridePath := filepath.Join(paths.SkeletonLocalComposeDir, "go.v1.yml")
+	if err := os.WriteFile(userOverridePath, userOverride, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := t.TempDir()
+
+	// act
+	_, err := manager.CopyToProject(projectDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("CopyToProject error: %v", err)
+	}
+
+	// check go.v1.yml has user content (skeleton.local/ priority)
+	goFile := filepath.Join(projectDir, ".agentbox", "go.v1.yml")
+	content, err := os.ReadFile(goFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(content, userOverride) {
+		t.Errorf("go.v1.yml should be from skeleton.local/, got: %s", content)
+	}
+}
+
+func TestCreateSkeleton__preserves_skeleton_local(t *testing.T) {
+	// arrange
+	paths := createTestPaths(t)
+	manager := NewManager(paths)
+
+	// first create with initial presets
+	if err := manager.CreateSkeleton([]string{"go"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// create user preset in skeleton.local/compose/
+	userPreset := []byte("# my custom preset")
+	userPresetPath := filepath.Join(paths.SkeletonLocalComposeDir, "custom.yml")
+	if err := os.WriteFile(userPresetPath, userPreset, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// act: recreate skeleton (simulates update)
+	err := manager.CreateSkeleton([]string{"python"})
+
+	// assert
+	if err != nil {
+		t.Fatalf("CreateSkeleton error: %v", err)
+	}
+
+	// check skeleton.local/compose/custom.yml preserved
+	content, err := os.ReadFile(userPresetPath)
+	if err != nil {
+		t.Fatalf("user preset should be preserved: %v", err)
+	}
+	if !bytes.Equal(content, userPreset) {
+		t.Errorf("user preset content changed, got: %s", content)
 	}
 }

@@ -8,12 +8,15 @@ import (
 )
 
 type Paths struct {
-	HomeDir           string
-	AgentboxDir       string
-	BinDir            string
-	SkeletonDir       string
-	SkeletonBackupDir string
+	HomeDir            string
+	AgentboxDir        string
+	BinDir             string
+	SkeletonDir        string
 	SkeletonComposeDir string
+
+	// User skeleton.local (never modified by agentbox)
+	SkeletonLocalDir        string
+	SkeletonLocalComposeDir string
 }
 
 func NewPaths() (*Paths, error) {
@@ -24,14 +27,16 @@ func NewPaths() (*Paths, error) {
 
 	agentboxDir := filepath.Join(homeDir, ".agentbox")
 	skeletonDir := filepath.Join(agentboxDir, "skeleton")
+	skeletonLocalDir := filepath.Join(agentboxDir, "skeleton.local")
 
 	return &Paths{
-		HomeDir:           homeDir,
-		AgentboxDir:       agentboxDir,
-		BinDir:            filepath.Join(agentboxDir, "bin"),
-		SkeletonDir:       skeletonDir,
-		SkeletonBackupDir: filepath.Join(agentboxDir, "skeleton.backup"),
-		SkeletonComposeDir: filepath.Join(skeletonDir, "compose"),
+		HomeDir:                 homeDir,
+		AgentboxDir:             agentboxDir,
+		BinDir:                  filepath.Join(agentboxDir, "bin"),
+		SkeletonDir:             skeletonDir,
+		SkeletonComposeDir:      filepath.Join(skeletonDir, "compose"),
+		SkeletonLocalDir:        skeletonLocalDir,
+		SkeletonLocalComposeDir: filepath.Join(skeletonLocalDir, "compose"),
 	}, nil
 }
 
