@@ -30,6 +30,14 @@ const (
 	exitCanceled = -1 // user canceled operation, exit gracefully
 )
 
+// toShellExit converts internal exit codes to shell-compatible codes.
+func toShellExit(code int) int {
+	if code == exitCanceled {
+		return exitOK
+	}
+	return code
+}
+
 func hasHelpFlag(args []string) bool {
 	for _, arg := range args {
 		if arg == "-h" || arg == "--help" {
@@ -76,7 +84,7 @@ Use "agentbox init skeleton --help" for more information.
 		return code
 	}
 
-	return a.doInit()
+	return toShellExit(a.doInit())
 }
 
 func (a *App) cmdInitSkeleton(args []string) int {
@@ -154,9 +162,6 @@ func (a *App) doInit() int {
 
 	// create skeleton or auto-update if needed
 	if code := a.ensureSkeletonReady(paths, manager); code != exitOK {
-		if code == exitCanceled {
-			return exitOK
-		}
 		return code
 	}
 
@@ -449,8 +454,8 @@ Flags:
 		return 1
 	}
 
-	if code := a.ensureProjectReady(cwd); code != 0 {
-		return code
+	if code := a.ensureProjectReady(cwd); code != exitOK {
+		return toShellExit(code)
 	}
 
 	// discover compose files
