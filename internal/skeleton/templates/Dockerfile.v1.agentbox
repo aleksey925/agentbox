@@ -44,15 +44,18 @@ RUN mkdir -p /etc/apt/keyrings && \
            /var/log/dpkg.log \
            /var/log/alternatives.log \
            /tmp/* && \
-    echo 'eval "$(mise activate bash)"' >> /home/box/.bashrc
+    echo 'eval "$(mise activate bash)"' >> /home/box/.bashrc && \
+    echo 'mise ls --missing --quiet 2>/dev/null | grep -q . && mise install' >> /home/box/.bashrc
 
 USER box
+
+# pre-create mise directories so volumes inherit correct ownership
+RUN mkdir -p /home/box/.local/share/mise /home/box/.cache/mise
 
 WORKDIR /home/box/app
 
 COPY mise.toml /home/box/app/mise.toml
-RUN mise trust && mise install && \
-    rm -rf ~/.cache/mise/* /tmp/*
+RUN mise trust
 
 # ai agent launchers
 ENV PATH="${PATH}:/home/box/.local/bin"
