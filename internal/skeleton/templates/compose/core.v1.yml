@@ -8,6 +8,9 @@ services:
     volumes:
       # ai agents binaries (read-only mount from host)
       - ~/.agentbox/bin:/opt/agentbox/bin:ro
+      # mise cache (installed tools and downloads, shared between projects)
+      - mise-data:/home/box/.local/share/mise
+      - mise-cache:/home/box/.cache/mise
       # agent configs
       - ~/.claude.sandbox.json:/home/box/.claude.json
       - ~/.claude/:/home/box/.claude/
@@ -18,3 +21,9 @@ services:
       - ~/.gitconfig:/home/box/.gitconfig:ro
       # project files
       - ..:/home/box/app
+
+volumes:
+  mise-data:
+    name: agentbox-mise-data
+  mise-cache:
+    name: agentbox-mise-cache
