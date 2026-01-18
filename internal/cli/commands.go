@@ -133,7 +133,8 @@ With --force, existing skeleton is deleted and recreated after confirmation.
 
 	// check if skeleton already exists
 	if skeleton.HasRealFiles(paths.SkeletonDir) && !force {
-		fmt.Println("Skeleton already exists. Remove or move it, then run again. Or use --force")
+		fmt.Println("Skeleton already exists at ~/.agentbox/skeleton/")
+		fmt.Println("Use --force to recreate it, or remove/move manually.")
 		return 1
 	}
 
