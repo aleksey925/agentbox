@@ -1030,11 +1030,12 @@ func ensureAgentConfigs() error {
 		return fmt.Errorf("get home dir: %w", err)
 	}
 
-	// create ~/.claude.json if not exists (prevents Docker from creating it as directory)
-	claudeJSON := filepath.Join(home, ".claude.json")
-	if _, err := os.Stat(claudeJSON); os.IsNotExist(err) {
-		if err := os.WriteFile(claudeJSON, []byte("{}"), 0o644); err != nil {
-			return fmt.Errorf("write claude.json: %w", err)
+	// create ~/.claude.sandbox.json if not exists (prevents Docker from creating it as directory)
+	// sandbox uses separate config to avoid conflicts with host's ~/.claude.json
+	claudeSandboxJSON := filepath.Join(home, ".claude.sandbox.json")
+	if _, err := os.Stat(claudeSandboxJSON); os.IsNotExist(err) {
+		if err := os.WriteFile(claudeSandboxJSON, []byte("{}"), 0o644); err != nil {
+			return fmt.Errorf("write claude.sandbox.json: %w", err)
 		}
 	}
 
