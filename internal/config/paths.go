@@ -8,12 +8,10 @@ import (
 )
 
 type Paths struct {
-	HomeDir           string
-	AgentboxDir       string
-	BinDir            string
-	SkeletonDir       string
-	SkeletonBackupDir string
-	SkeletonComposeDir string
+	HomeDir     string
+	AgentboxDir string
+	BinDir      string
+	SkeletonDir string
 }
 
 func NewPaths() (*Paths, error) {
@@ -23,15 +21,12 @@ func NewPaths() (*Paths, error) {
 	}
 
 	agentboxDir := filepath.Join(homeDir, ".agentbox")
-	skeletonDir := filepath.Join(agentboxDir, "skeleton")
 
 	return &Paths{
-		HomeDir:           homeDir,
-		AgentboxDir:       agentboxDir,
-		BinDir:            filepath.Join(agentboxDir, "bin"),
-		SkeletonDir:       skeletonDir,
-		SkeletonBackupDir: filepath.Join(agentboxDir, "skeleton.backup"),
-		SkeletonComposeDir: filepath.Join(skeletonDir, "compose"),
+		HomeDir:     homeDir,
+		AgentboxDir: agentboxDir,
+		BinDir:      filepath.Join(agentboxDir, "bin"),
+		SkeletonDir: filepath.Join(agentboxDir, "skeleton"),
 	}, nil
 }
 
@@ -47,13 +42,10 @@ func (p *Paths) AgentCurrentFile(agent string) string {
 	return filepath.Join(p.BinDir, agent, "current")
 }
 
-// SkeletonExists checks if the skeleton directory exists and has compose files.
+// SkeletonExists checks if the skeleton directory exists and has template files.
 func (p *Paths) SkeletonExists() bool {
-	if _, err := os.Stat(p.SkeletonComposeDir); os.IsNotExist(err) {
-		return false
-	}
-	// check if there's at least core.*.yml file
-	entries, err := os.ReadDir(p.SkeletonComposeDir)
+	// check if there's at least core.*.yml file in skeleton dir (flat structure)
+	entries, err := os.ReadDir(p.SkeletonDir)
 	if err != nil {
 		return false
 	}

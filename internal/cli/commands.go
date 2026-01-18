@@ -23,6 +23,21 @@ import (
 	"github.com/charmbracelet/huh"
 )
 
+// exit codes
+const (
+	exitOK       = 0
+	exitError    = 1
+	exitCanceled = -1 // user canceled operation, exit gracefully
+)
+
+// toShellExit converts internal exit codes to shell-compatible codes.
+func toShellExit(code int) int {
+	if code == exitCanceled {
+		return exitOK
+	}
+	return code
+}
+
 func hasHelpFlag(args []string) bool {
 	for _, arg := range args {
 		if arg == "-h" || arg == "--help" {
@@ -51,12 +66,12 @@ Copies sandbox configurations into the project.
 Files created:
   - .agentbox/core.v*.yml           Core Docker Compose configuration
   - .agentbox/<preset>.v*.yml       Environment preset configurations (Go, Python)
-  - .agentbox/Dockerfile.agentbox   Dockerfile for the sandbox
+  - .agentbox/Dockerfile.v*.agentbox Dockerfile for the sandbox
   - .agentbox/local.yml             Project-specific overrides (not overwritten)
   - mise.toml (if not exists)       Tool versions configuration
 
 On first run, you'll set up the base sandbox configuration.
-Run 'agentbox init skeleton' to reconfigure.
+Run 'agentbox init skeleton --force' to reconfigure.
 
 Use "agentbox init skeleton --help" for more information.
 `, CommandDesc("init"), SubcommandDesc("init", "skeleton"))
@@ -67,7 +82,7 @@ Use "agentbox init skeleton --help" for more information.
 		return code
 	}
 
-	return a.doInit()
+	return toShellExit(a.doInit())
 }
 
 func (a *App) cmdInitSkeleton(args []string) int {
@@ -75,24 +90,34 @@ func (a *App) cmdInitSkeleton(args []string) int {
 		fmt.Printf(`%s
 
 Usage:
-  agentbox init skeleton
+  agentbox init skeleton [flags]
+
+Flags:
+  -f, --force                       Force reinitialize even if skeleton exists
 
 Reinitializes the base sandbox configuration (~/.agentbox/skeleton/).
 This configuration is used for project initialization with 'agentbox init'.
 
 Use this to:
-  - Update sandbox configuration (change enabled Go, Python presets)
-  - Update to latest versions
+  - Change enabled presets (Go, Python)
   - Reset to defaults
 
-The existing configuration will be backed up to ~/.agentbox/skeleton.backup/
-(only one backup is kept).
+Without --force, skeleton will only be initialized if it doesn't exist.
+With --force, existing skeleton is deleted and recreated after confirmation.
 `, SubcommandDesc("init", "skeleton"))
 		return 0
 	}
 
-	if code := RejectUnknownFlags(args); code != 0 {
+	if code := RejectUnknownFlagsWithAllowed(args, InitSkeletonFlags()); code != 0 {
 		return code
+	}
+
+	// parse --force flag
+	force := false
+	for _, arg := range args {
+		if arg == "-f" || arg == "--force" {
+			force = true
+		}
 	}
 
 	paths, err := a.Paths()
@@ -103,39 +128,35 @@ The existing configuration will be backed up to ~/.agentbox/skeleton.backup/
 
 	manager := skeleton.NewManager(paths)
 
-	// get previously enabled presets BEFORE backup (skeleton will be moved)
+	// get previously enabled presets BEFORE any changes (for pre-selection in TUI)
 	previousPresets, _ := manager.GetEnabledPresets()
 
-	// check if skeleton exists and confirm
-	if paths.SkeletonExists() {
-		fmt.Println("Existing skeleton will be backed up and regenerated.")
-		if !a.confirmAction("Continue?") {
-			return 0
-		}
-
-		if err := manager.BackupSkeleton(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error backing up skeleton: %v\n", err)
-			return 1
-		}
-		fmt.Println("Backed up existing skeleton to ~/.agentbox/skeleton.backup/")
-		fmt.Println()
+	// check if skeleton already exists
+	if skeleton.HasRealFiles(paths.SkeletonDir) && !force {
+		fmt.Println("Skeleton already exists at ~/.agentbox/skeleton/")
+		fmt.Println("Use --force to recreate it, or remove/move manually.")
+		return 1
 	}
 
-	// run preset selection
+	// run preset selection with pre-selected presets
 	selectedPresets, canceled := a.selectPresets(paths.HomeDir, previousPresets)
 	if canceled {
 		fmt.Println("Canceled")
 		return 0
 	}
 
-	// create new skeleton
+	// create new skeleton (only after user confirmation via TUI)
 	if err := manager.CreateSkeleton(selectedPresets); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating skeleton: %v\n", err)
 		return 1
 	}
 
 	fmt.Println()
-	fmt.Println("Updated ~/.agentbox/skeleton/")
+	if force {
+		fmt.Println("Recreated ~/.agentbox/skeleton/")
+	} else {
+		fmt.Println("Created ~/.agentbox/skeleton/")
+	}
 
 	return 0
 }
@@ -160,40 +181,9 @@ func (a *App) doInit() int {
 
 	manager := skeleton.NewManager(paths)
 
-	// check if skeleton exists
-	if !paths.SkeletonExists() {
-		fmt.Println("No skeleton found. Let's set it up...")
-		fmt.Println()
-		fmt.Println("Detecting environment...")
-		fmt.Println()
-
-		// run preset selection
-		selectedPresets, canceled := a.selectPresets(paths.HomeDir, nil)
-		if canceled {
-			fmt.Println("Canceled")
-			return 0
-		}
-
-		// create skeleton
-		if createErr := manager.CreateSkeleton(selectedPresets); createErr != nil {
-			fmt.Fprintf(os.Stderr, "Error creating skeleton: %v\n", createErr)
-			return 1
-		}
-
-		fmt.Println()
-		fmt.Println("Created ~/.agentbox/skeleton/")
-	} else {
-		// check for updates
-		updates, checkErr := manager.CheckUpdates()
-		if checkErr == nil && len(updates) > 0 {
-			fmt.Println("Updates available:")
-			for _, u := range updates {
-				fmt.Printf("  %s: v%d -> v%d\n", u.Name, u.CurrentVersion, u.LatestVersion)
-			}
-			fmt.Println()
-			fmt.Println("Run 'agentbox init skeleton' to update.")
-			fmt.Println()
-		}
+	// create skeleton if missing
+	if code := a.ensureSkeletonReady(paths, manager); code != exitOK {
+		return code
 	}
 
 	// check if .agentbox/ already exists in project
@@ -232,6 +222,36 @@ func (a *App) doInit() int {
 	fmt.Println("\nSandbox initialized successfully!")
 	fmt.Println("Run 'agentbox run' to start the sandbox.")
 
+	return 0
+}
+
+// ensureSkeletonReady creates skeleton if missing.
+func (a *App) ensureSkeletonReady(paths *config.Paths, manager *skeleton.Manager) int {
+	if !paths.SkeletonExists() {
+		return a.createInitialSkeleton(paths, manager)
+	}
+	return 0
+}
+
+func (a *App) createInitialSkeleton(paths *config.Paths, manager *skeleton.Manager) int {
+	fmt.Println("No skeleton found. Let's set it up...")
+	fmt.Println()
+	fmt.Println("Detecting environment...")
+	fmt.Println()
+
+	selectedPresets, canceled := a.selectPresets(paths.HomeDir, nil)
+	if canceled {
+		fmt.Println("Canceled")
+		return exitCanceled
+	}
+
+	if err := manager.CreateSkeleton(selectedPresets); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating skeleton: %v\n", err)
+		return 1
+	}
+
+	fmt.Println()
+	fmt.Println("Created ~/.agentbox/skeleton/")
 	return 0
 }
 
@@ -430,8 +450,8 @@ Flags:
 		return 1
 	}
 
-	if code := a.ensureProjectReady(cwd); code != 0 {
-		return code
+	if code := a.ensureProjectReady(cwd); code != exitOK {
+		return toShellExit(code)
 	}
 
 	// discover compose files

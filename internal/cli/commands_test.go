@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -551,6 +552,67 @@ func TestAllSubcommandsRejectUnknownFlags(t *testing.T) {
 				t.Errorf("%s should print 'Unknown flag', got: %s", testName, stderr)
 			}
 		})
+	}
+}
+
+func TestToShellExit(t *testing.T) {
+	tests := []struct {
+		name     string
+		code     int
+		expected int
+	}{
+		{"exitOK stays 0", exitOK, 0},
+		{"exitError stays 1", exitError, 1},
+		{"exitCanceled becomes 0", exitCanceled, 0},
+		{"other positive codes unchanged", 2, 2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// act
+			result := toShellExit(tt.code)
+
+			// assert
+			if result != tt.expected {
+				t.Errorf("toShellExit(%d) = %d, want %d", tt.code, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExitCanceled__stops_execution_chain(t *testing.T) {
+	// This test documents the expected behavior:
+	// when a function returns exitCanceled, callers should stop execution
+	// and not proceed with subsequent operations (like downloading agents)
+
+	// arrange
+	executionLog := []string{}
+
+	mockStep1 := func() int {
+		executionLog = append(executionLog, "step1")
+		return exitCanceled // user canceled
+	}
+
+	mockStep2 := func() int {
+		executionLog = append(executionLog, "step2")
+		return exitOK
+	}
+
+	// act: simulate the pattern used in doInit
+	code := mockStep1()
+	if code == exitOK {
+		mockStep2()
+	}
+
+	// assert
+	expected := []string{"step1"}
+	if !slices.Equal(executionLog, expected) {
+		t.Fatalf("executionLog = %v, want %v", executionLog, expected)
+	}
+
+	// verify exitCanceled is non-zero (so code != exitOK works)
+	if exitCanceled == exitOK {
+		t.Error("exitCanceled must not equal exitOK")
 	}
 }
 

@@ -205,6 +205,61 @@ their caches and configs for better performance
 Update sandbox configuration (change enabled Go, Python presets)
 ```
 
+## Skeleton Architecture
+
+Skeleton is the user's global sandbox configuration stored in `~/.agentbox/skeleton/`. It contains Docker Compose files and Dockerfile that define the sandbox environment.
+
+### Directory Structure
+
+```
+~/.agentbox/skeleton/           # global skeleton (user-owned)
+├── core.v1.yml                 # base compose config (always present)
+├── go.v1.yml                   # Go preset (optional)
+├── python.v1.yml               # Python preset (optional)
+├── Dockerfile.v1.agentbox      # sandbox Dockerfile
+└── local.yml                   # user customizations template
+
+project/.agentbox/              # project sandbox (copied from skeleton)
+├── core.v1.yml
+├── go.v1.yml
+├── Dockerfile.v1.agentbox
+└── local.yml                   # project-specific customizations (never overwritten)
+```
+
+### Core Concepts
+
+| Concept             | Description                                                                 |
+|---------------------|-----------------------------------------------------------------------------|
+| **Skeleton**        | Global template at `~/.agentbox/skeleton/`, user fully owns and can edit    |
+| **Presets**         | Environment configs (Go, Python) that mount host caches into sandbox        |
+| **local.yml**       | Project-specific overrides, preserved during reinit                         |
+| **Versioned files** | `*.v1.yml`, `Dockerfile.v1.agentbox` — version in name for tracking changes |
+
+### Design Principles
+
+1. **Single source of truth** — skeleton is the only source, no merging or layering
+2. **Flat structure** — all files at one level, no nested directories
+3. **User ownership** — user can freely edit skeleton files
+4. **Explicit updates** — no auto-updates, user controls when to reinit with `--force`
+5. **Deterministic** — same skeleton always produces same project config
+6. **Safe local.yml** — project's `local.yml` is never overwritten
+
+### Commands
+
+| Command                          | Behavior                                                                                    |
+|----------------------------------|---------------------------------------------------------------------------------------------|
+| `agentbox init`                  | If no skeleton → TUI for preset selection → create skeleton → copy to project               |
+| `agentbox init`                  | If skeleton exists → clean project's `.agentbox/` (except `local.yml`) → copy from skeleton |
+| `agentbox init skeleton`         | Error if skeleton exists (suggests `--force`)                                               |
+| `agentbox init skeleton --force` | TUI with current presets pre-selected → recreate skeleton after confirmation                |
+
+### File Versioning
+
+Files use version suffix (`v1`) to help users track changes:
+- `core.v1.yml` — when we release `core.v2.yml`, user sees a new file appeared
+- User can compare versions and migrate customizations
+- Old versions can be manually removed after migration
+
 ## Code Style
 
 - All comments in English

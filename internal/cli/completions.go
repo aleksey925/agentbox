@@ -70,19 +70,21 @@ func generateBashCompletion(cmdName string) string {
 	runFlags := strings.Join(CommandFlags()["run"], " ")
 	psFlags := strings.Join(CommandFlags()["ps"], " ")
 	initSub := strings.Join(InitSubcommands(), " ")
+	initSkeletonFlags := strings.Join(InitSkeletonFlags(), " ")
 	agentSub := strings.Join(AgentSubcommands(), " ")
 	selfSub := strings.Join(SelfSubcommands(), " ")
 	selfUninstallFlags := strings.Join(SelfUninstallFlags(), " ")
 	shells := strings.Join(CompletionShells(), " ")
 
 	tmpl := `_{{.FuncName}}() {
-    local cur prev pprev="" commands init_sub agent_sub self_sub agent_names run_flags ps_flags self_uninstall_flags
+    local cur prev pprev="" commands init_sub init_skeleton_flags agent_sub self_sub agent_names run_flags ps_flags self_uninstall_flags
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     [[ $COMP_CWORD -ge 2 ]] && pprev="${COMP_WORDS[COMP_CWORD-2]}"
 
     commands="{{.Commands}}"
     init_sub="{{.InitSub}}"
+    init_skeleton_flags="{{.InitSkeletonFlags}}"
     agent_sub="{{.AgentSub}}"
     self_sub="{{.SelfSub}}"
     agent_names="{{.AgentNames}}"
@@ -135,6 +137,11 @@ func generateBashCompletion(cmdName string) string {
                 COMPREPLY=($(compgen -W "$versions" -- "$cur"))
             fi
             ;;
+        skeleton)
+            if [[ "$pprev" == "init" ]]; then
+                COMPREPLY=($(compgen -W "$init_skeleton_flags" -- "$cur"))
+            fi
+            ;;
         completion)
             COMPREPLY=($(compgen -W "{{.Shells}}" -- "$cur"))
             ;;
@@ -147,6 +154,7 @@ complete -F _{{.FuncName}} {{.CmdName}}
 	result = strings.ReplaceAll(result, "{{.CmdName}}", cmdName)
 	result = strings.ReplaceAll(result, "{{.Commands}}", commands)
 	result = strings.ReplaceAll(result, "{{.InitSub}}", initSub)
+	result = strings.ReplaceAll(result, "{{.InitSkeletonFlags}}", initSkeletonFlags)
 	result = strings.ReplaceAll(result, "{{.AgentSub}}", agentSub)
 	result = strings.ReplaceAll(result, "{{.SelfSub}}", selfSub)
 	result = strings.ReplaceAll(result, "{{.AgentNames}}", agentNamesStr)
@@ -182,13 +190,14 @@ func generateZshCompletion(cmdName string) string {
 	runFlagsZsh := formatSubcommandsZsh(RunFlagsWithDesc())
 	psFlagsZsh := formatSubcommandsZsh(PsFlagsWithDesc())
 	initCmdsZsh := formatSubcommandsZsh(InitSubcommandsWithDesc())
+	initSkeletonFlagsZsh := formatSubcommandsZsh(InitSkeletonFlagsWithDesc())
 	agentCmdsZsh := formatSubcommandsZsh(AgentSubcommandsWithDesc())
 	selfCmdsZsh := formatSubcommandsZsh(SelfSubcommandsWithDesc())
 	selfUninstallFlagsZsh := formatSubcommandsZsh(SelfUninstallFlagsWithDesc())
 	shellsZsh := formatSubcommandsZsh(CompletionShellsWithDesc())
 
 	base := `_agentbox() {
-    local -a commands init_cmds agent_cmds self_cmds agent_names shells run_flags ps_flags self_uninstall_flags
+    local -a commands init_cmds init_skeleton_flags agent_cmds self_cmds agent_names shells run_flags ps_flags self_uninstall_flags
 
     commands=(
         {{.CommandsZsh}}
@@ -204,6 +213,10 @@ func generateZshCompletion(cmdName string) string {
 
     init_cmds=(
         {{.InitCmdsZsh}}
+    )
+
+    init_skeleton_flags=(
+        {{.InitSkeletonFlagsZsh}}
     )
 
     agent_cmds=(
@@ -262,6 +275,13 @@ func generateZshCompletion(cmdName string) string {
             ;;
         4)
             case $cmd in
+                init)
+                    case $subcmd in
+                        skeleton)
+                            _describe -t flags 'flag' init_skeleton_flags
+                            ;;
+                    esac
+                    ;;
                 agent)
                     case $subcmd in
                         update)
@@ -313,6 +333,7 @@ compdef _agentbox agentbox
 	base = strings.ReplaceAll(base, "{{.RunFlagsZsh}}", runFlagsZsh)
 	base = strings.ReplaceAll(base, "{{.PsFlagsZsh}}", psFlagsZsh)
 	base = strings.ReplaceAll(base, "{{.InitCmdsZsh}}", initCmdsZsh)
+	base = strings.ReplaceAll(base, "{{.InitSkeletonFlagsZsh}}", initSkeletonFlagsZsh)
 	base = strings.ReplaceAll(base, "{{.AgentCmdsZsh}}", agentCmdsZsh)
 	base = strings.ReplaceAll(base, "{{.SelfCmdsZsh}}", selfCmdsZsh)
 	base = strings.ReplaceAll(base, "{{.SelfUninstallFlagsZsh}}", selfUninstallFlagsZsh)

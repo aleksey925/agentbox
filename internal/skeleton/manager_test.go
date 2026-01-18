@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/aleksey925/agentbox/internal/config"
@@ -12,15 +13,12 @@ import (
 func createTestPaths(t *testing.T) *config.Paths {
 	tmpDir := t.TempDir()
 	agentboxDir := filepath.Join(tmpDir, ".agentbox")
-	skeletonDir := filepath.Join(agentboxDir, "skeleton")
 
 	return &config.Paths{
-		HomeDir:            tmpDir,
-		AgentboxDir:        agentboxDir,
-		BinDir:             filepath.Join(agentboxDir, "bin"),
-		SkeletonDir:        skeletonDir,
-		SkeletonBackupDir:  filepath.Join(agentboxDir, "skeleton.backup"),
-		SkeletonComposeDir: filepath.Join(skeletonDir, "compose"),
+		HomeDir:     tmpDir,
+		AgentboxDir: agentboxDir,
+		BinDir:      filepath.Join(agentboxDir, "bin"),
+		SkeletonDir: filepath.Join(agentboxDir, "skeleton"),
 	}
 }
 
@@ -37,20 +35,20 @@ func TestCreateSkeleton(t *testing.T) {
 		t.Fatalf("CreateSkeleton error: %v", err)
 	}
 
-	// check core.v1.yml exists
-	coreFile := filepath.Join(paths.SkeletonComposeDir, "core.v1.yml")
+	// check core.v1.yml exists (flat structure)
+	coreFile := filepath.Join(paths.SkeletonDir, "core.v1.yml")
 	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
 		t.Error("core.v1.yml not created")
 	}
 
 	// check go.v1.yml exists
-	goFile := filepath.Join(paths.SkeletonComposeDir, "go.v1.yml")
+	goFile := filepath.Join(paths.SkeletonDir, "go.v1.yml")
 	if _, err := os.Stat(goFile); os.IsNotExist(err) {
 		t.Error("go.v1.yml not created")
 	}
 
 	// check python.v1.yml exists
-	pythonFile := filepath.Join(paths.SkeletonComposeDir, "python.v1.yml")
+	pythonFile := filepath.Join(paths.SkeletonDir, "python.v1.yml")
 	if _, err := os.Stat(pythonFile); os.IsNotExist(err) {
 		t.Error("python.v1.yml not created")
 	}
@@ -59,6 +57,12 @@ func TestCreateSkeleton(t *testing.T) {
 	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v1.agentbox")
 	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
 		t.Error("Dockerfile.v1.agentbox not created")
+	}
+
+	// check local.yml exists
+	localFile := filepath.Join(paths.SkeletonDir, "local.yml")
+	if _, err := os.Stat(localFile); os.IsNotExist(err) {
+		t.Error("local.yml not created")
 	}
 }
 
@@ -76,103 +80,27 @@ func TestCreateSkeleton__no_presets(t *testing.T) {
 	}
 
 	// check core.v1.yml exists (always created)
-	coreFile := filepath.Join(paths.SkeletonComposeDir, "core.v1.yml")
+	coreFile := filepath.Join(paths.SkeletonDir, "core.v1.yml")
 	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
 		t.Error("core.v1.yml not created")
 	}
 
-	// check no preset files
-	entries, _ := os.ReadDir(paths.SkeletonComposeDir)
-	if len(entries) != 1 {
-		t.Errorf("expected 1 file (core only), got %d", len(entries))
-	}
-}
-
-func TestBackupSkeleton(t *testing.T) {
-	// arrange
-	paths := createTestPaths(t)
-	manager := NewManager(paths)
-
-	// create skeleton first
-	if err := manager.CreateSkeleton([]string{"go"}); err != nil {
-		t.Fatal(err)
+	// check local.yml exists
+	localFile := filepath.Join(paths.SkeletonDir, "local.yml")
+	if _, err := os.Stat(localFile); os.IsNotExist(err) {
+		t.Error("local.yml not created")
 	}
 
-	// act
-	err := manager.BackupSkeleton()
-
-	// assert
-	if err != nil {
-		t.Fatalf("BackupSkeleton error: %v", err)
+	// check Dockerfile exists
+	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v1.agentbox")
+	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
+		t.Error("Dockerfile.v1.agentbox not created")
 	}
 
-	// skeleton dir should not exist
-	if _, err := os.Stat(paths.SkeletonDir); !os.IsNotExist(err) {
-		t.Error("skeleton dir should be moved")
-	}
-
-	// backup dir should exist
-	if _, err := os.Stat(paths.SkeletonBackupDir); os.IsNotExist(err) {
-		t.Error("backup dir not created")
-	}
-
-	// backup should contain compose files
-	backupComposeDir := filepath.Join(paths.SkeletonBackupDir, "compose")
-	coreFile := filepath.Join(backupComposeDir, "core.v1.yml")
-	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v1.yml not in backup")
-	}
-}
-
-func TestBackupSkeleton__no_skeleton(t *testing.T) {
-	// arrange
-	paths := createTestPaths(t)
-	manager := NewManager(paths)
-
-	// act (no skeleton exists)
-	err := manager.BackupSkeleton()
-
-	// assert
-	if err != nil {
-		t.Fatalf("BackupSkeleton should not error when no skeleton: %v", err)
-	}
-}
-
-func TestBackupSkeleton__replaces_old_backup(t *testing.T) {
-	// arrange
-	paths := createTestPaths(t)
-	manager := NewManager(paths)
-
-	// create first skeleton and backup
-	if err := manager.CreateSkeleton([]string{"go"}); err != nil {
-		t.Fatal(err)
-	}
-	if err := manager.BackupSkeleton(); err != nil {
-		t.Fatal(err)
-	}
-
-	// create marker file in backup to verify it gets replaced
-	markerFile := filepath.Join(paths.SkeletonBackupDir, "marker.txt")
-	if err := os.WriteFile(markerFile, []byte("old"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	// create new skeleton
-	if err := manager.CreateSkeleton([]string{"python"}); err != nil {
-		t.Fatal(err)
-	}
-
-	// act
-	err := manager.BackupSkeleton()
-
-	// assert
-	if err != nil {
-		t.Fatalf("BackupSkeleton error: %v", err)
-	}
-
-	// marker file should be gone (old backup replaced)
-	if _, err := os.Stat(markerFile); !os.IsNotExist(err) {
-		t.Error("old backup should be replaced")
+	// check only core + local.yml + Dockerfile (no preset files)
+	entries, _ := os.ReadDir(paths.SkeletonDir)
+	if len(entries) != 3 {
+		t.Errorf("expected 3 files (core + local.yml + Dockerfile), got %d", len(entries))
 	}
 }
 
@@ -192,20 +120,10 @@ func TestGetEnabledPresets(t *testing.T) {
 		t.Fatalf("GetEnabledPresets error: %v", err)
 	}
 
-	if len(presets) != 2 {
-		t.Fatalf("expected 2 presets, got %d", len(presets))
-	}
-
-	// check both presets present (order may vary)
-	presetSet := make(map[string]bool)
-	for _, p := range presets {
-		presetSet[p] = true
-	}
-	if !presetSet["go"] {
-		t.Error("go not in enabled presets")
-	}
-	if !presetSet["python"] {
-		t.Error("python not in enabled presets")
+	slices.Sort(presets)
+	expected := []string{"go", "python"}
+	if !slices.Equal(presets, expected) {
+		t.Errorf("presets = %v, want %v", presets, expected)
 	}
 }
 
@@ -261,10 +179,10 @@ func TestCopyToProject(t *testing.T) {
 		t.Error("core.v1.yml not copied")
 	}
 
-	// check Dockerfile.agentbox copied (without version)
-	dockerFile := filepath.Join(agentboxDir, "Dockerfile.agentbox")
+	// check Dockerfile.v1.agentbox copied (with version)
+	dockerFile := filepath.Join(agentboxDir, "Dockerfile.v1.agentbox")
 	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
-		t.Error("Dockerfile.agentbox not copied")
+		t.Error("Dockerfile.v1.agentbox not copied")
 	}
 
 	// check local.yml created
@@ -313,58 +231,202 @@ func TestCopyToProject__preserves_local_yml(t *testing.T) {
 	}
 }
 
-func TestCheckUpdates__no_updates(t *testing.T) {
-	// arrange
-	paths := createTestPaths(t)
-	manager := NewManager(paths)
-	if err := manager.CreateSkeleton([]string{"go"}); err != nil {
-		t.Fatal(err)
-	}
-
-	// act
-	updates, err := manager.CheckUpdates()
-
-	// assert
-	if err != nil {
-		t.Fatalf("CheckUpdates error: %v", err)
-	}
-
-	if len(updates) != 0 {
-		t.Errorf("expected no updates, got %d", len(updates))
-	}
-}
-
-func TestCheckUpdates__no_skeleton(t *testing.T) {
-	// arrange
-	paths := createTestPaths(t)
-	manager := NewManager(paths)
-
-	// act
-	updates, err := manager.CheckUpdates()
-
-	// assert
-	if err != nil {
-		t.Fatalf("CheckUpdates error: %v", err)
-	}
-
-	if updates != nil {
-		t.Errorf("expected nil, got %v", updates)
-	}
-}
-
 func TestGitExcludeEntries(t *testing.T) {
 	// act
 	entries := GitExcludeEntries()
 
 	// assert
 	expected := []string{".agentbox/"}
-	if len(entries) != len(expected) {
-		t.Fatalf("len(entries) = %d, want %d", len(entries), len(expected))
+	if !slices.Equal(entries, expected) {
+		t.Errorf("entries = %v, want %v", entries, expected)
+	}
+}
+
+func TestIsSystemFile(t *testing.T) {
+	tests := []struct {
+		name     string
+		filename string
+		expected bool
+	}{
+		{"DS_Store is system file", ".DS_Store", true},
+		{"AppleDouble file", "._something", true},
+		{"normal yml file", "core.v1.yml", false},
+		{"dotfile preset allowed", ".custom-preset.yml", false},
+		{"local.yml allowed", "local.yml", false},
 	}
 
-	for i, e := range entries {
-		if e != expected[i] {
-			t.Errorf("entries[%d] = %s, want %s", i, e, expected[i])
-		}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// act
+			result := isSystemFile(tt.filename)
+
+			// assert
+			if result != tt.expected {
+				t.Errorf("isSystemFile(%q) = %v, want %v", tt.filename, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestCopyToProject__skips_system_files(t *testing.T) {
+	// arrange
+	paths := createTestPaths(t)
+	manager := NewManager(paths)
+	if err := manager.CreateSkeleton([]string{}); err != nil {
+		t.Fatal(err)
+	}
+
+	// create .DS_Store in skeleton/
+	dsStorePath := filepath.Join(paths.SkeletonDir, ".DS_Store")
+	if err := os.WriteFile(dsStorePath, []byte("fake ds_store"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := t.TempDir()
+
+	// act
+	copiedFiles, err := manager.CopyToProject(projectDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("CopyToProject error: %v", err)
+	}
+
+	// .DS_Store should not be in copied files
+	if slices.Contains(copiedFiles, ".DS_Store") {
+		t.Error(".DS_Store should not be in copied files list")
+	}
+
+	// .DS_Store should not exist in project
+	projectDSStore := filepath.Join(projectDir, ".agentbox", ".DS_Store")
+	if _, err := os.Stat(projectDSStore); !os.IsNotExist(err) {
+		t.Error(".DS_Store should not be copied to project")
+	}
+}
+
+func TestHasRealFiles(t *testing.T) {
+	// arrange
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "test.yml"), []byte("test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	result := HasRealFiles(dir)
+
+	// assert
+	if !result {
+		t.Error("expected true for directory with real files")
+	}
+}
+
+func TestHasRealFiles__empty_dir(t *testing.T) {
+	// arrange
+	dir := t.TempDir()
+
+	// act
+	result := HasRealFiles(dir)
+
+	// assert
+	if result {
+		t.Error("expected false for empty directory")
+	}
+}
+
+func TestHasRealFiles__only_system_files(t *testing.T) {
+	// arrange
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".DS_Store"), []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "._hidden"), []byte("fake"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	result := HasRealFiles(dir)
+
+	// assert
+	if result {
+		t.Error("expected false for directory with only system files")
+	}
+}
+
+func TestHasRealFiles__nonexistent_dir(t *testing.T) {
+	// act
+	result := HasRealFiles("/nonexistent/path")
+
+	// assert
+	if result {
+		t.Error("expected false for nonexistent directory")
+	}
+}
+
+func TestCleanProjectDir(t *testing.T) {
+	// arrange
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "core.v1.yml"), []byte("test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.v1.yml"), []byte("test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	err := cleanProjectDir(dir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("cleanProjectDir error: %v", err)
+	}
+
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 0 {
+		t.Errorf("expected empty directory, got %d files", len(entries))
+	}
+}
+
+func TestCleanProjectDir__preserves_local_yml(t *testing.T) {
+	// arrange
+	dir := t.TempDir()
+	localContent := []byte("# my config")
+	if err := os.WriteFile(filepath.Join(dir, "local.yml"), localContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "core.v1.yml"), []byte("test"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	err := cleanProjectDir(dir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("cleanProjectDir error: %v", err)
+	}
+
+	// local.yml should be preserved
+	content, err := os.ReadFile(filepath.Join(dir, "local.yml"))
+	if err != nil {
+		t.Fatal("local.yml should be preserved")
+	}
+	if !bytes.Equal(content, localContent) {
+		t.Error("local.yml content was modified")
+	}
+
+	// other files should be removed
+	entries, _ := os.ReadDir(dir)
+	if len(entries) != 1 {
+		t.Errorf("expected 1 file (local.yml), got %d", len(entries))
+	}
+}
+
+func TestCleanProjectDir__nonexistent_dir(t *testing.T) {
+	// act
+	err := cleanProjectDir("/nonexistent/path")
+
+	// assert
+	if err != nil {
+		t.Errorf("expected no error for nonexistent directory, got: %v", err)
 	}
 }

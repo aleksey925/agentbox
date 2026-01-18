@@ -110,25 +110,48 @@ agentbox agent use claude 2.0.67    # switch to specific version
 
 ### Modular Sandbox Configuration
 
-Sandbox configuration is modular — it consists of a core config (`core.*.yml`) plus environment presets 
-(like `go.v<x>.yml`) you select during `agentbox init`. Presets mount tool caches from your host into 
-the sandbox, so dependencies aren't re-downloaded on every run.
+Sandbox configuration is modular — it consists of a core config (`core.v1.yml`) plus environment
+presets (like `go.v1.yml`) you select during `agentbox init`. Presets mount tool caches from your
+host into the sandbox, so dependencies aren't re-downloaded on every run.
 
 Available presets: `Go`, `Python`.
 
-To change enabled presets after initial setup, run `agentbox init skeleton`. This will backup
-your current skeleton to `~/.agentbox/skeleton.backup/` and let you re-configure.
-
 ### Customization
 
-> Each project, after initialization, contains a `.agentbox/` directory with Compose files. 
-> The CLI automatically discovers all `.yml` files in this directory and merges them when 
-> running the sandbox.
-> 
-> Only `core.*.yml` and `Dockerfile.agentbox` are required — preset files are optional and can
-> be safely deleted if you don't need them. You can also add your own compose files here.
+Agentbox stores your sandbox configuration in `~/.agentbox/skeleton/`:
 
-**`<project>/.agentbox/local.yml`** — project-specific overrides that are never overwritten by agentbox.
+```
+~/.agentbox/skeleton/           # your global skeleton (you own this)
+├── core.v1.yml                 # base sandbox config
+├── go.v1.yml                   # Go preset (if selected)
+├── python.v1.yml               # Python preset (if selected)
+├── Dockerfile.v1.agentbox      # sandbox Dockerfile
+└── local.yml                   # template for project customizations
+```
 
-**`~/.agentbox/skeleton/`** — global templates for `agentbox init`. Can be customized, but will
-be backed up and recreated when running `agentbox init skeleton`.
+You can freely edit any files in skeleton — they will be copied to projects on `agentbox init`.
+
+#### Project Configuration
+
+Each project gets a `.agentbox/` directory copied from your skeleton:
+
+```
+project/.agentbox/
+├── core.v1.yml
+├── go.v1.yml
+├── Dockerfile.v1.agentbox
+└── local.yml                   # project-specific overrides (never overwritten)
+```
+
+- **`local.yml`** — add project-specific settings here, this file is never overwritten
+- All `.yml` files are automatically merged when running the sandbox
+
+#### Updating Configuration
+
+| Task                               | Command                          |
+|------------------------------------|----------------------------------|
+| Reinit project from skeleton       | `agentbox init`                  |
+| Change presets (recreate skeleton) | `agentbox init skeleton --force` |
+
+When you run `agentbox init`, files in `.agentbox/` are replaced with current skeleton
+(except `local.yml` which is preserved).
