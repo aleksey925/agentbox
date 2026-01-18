@@ -180,7 +180,7 @@ func (a *App) doInit() int {
 
 	manager := skeleton.NewManager(paths)
 
-	// create skeleton or auto-update if needed
+	// create skeleton if missing
 	if code := a.ensureSkeletonReady(paths, manager); code != exitOK {
 		return code
 	}

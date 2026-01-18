@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -605,13 +606,8 @@ func TestExitCanceled__stops_execution_chain(t *testing.T) {
 
 	// assert
 	expected := []string{"step1"}
-	if len(executionLog) != len(expected) {
-		t.Fatalf("execution log = %v, want %v", executionLog, expected)
-	}
-	for i, step := range expected {
-		if executionLog[i] != step {
-			t.Errorf("executionLog[%d] = %s, want %s", i, executionLog[i], step)
-		}
+	if !slices.Equal(executionLog, expected) {
+		t.Fatalf("executionLog = %v, want %v", executionLog, expected)
 	}
 
 	// verify exitCanceled is non-zero (so code != exitOK works)
