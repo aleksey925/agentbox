@@ -9,7 +9,7 @@ services:
       # ai agents binaries (read-only mount from host)
       - ~/.agentbox/bin:/opt/agentbox/bin:ro
       # agent configs
-      - ~/.claude.json:/home/box/.claude.json
+      - ~/.claude.sandbox.json:/home/box/.claude.json
       - ~/.claude/:/home/box/.claude/
       - ~/.copilot/:/home/box/.copilot/
       - ~/.codex/:/home/box/.codex/
