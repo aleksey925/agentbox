@@ -87,6 +87,16 @@ gemini    # --yolo
 
 Your project is mounted at `/home/box/app`.
 
+**Git Configuration**
+
+Your `~/.gitconfig` is automatically mounted into the sandbox (read-only), so git commits work
+with your identity. If you haven't configured git globally yet, run:
+
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "your@email.com"
+```
+
 **Other Commands**
 
 | Command                         | Description                       |

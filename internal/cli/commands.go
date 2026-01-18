@@ -1039,6 +1039,15 @@ func ensureAgentConfigs() error {
 		}
 	}
 
+	// create ~/.gitconfig if not exists (prevents Docker from creating it as directory)
+	// if user has global git config, this file already exists; otherwise create empty placeholder
+	gitconfig := filepath.Join(home, ".gitconfig")
+	if _, err := os.Stat(gitconfig); os.IsNotExist(err) {
+		if err := os.WriteFile(gitconfig, []byte{}, 0o644); err != nil {
+			return fmt.Errorf("write .gitconfig: %w", err)
+		}
+	}
+
 	// create config directories if not exist
 	dirs := []string{
 		filepath.Join(home, ".claude"),
