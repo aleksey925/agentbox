@@ -4,7 +4,7 @@ services:
   agentbox:
     build:
       context: ..
-      dockerfile: .agentbox/Dockerfile.agentbox
+      dockerfile: .agentbox/Dockerfile.v1.agentbox
     volumes:
       # ai agents binaries (read-only mount from host)
       - ~/.agentbox/bin:/opt/agentbox/bin:ro

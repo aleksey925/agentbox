@@ -44,7 +44,9 @@ func commandTree() []Command {
 		Description: "Initialize sandbox in current directory",
 		Handler:     (*App).cmdInit,
 		Subcommands: []Command{
-			{Name: "skeleton", Description: "(Re)init global sandbox configs", Handler: (*App).cmdInitSkeleton},
+			{Name: "skeleton", Description: "(Re)init global sandbox configs", Handler: (*App).cmdInitSkeleton, Flags: []Flag{
+				{"-f, --force", "Force reinitialize even if skeleton exists"},
+			}},
 		},
 	},
 	{
@@ -225,6 +227,24 @@ func SelfSubcommands() []string {
 // SelfUninstallFlags returns self uninstall flag names.
 func SelfUninstallFlags() []string {
 	return SubcommandFlags("self", "uninstall")
+}
+
+// InitSkeletonFlags returns init skeleton flag names.
+func InitSkeletonFlags() []string {
+	return SubcommandFlags("init", "skeleton")
+}
+
+// InitSkeletonFlagsWithDesc returns init skeleton flags with descriptions.
+func InitSkeletonFlagsWithDesc() []Subcommand {
+	parentCmd := FindCommand(commandTree(), "init")
+	if parentCmd == nil {
+		return nil
+	}
+	subCmd := FindCommand(parentCmd.Subcommands, "skeleton")
+	if subCmd == nil {
+		return nil
+	}
+	return flagsToSubcommands(subCmd.Flags)
 }
 
 func extractSubcommandNames(subs []Command) []string {

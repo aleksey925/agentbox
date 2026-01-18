@@ -66,14 +66,12 @@ Copies sandbox configurations into the project.
 Files created:
   - .agentbox/core.v*.yml           Core Docker Compose configuration
   - .agentbox/<preset>.v*.yml       Environment preset configurations (Go, Python)
-  - .agentbox/Dockerfile.agentbox   Dockerfile for the sandbox
+  - .agentbox/Dockerfile.v*.agentbox Dockerfile for the sandbox
   - .agentbox/local.yml             Project-specific overrides (not overwritten)
   - mise.toml (if not exists)       Tool versions configuration
 
 On first run, you'll set up the base sandbox configuration.
-Run 'agentbox init skeleton' to reconfigure.
-
-Skeleton is auto-updated when newer template versions are available.
+Run 'agentbox init skeleton --force' to reconfigure.
 
 Use "agentbox init skeleton --help" for more information.
 `, CommandDesc("init"), SubcommandDesc("init", "skeleton"))
@@ -92,7 +90,10 @@ func (a *App) cmdInitSkeleton(args []string) int {
 		fmt.Printf(`%s
 
 Usage:
-  agentbox init skeleton
+  agentbox init skeleton [flags]
+
+Flags:
+  -f, --force                       Force reinitialize even if skeleton exists
 
 Reinitializes the base sandbox configuration (~/.agentbox/skeleton/).
 This configuration is used for project initialization with 'agentbox init'.
@@ -101,13 +102,22 @@ Use this to:
   - Change enabled presets (Go, Python)
   - Reset to defaults
 
-Note: skeleton/ is fully recreated. Your custom presets in skeleton.local/ are preserved.
+Without --force, skeleton will only be initialized if it doesn't exist.
+With --force, existing skeleton is deleted and recreated after confirmation.
 `, SubcommandDesc("init", "skeleton"))
 		return 0
 	}
 
-	if code := RejectUnknownFlags(args); code != 0 {
+	if code := RejectUnknownFlagsWithAllowed(args, InitSkeletonFlags()); code != 0 {
 		return code
+	}
+
+	// parse --force flag
+	force := false
+	for _, arg := range args {
+		if arg == "-f" || arg == "--force" {
+			force = true
+		}
 	}
 
 	paths, err := a.Paths()
@@ -118,24 +128,34 @@ Note: skeleton/ is fully recreated. Your custom presets in skeleton.local/ are p
 
 	manager := skeleton.NewManager(paths)
 
-	// get previously enabled presets to pre-select them in TUI
+	// get previously enabled presets BEFORE any changes (for pre-selection in TUI)
 	previousPresets, _ := manager.GetEnabledPresets()
 
-	// run preset selection
+	// check if skeleton already exists
+	if skeleton.HasRealFiles(paths.SkeletonDir) && !force {
+		fmt.Println("Skeleton already exists. Remove or move it, then run again. Or use --force")
+		return 1
+	}
+
+	// run preset selection with pre-selected presets
 	selectedPresets, canceled := a.selectPresets(paths.HomeDir, previousPresets)
 	if canceled {
 		fmt.Println("Canceled")
 		return 0
 	}
 
-	// create new skeleton
+	// create new skeleton (only after user confirmation via TUI)
 	if err := manager.CreateSkeleton(selectedPresets); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating skeleton: %v\n", err)
 		return 1
 	}
 
 	fmt.Println()
-	fmt.Println("Updated ~/.agentbox/skeleton/")
+	if force {
+		fmt.Println("Recreated ~/.agentbox/skeleton/")
+	} else {
+		fmt.Println("Created ~/.agentbox/skeleton/")
+	}
 
 	return 0
 }
@@ -204,12 +224,11 @@ func (a *App) doInit() int {
 	return 0
 }
 
-// ensureSkeletonReady creates skeleton if missing, or auto-updates if embedded versions are newer.
+// ensureSkeletonReady creates skeleton if missing.
 func (a *App) ensureSkeletonReady(paths *config.Paths, manager *skeleton.Manager) int {
 	if !paths.SkeletonExists() {
 		return a.createInitialSkeleton(paths, manager)
 	}
-	a.autoUpdateSkeleton(manager)
 	return 0
 }
 
@@ -233,30 +252,6 @@ func (a *App) createInitialSkeleton(paths *config.Paths, manager *skeleton.Manag
 	fmt.Println()
 	fmt.Println("Created ~/.agentbox/skeleton/")
 	return 0
-}
-
-func (a *App) autoUpdateSkeleton(manager *skeleton.Manager) {
-	updates, err := manager.CheckUpdates()
-	if err != nil || len(updates) == 0 {
-		return
-	}
-
-	currentPresets, err := manager.GetEnabledPresets()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to read current presets, skipping auto-update: %v\n", err)
-		return
-	}
-
-	if err := manager.CreateSkeleton(currentPresets); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to auto-update skeleton: %v\n", err)
-		return
-	}
-
-	fmt.Println("Updated skeleton:")
-	for _, u := range updates {
-		fmt.Printf("  %s: v%d -> v%d\n", u.Name, u.CurrentVersion, u.LatestVersion)
-	}
-	fmt.Println()
 }
 
 type presetSelectState struct {
