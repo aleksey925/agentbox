@@ -40,7 +40,7 @@ func (c *ClaudeAgent) Name() string {
 }
 
 func (c *ClaudeAgent) Variant() string {
-	return "glibc"
+	return variantGlibc
 }
 
 func (c *ClaudeAgent) BinaryName() string {

@@ -17,6 +17,7 @@ services:
       - ~/.copilot/:/home/box/.copilot/
       - ~/.codex/:/home/box/.codex/
       - ~/.gemini/:/home/box/.gemini/
+      - ~/.opencode/:/home/box/.opencode/
       # git config (for commits inside sandbox)
       - ~/.gitconfig:/home/box/.gitconfig:ro
       # project files

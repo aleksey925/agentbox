@@ -1049,13 +1049,8 @@ func ensureAgentConfigs() error {
 	}
 
 	// create config directories if not exist
-	dirs := []string{
-		filepath.Join(home, ".claude"),
-		filepath.Join(home, ".copilot"),
-		filepath.Join(home, ".codex"),
-		filepath.Join(home, ".gemini"),
-	}
-	for _, dir := range dirs {
+	for _, dirName := range agents.AgentConfigDirs() {
+		dir := filepath.Join(home, dirName)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("create dir %s: %w", dir, err)
 		}

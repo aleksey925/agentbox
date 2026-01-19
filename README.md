@@ -1,7 +1,7 @@
 Agentbox
 ========
 
-CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI) inside an isolated Docker container.
+CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI, OpenCode) inside an isolated Docker container.
 
 - [Why use Agentbox?](#why-use-agentbox)
 - [Installation](#installation)
@@ -83,6 +83,7 @@ claude    # --dangerously-skip-permissions
 copilot   # --allow-all-paths --allow-all-tools
 codex     # --full-auto
 gemini    # --yolo
+opencode  # build agent (full access by default)
 ```
 
 Your project is mounted at `/home/box/app`.
@@ -158,10 +159,10 @@ project/.agentbox/
 
 #### Updating Configuration
 
-| Task                               | Command                          |
-|------------------------------------|----------------------------------|
-| Reinit project from skeleton       | `agentbox init`                  |
-| Change presets (recreate skeleton) | `agentbox init skeleton --force` |
+| Task                                                                           | Command                          |
+|--------------------------------------------------------------------------------|----------------------------------|
+| Reinit project from skeleton                                                   | `agentbox init`                  |
+| Update presets, change selected presets, or recreate the skeleton from scratch | `agentbox init skeleton --force` |
 
-When you run `agentbox init`, files in `.agentbox/` are replaced with current skeleton
+When you run `agentbox init`, files in `<project>/.agentbox/` are replaced with current skeleton
 (except `local.yml` which is preserved).

@@ -68,15 +68,19 @@ RUN mkdir -p /home/box/.local/bin && \
         > /home/box/.local/bin/codex && \
     printf '#!/bin/bash\nmise exec node -- node /opt/agentbox/bin/gemini/$(cat /opt/agentbox/bin/gemini/current)/gemini.js "$@"\n' \
         > /home/box/.local/bin/gemini && \
+    printf '#!/bin/bash\nexec /opt/agentbox/bin/opencode/$(cat /opt/agentbox/bin/opencode/current)/opencode "$@"\n' \
+        > /home/box/.local/bin/opencode && \
     chmod +x /home/box/.local/bin/claude \
              /home/box/.local/bin/copilot \
              /home/box/.local/bin/codex \
-             /home/box/.local/bin/gemini
+             /home/box/.local/bin/gemini \
+             /home/box/.local/bin/opencode
 
 # aliases with skip-permissions flags
 RUN echo 'alias claude="/home/box/.local/bin/claude --dangerously-skip-permissions"' >> /home/box/.bashrc && \
     echo 'alias copilot="/home/box/.local/bin/copilot --allow-all-paths --allow-all-tools"' >> /home/box/.bashrc && \
     echo 'alias codex="/home/box/.local/bin/codex --full-auto"' >> /home/box/.bashrc && \
-    echo 'alias gemini="/home/box/.local/bin/gemini --yolo"' >> /home/box/.bashrc
+    echo 'alias gemini="/home/box/.local/bin/gemini --yolo"' >> /home/box/.bashrc && \
+    echo 'alias opencode="/home/box/.local/bin/opencode"' >> /home/box/.bashrc
 
 ENTRYPOINT ["/bin/bash"]
