@@ -49,8 +49,8 @@ RUN mkdir -p /etc/apt/keyrings && \
 
 USER box
 
-# pre-create mise directories so volumes inherit correct ownership
-RUN mkdir -p /home/box/.local/share/mise /home/box/.cache/mise
+# pre-create directories so volumes inherit correct ownership
+RUN mkdir -p /home/box/.local/share/mise /home/box/.cache/mise /home/box/.cache/opencode
 
 WORKDIR /home/box/app
 
