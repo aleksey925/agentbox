@@ -139,6 +139,10 @@ linters:
           - noctx
           - usestdlibvars
         path: _test\.go$
+      # agents have similar structure by design - each is self-contained
+      - linters:
+          - dupl
+        path: internal/agents/
       # gosec: file permissions are fine for CLI tool
       - linters:
           - gosec

@@ -1,7 +1,10 @@
 package skeleton
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/aleksey925/agentbox/internal/agents"
 )
 
 func TestParseTemplateName(t *testing.T) {
@@ -146,6 +149,53 @@ func TestSortComposeFiles(t *testing.T) {
 	for i, f := range files {
 		if f != expected[i] {
 			t.Errorf("files[%d] = %s, want %s", i, f, expected[i])
+		}
+	}
+}
+
+func TestCoreYml_agent_config_volumes(t *testing.T) {
+	// arrange
+	templates, err := GetEmbeddedComposeTemplates()
+	if err != nil {
+		t.Fatalf("GetEmbeddedComposeTemplates error: %v", err)
+	}
+
+	var coreContent string
+	for _, tmpl := range templates {
+		if tmpl.Name == "core" {
+			coreContent = string(tmpl.Content)
+			break
+		}
+	}
+	if coreContent == "" {
+		t.Fatal("core template not found")
+	}
+
+	// act & assert
+	for _, configDir := range agents.AgentConfigDirs() {
+		// expected format: ~/{configDir}/:/home/box/{configDir}/
+		// configDir can be ".claude" or ".config/opencode" (XDG paths)
+		expectedMount := "~/" + configDir + "/:/home/box/" + configDir + "/"
+		if !strings.Contains(coreContent, expectedMount) {
+			t.Errorf("core.v1.yml missing volume mount for %s (expected %q)", configDir, expectedMount)
+		}
+	}
+}
+
+func TestDockerfile_agent_launchers(t *testing.T) {
+	// arrange
+	dockerfile, err := GetEmbeddedDockerfile()
+	if err != nil {
+		t.Fatalf("GetEmbeddedDockerfile error: %v", err)
+	}
+	content := string(dockerfile.Content)
+
+	// act & assert
+	for _, name := range agents.AllAgentNames() {
+		// check launcher script exists: > /home/box/.local/bin/{agent}
+		expectedLauncher := "> /home/box/.local/bin/" + name
+		if !strings.Contains(content, expectedLauncher) {
+			t.Errorf("Dockerfile missing launcher script for %s (expected %q)", name, expectedLauncher)
 		}
 	}
 }

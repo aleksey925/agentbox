@@ -33,14 +33,19 @@ func NewManager(paths *config.Paths) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	opencode, err := NewOpenCodeAgent()
+	if err != nil {
+		return nil, err
+	}
 
 	return &Manager{
 		paths: paths,
 		agents: map[string]Agent{
-			"claude":  claude,
-			"copilot": copilot,
-			"codex":   codex,
-			"gemini":  NewGeminiAgent(),
+			"claude":   claude,
+			"copilot":  copilot,
+			"codex":    codex,
+			"gemini":   NewGeminiAgent(),
+			"opencode": opencode,
 		},
 	}, nil
 }
@@ -56,6 +61,7 @@ func (m *Manager) AllAgents() []Agent {
 		m.agents["copilot"],
 		m.agents["codex"],
 		m.agents["gemini"],
+		m.agents["opencode"],
 	}
 }
 

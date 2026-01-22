@@ -454,6 +454,12 @@ Flags:
 		return toShellExit(code)
 	}
 
+	// ensure shared volumes exist (prevents "volume created for different project" warning)
+	if err := docker.EnsureSharedVolumes(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating shared volumes: %v\n", err)
+		return 1
+	}
+
 	// discover compose files
 	composeFiles, err := docker.DiscoverComposeFiles(cwd)
 	if err != nil {
@@ -1049,13 +1055,8 @@ func ensureAgentConfigs() error {
 	}
 
 	// create config directories if not exist
-	dirs := []string{
-		filepath.Join(home, ".claude"),
-		filepath.Join(home, ".copilot"),
-		filepath.Join(home, ".codex"),
-		filepath.Join(home, ".gemini"),
-	}
-	for _, dir := range dirs {
+	for _, dirName := range agents.AgentConfigDirs() {
+		dir := filepath.Join(home, dirName)
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("create dir %s: %w", dir, err)
 		}

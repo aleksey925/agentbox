@@ -117,6 +117,27 @@ func TestGeminiAgent_Name(t *testing.T) {
 	}
 }
 
+func TestOpenCodeAgent_Name(t *testing.T) {
+	// arrange
+	agent, err := NewOpenCodeAgent()
+	if err != nil {
+		t.Fatalf("NewOpenCodeAgent() error = %v", err)
+	}
+
+	// act & assert
+	if agent.Name() != "opencode" {
+		t.Errorf("Name() = %s, want opencode", agent.Name())
+	}
+
+	if agent.Variant() != "glibc" {
+		t.Errorf("Variant() = %s, want glibc", agent.Variant())
+	}
+
+	if agent.BinaryName() != "opencode" {
+		t.Errorf("BinaryName() = %s, want opencode", agent.BinaryName())
+	}
+}
+
 func TestCodexAgent_rustArch(t *testing.T) {
 	// arrange
 	agent := &CodexAgent{arch: "arm64"}
@@ -184,7 +205,7 @@ func TestManager_AllAgents(t *testing.T) {
 	agents := manager.AllAgents()
 
 	// assert
-	expectedNames := []string{"claude", "copilot", "codex", "gemini"}
+	expectedNames := []string{"claude", "copilot", "codex", "gemini", "opencode"}
 	if len(agents) != len(expectedNames) {
 		t.Fatalf("AllAgents() returned %d agents, want %d", len(agents), len(expectedNames))
 	}
