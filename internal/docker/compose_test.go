@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"testing"
 
 	"github.com/aleksey925/agentbox/internal/skeleton"
@@ -357,7 +358,7 @@ func TestSharedVolumes__match_core_template(t *testing.T) {
 	re := regexp.MustCompile(`name:\s*(\S+)\s+external:\s*true`)
 	matches := re.FindAllStringSubmatch(content, -1)
 
-	var externalVolumes []string
+	externalVolumes := make([]string, 0, len(matches))
 	for _, m := range matches {
 		externalVolumes = append(externalVolumes, m[1])
 	}
@@ -380,14 +381,7 @@ func TestSharedVolumes__match_core_template(t *testing.T) {
 
 	// also check reverse: all SharedVolumes should be in template
 	for _, vol := range SharedVolumes {
-		found := false
-		for _, extVol := range externalVolumes {
-			if extVol == vol {
-				found = true
-				break
-			}
-		}
-		if !found {
+		if !slices.Contains(externalVolumes, vol) {
 			t.Errorf("SharedVolumes contains %q but it's not in core.v1.yml as external", vol)
 		}
 	}

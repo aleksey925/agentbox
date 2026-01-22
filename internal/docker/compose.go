@@ -24,7 +24,7 @@ var SharedVolumes = []string{
 func EnsureSharedVolumes() error {
 	for _, vol := range SharedVolumes {
 		ctx := context.Background()
-		cmd := exec.CommandContext(ctx, "docker", "volume", "create", vol)
+		cmd := exec.CommandContext(ctx, "docker", "volume", "create", vol) // #nosec G204 -- vol comes from hardcoded SharedVolumes
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("create volume %s: %w", vol, err)
 		}
@@ -47,7 +47,7 @@ func Run(projectDir string, composeFiles []string) error {
 	ctx := context.Background()
 	args := buildRunArgs(projectDir, composeFiles)
 
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd := exec.CommandContext(ctx, "docker", args...) // #nosec G204 -- args built from validated compose files
 	cmd.Dir = projectDir
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -90,7 +90,7 @@ func Build(projectDir string, composeFiles []string, noCache bool) error {
 	ctx := context.Background()
 	args := buildBuildArgs(projectDir, composeFiles, noCache)
 
-	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd := exec.CommandContext(ctx, "docker", args...) // #nosec G204 -- args built from validated compose files
 	cmd.Dir = projectDir
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
