@@ -1,5 +1,9 @@
-Agentbox
+AgentBox
 ========
+
+<p align="left">
+  <img src="img/logo.png" alt="Agentbox" width="500">
+</p>
 
 CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI, OpenCode) inside an isolated Docker container.
 
