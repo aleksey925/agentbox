@@ -155,16 +155,22 @@ func (m *Manager) Install(name string, onProgress func(agent string, downloaded,
 	return nil
 }
 
+type agentVersionInfo struct {
+	name           string
+	agent          Agent
+	latestVersion  string
+	currentVersion string
+	err            error
+}
+
 func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 	ctx := context.Background()
 	if len(names) == 0 {
 		names = AllAgentNames()
 	}
 
-	// create multi-progress container
-	p := mpb.New(mpb.WithWidth(60))
-
-	results := make([]DownloadResult, len(names))
+	// phase 1: fetch all versions in parallel
+	infos := make([]agentVersionInfo, len(names))
 	var wg sync.WaitGroup
 
 	for i, name := range names {
@@ -174,46 +180,106 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 
 			agent, ok := m.agents[agentName]
 			if !ok {
-				results[idx] = DownloadResult{
-					Agent: agentName,
-					Error: fmt.Errorf("unknown agent: %s", agentName),
+				infos[idx] = agentVersionInfo{
+					name: agentName,
+					err:  fmt.Errorf("unknown agent: %s", agentName),
 				}
 				return
 			}
 
-			version, err := agent.FetchLatestVersion(ctx)
+			latest, err := agent.FetchLatestVersion(ctx)
 			if err != nil {
-				results[idx] = DownloadResult{
-					Agent: agentName,
-					Error: err,
+				infos[idx] = agentVersionInfo{
+					name:  agentName,
+					agent: agent,
+					err:   err,
 				}
 				return
 			}
 
-			destDir := m.paths.AgentVersionDir(agentName, version)
+			_, current, _ := m.ListVersions(agentName)
+			infos[idx] = agentVersionInfo{
+				name:           agentName,
+				agent:          agent,
+				latestVersion:  latest,
+				currentVersion: current,
+			}
+		}(i, name)
+	}
 
-			// already installed
-			if _, err := os.Stat(destDir); err == nil {
-				results[idx] = DownloadResult{
-					Agent:   agentName,
-					Version: version,
-					Variant: agent.Variant(),
+	wg.Wait()
+
+	// compute column widths for aligned progress bars
+	var maxNameLen, maxCurrentLen, maxLatestLen int
+	for _, info := range infos {
+		if info.err != nil {
+			continue
+		}
+		maxNameLen = max(maxNameLen, len(info.name))
+		maxCurrentLen = max(maxCurrentLen, len(info.currentVersion))
+		maxLatestLen = max(maxLatestLen, len(info.latestVersion))
+	}
+
+	// phase 2: download agents in parallel with aligned progress bars
+	p := mpb.New(mpb.WithWidth(60))
+
+	results := make([]DownloadResult, len(names))
+
+	for i, info := range infos {
+		if info.err != nil {
+			results[i] = DownloadResult{Agent: info.name, Error: info.err}
+			continue
+		}
+
+		destDir := m.paths.AgentVersionDir(info.name, info.latestVersion)
+
+		// already installed
+		if _, err := os.Stat(destDir); err == nil {
+			if err := m.switchVersion(info.name, info.latestVersion); err != nil {
+				results[i] = DownloadResult{
+					Agent: info.name,
+					Error: fmt.Errorf("switch version: %w", err),
 				}
-				return
+				continue
+			}
+			results[i] = DownloadResult{
+				Agent:   info.name,
+				Version: info.latestVersion,
+				Variant: info.agent.Variant(),
+			}
+			continue
+		}
+
+		wg.Add(1)
+		go func(idx int, info agentVersionInfo) {
+			defer wg.Done()
+
+			var label string
+			if info.currentVersion != "" {
+				label = fmt.Sprintf("  %-*s %-*s -> %-*s",
+					maxNameLen, info.name,
+					maxCurrentLen, info.currentVersion,
+					maxLatestLen, info.latestVersion)
+			} else {
+				label = fmt.Sprintf("  %-*s %-*s -> %-*s",
+					maxNameLen, info.name,
+					maxCurrentLen, "",
+					maxLatestLen, info.latestVersion)
 			}
 
-			// create progress bar for this agent
 			bar := p.AddBar(0,
 				mpb.PrependDecorators(
-					decor.Name(fmt.Sprintf("  %-8s", agentName)),
+					decor.Name(label),
 					decor.CountersKibiByte(" %6.1f / %6.1f", decor.WCSyncSpace),
 				),
 				mpb.AppendDecorators(
-					decor.NewPercentage("%3d%%", decor.WC{W: 5}),
+					decor.NewPercentage("%3d", decor.WC{W: 5}),
 					decor.AverageETA(decor.ET_STYLE_GO, decor.WC{W: 8}),
 					decor.AverageSpeed(decor.SizeB1024(0), "%6.1f", decor.WC{W: 12}),
 				),
 			)
+
+			destDir := m.paths.AgentVersionDir(info.name, info.latestVersion)
 
 			var lastDownloaded int64
 			progress := func(downloaded, total int64) {
@@ -227,11 +293,11 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 				}
 			}
 
-			if err := agent.Download(ctx, version, destDir, progress); err != nil {
+			if err := info.agent.Download(ctx, info.latestVersion, destDir, progress); err != nil {
 				bar.Abort(true)
 				os.RemoveAll(destDir)
 				results[idx] = DownloadResult{
-					Agent: agentName,
+					Agent: info.name,
 					Error: err,
 				}
 				return
@@ -239,30 +305,26 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 
 			bar.SetTotal(bar.Current(), true)
 
-			results[idx] = DownloadResult{
-				Agent:   agentName,
-				Version: version,
-				Variant: agent.Variant(),
+			if err := m.switchVersion(info.name, info.latestVersion); err != nil {
+				results[idx] = DownloadResult{
+					Agent: info.name,
+					Error: fmt.Errorf("switch version: %w", err),
+				}
+				return
 			}
-		}(i, name)
+
+			results[idx] = DownloadResult{
+				Agent:   info.name,
+				Version: info.latestVersion,
+				Variant: info.agent.Variant(),
+			}
+		}(i, info)
 	}
 
 	wg.Wait()
 	p.Wait()
 
-	m.applyResults(results)
-
 	return results, nil
-}
-
-func (m *Manager) applyResults(results []DownloadResult) {
-	for i := range results {
-		if results[i].Error == nil && results[i].Version != "" {
-			if err := m.switchVersion(results[i].Agent, results[i].Version); err != nil {
-				results[i].Error = fmt.Errorf("switch version: %w", err)
-			}
-		}
-	}
 }
 
 func (m *Manager) SwitchVersion(name, version string) error {
