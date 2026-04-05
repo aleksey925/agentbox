@@ -722,19 +722,18 @@ Examples:
 		return 1
 	}
 
-	fmt.Println()
-	var failedCount int
+	var failed []agents.DownloadResult
 	for _, result := range results {
 		if result.Error != nil {
-			fmt.Fprintf(os.Stderr, "  %s: error - %v\n", result.Agent, result.Error)
-			failedCount++
-		} else {
-			fmt.Printf("  %s: updated to %s\n", result.Agent, result.Version)
+			failed = append(failed, result)
 		}
 	}
 
-	if failedCount > 0 {
-		fmt.Fprintf(os.Stderr, "\nWarning: %d agent(s) failed to update\n", failedCount)
+	if len(failed) > 0 {
+		fmt.Fprintln(os.Stderr)
+		for _, result := range failed {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", result.Agent, result.Error)
+		}
 	}
 
 	// cleanup old versions
