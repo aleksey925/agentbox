@@ -21,12 +21,12 @@ jobs:
         uses: jdx/mise-action@v2
 
       - name: Test
-        run: go test -race -timeout 3m -coverprofile=coverage.out ./...
+        run: make cover
         env:
           TZ: UTC
 
       - name: Lint
-        run: golangci-lint run
+        run: make lint
 
       - name: Build
-        run: go build -o agentbox ./cmd/agentbox
+        run: make build

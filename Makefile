@@ -5,7 +5,11 @@ DIST_DIR = dist
 BINARY = agentbox
 BIN_PATH = $(DIST_DIR)/$(BINARY)
 
-.PHONY: build snapshot install test race cover lint clean
+.PHONY: deps build snapshot install test race cover lint clean
+
+deps:
+	@go mod tidy
+	@go mod vendor
 
 build:
 	@go build $(LDFLAGS) -o $(BIN_PATH) ./cmd/agentbox
@@ -31,7 +35,7 @@ cover:
 	@echo "HTML report: go tool cover -html=coverage.out"
 
 lint:
-	@golangci-lint run
+	@prek run --all-files
 
 clean:
 	@rm -rf $(DIST_DIR) coverage.out

@@ -39,79 +39,79 @@ type Flag struct {
 // that reference metadata functions.
 func commandTree() []Command {
 	return []Command{
-	{
-		Name:        "init",
-		Description: "Initialize sandbox in current directory",
-		Handler:     (*App).cmdInit,
-		Subcommands: []Command{
-			{Name: "skeleton", Description: "(Re)init global sandbox configs", Handler: (*App).cmdInitSkeleton, Flags: []Flag{
-				{"-f, --force", "Force reinitialize even if skeleton exists"},
-			}},
+		{
+			Name:        "init",
+			Description: "Initialize sandbox in current directory",
+			Handler:     (*App).cmdInit,
+			Subcommands: []Command{
+				{Name: "skeleton", Description: "(Re)init global sandbox configs", Handler: (*App).cmdInitSkeleton, Flags: []Flag{
+					{"-f, --force", "Force reinitialize even if skeleton exists"},
+				}},
+			},
 		},
-	},
-	{
-		Name:        "run",
-		Description: "Start sandbox",
-		Handler:     (*App).cmdRun,
-		Flags: []Flag{
-			{"--build", "Rebuild image before running"},
-			{"--build-no-cache", "Rebuild image without Docker cache"},
+		{
+			Name:        "run",
+			Description: "Start sandbox",
+			Handler:     (*App).cmdRun,
+			Flags: []Flag{
+				{"--build", "Rebuild image before running"},
+				{"--build-no-cache", "Rebuild image without Docker cache"},
+			},
 		},
-	},
-	{
-		Name:        "attach",
-		Description: "Attach to running sandbox",
-		Handler:     (*App).cmdAttach,
-	},
-	{
-		Name:        "ps",
-		Description: "List running sandboxes",
-		Handler:     (*App).cmdPs,
-		Flags: []Flag{
-			{"-a, --all", "Show sandboxes from all projects"},
+		{
+			Name:        "attach",
+			Description: "Attach to running sandbox",
+			Handler:     (*App).cmdAttach,
 		},
-	},
-	{
-		Name:        "agent",
-		Description: "Manage AI agents",
-		Handler:     (*App).cmdAgentStatus,
-		Subcommands: []Command{
-			{Name: "update", Description: "Update agents to latest version", Handler: (*App).cmdAgentUpdate},
-			{Name: "use", Description: "Switch agent to specific version", Handler: (*App).cmdAgentUse},
+		{
+			Name:        "ps",
+			Description: "List running sandboxes",
+			Handler:     (*App).cmdPs,
+			Flags: []Flag{
+				{"-a, --all", "Show sandboxes from all projects"},
+			},
 		},
-	},
-	{
-		Name:        "self",
-		Description: "Update or uninstall agentbox",
-		Handler:     nil, // requires subcommand
-		Subcommands: []Command{
-			{Name: "update", Description: "Update to latest or specified version", Handler: (*App).cmdSelfUpdate},
-			{Name: "uninstall", Description: "Remove agentbox from system", Handler: (*App).cmdSelfUninstall, Flags: []Flag{
-				{"--purge", "Also remove ~/.agentbox directory"},
-			}},
-			{Name: "versions", Description: "List available versions", Handler: (*App).cmdSelfVersions},
+		{
+			Name:        "agent",
+			Description: "Manage AI agents",
+			Handler:     (*App).cmdAgentStatus,
+			Subcommands: []Command{
+				{Name: "update", Description: "Update agents to latest version", Handler: (*App).cmdAgentUpdate},
+				{Name: "use", Description: "Switch agent to specific version", Handler: (*App).cmdAgentUse},
+			},
 		},
-	},
-	{
-		Name:        "clean",
-		Description: "Remove sandbox files from project",
-		Handler:     (*App).cmdClean,
-	},
-	{
-		Name:        "completion",
-		Description: "Generate shell completion script",
-		Handler:     (*App).cmdCompletion,
-	},
-	{
-		Name:        "help",
-		Description: "Show help",
-		Handler:     nil, // handled specially in dispatcher
-	},
-	{
-		Name:        "version",
-		Description: "Show version",
-		Handler:     nil, // handled specially in dispatcher
-	},
+		{
+			Name:        "self",
+			Description: "Update or uninstall agentbox",
+			Handler:     nil, // requires subcommand
+			Subcommands: []Command{
+				{Name: "update", Description: "Update to latest or specified version", Handler: (*App).cmdSelfUpdate},
+				{Name: "uninstall", Description: "Remove agentbox from system", Handler: (*App).cmdSelfUninstall, Flags: []Flag{
+					{"--purge", "Also remove ~/.agentbox directory"},
+				}},
+				{Name: "versions", Description: "List available versions", Handler: (*App).cmdSelfVersions},
+			},
+		},
+		{
+			Name:        "clean",
+			Description: "Remove sandbox files from project",
+			Handler:     (*App).cmdClean,
+		},
+		{
+			Name:        "completion",
+			Description: "Generate shell completion script",
+			Handler:     (*App).cmdCompletion,
+		},
+		{
+			Name:        "help",
+			Description: "Show help",
+			Handler:     nil, // handled specially in dispatcher
+		},
+		{
+			Name:        "version",
+			Description: "Show version",
+			Handler:     nil, // handled specially in dispatcher
+		},
 	}
 }
 

@@ -69,6 +69,7 @@ Temporary Items
 
 ### IDE
 .idea/
+.zed/
 
 ### Go
 # If you prefer the allow list template instead of the deny list, see community template:
@@ -99,3 +100,4 @@ go.work.sum
 
 ### Project
 agentbox
+vendor/
