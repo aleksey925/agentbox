@@ -1,5 +1,4 @@
-AgentBox
-========
+# AgentBox
 
 <p align="left">
   <img src="img/logo.png" alt="Agentbox" width="500">
@@ -14,6 +13,7 @@ CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI
 - [How to Use](#how-to-use)
   - [Modular Sandbox Configuration](#modular-sandbox-configuration)
   - [Customization](#customization)
+- [Development](#development)
 
 ## Why use Agentbox?
 
@@ -32,19 +32,7 @@ ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 curl -#L "https://github.com/aleksey925/agentbox/releases/download/v${VERSION}/agentbox_${VERSION}_${OS}_${ARCH}.tar.gz" | tar xz -C ~/.local/bin agentbox
 ```
 
-Also, you can build it from source:
-
-```bash
-git clone https://github.com/aleksey925/agentbox.git
-cd agentbox
-make install  # copies to ~/.local/bin
-```
-
-Make sure `~/.local/bin` is in your PATH:
-
-```bash
-export PATH="$HOME/.local/bin:$PATH"
-```
+Also, you can [build from source](#build).
 
 ### Shell Completions
 
@@ -105,7 +93,7 @@ git config --global user.email "your@email.com"
 **Other Commands**
 
 | Command                         | Description                       |
-|---------------------------------|-----------------------------------|
+| ------------------------------- | --------------------------------- |
 | `agentbox run --build`          | Rebuild and run sandbox           |
 | `agentbox run --build-no-cache` | Full rebuild without cache        |
 | `agentbox ps`                   | List running sandboxes            |
@@ -164,9 +152,42 @@ project/.agentbox/
 #### Updating Configuration
 
 | Task                                                                           | Command                          |
-|--------------------------------------------------------------------------------|----------------------------------|
+| ------------------------------------------------------------------------------ | -------------------------------- |
 | Reinit project from skeleton                                                   | `agentbox init`                  |
 | Update presets, change selected presets, or recreate the skeleton from scratch | `agentbox init skeleton --force` |
 
 When you run `agentbox init`, files in `<project>/.agentbox/` are replaced with current skeleton
 (except `local.yml` which is preserved).
+
+## Development
+
+### Prerequisites
+
+- [mise](https://mise.jdx.dev/getting-started.html#installing-mise-cli) for managing toolchains
+
+### Set up environment
+
+- install toolchains and deps
+
+  ```bash
+  mise trust && mise install
+  make deps
+  ```
+
+- verify the setup by running tests
+
+  ```bash
+  make test
+  ```
+
+### Build
+
+Two options:
+
+- `make build` — builds the binary into `dist/`.
+- `make install` — builds and installs the binary to `~/.local/bin`.
+  Ensure this directory is in your `PATH`:
+
+  ```bash
+  export PATH="$HOME/.local/bin:$PATH"
+  ```
