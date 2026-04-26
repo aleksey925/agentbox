@@ -92,17 +92,18 @@ func DetectArch() (string, error) {
 }
 
 func AllAgentNames() []string {
-	return []string{"claude", "copilot", "codex", "gemini", "opencode"}
+	return []string{"claude", "copilot", "codex", "gemini", "opencode", "ralphex"}
 }
 
 // agentConfigDirs maps agent name to its config directories (relative to $HOME).
-// Most agents use simple format (.claude), but opencode uses XDG paths.
+// Most agents use simple format (.claude), but opencode and ralphex use XDG paths.
 var agentConfigDirs = map[string][]string{
 	"claude":   {".claude"},
 	"copilot":  {".copilot"},
 	"codex":    {".codex"},
 	"gemini":   {".gemini"},
 	"opencode": {".config/opencode", ".local/share/opencode", ".local/state/opencode"},
+	"ralphex":  {".config/ralphex"},
 }
 
 // AgentConfigDirs returns all config directory paths (relative to $HOME) for all agents.
@@ -123,6 +124,7 @@ func AgentDescriptions() map[string]string {
 		"codex":    "OpenAI Codex",
 		"gemini":   "Google Gemini",
 		"opencode": "Open Source AI Coding Agent",
+		"ralphex":  "Autonomous plan execution tool by umputun",
 	}
 }
 

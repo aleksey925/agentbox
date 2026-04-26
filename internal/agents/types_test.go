@@ -45,7 +45,7 @@ func TestAllAgentNames(t *testing.T) {
 	names := AllAgentNames()
 
 	// assert
-	expected := []string{"claude", "copilot", "codex", "gemini", "opencode"}
+	expected := []string{"claude", "copilot", "codex", "gemini", "opencode", "ralphex"}
 	if len(names) != len(expected) {
 		t.Fatalf("len(AllAgentNames()) = %d, want %d", len(names), len(expected))
 	}

@@ -138,6 +138,42 @@ func TestOpenCodeAgent_Name(t *testing.T) {
 	}
 }
 
+func TestRalphexAgent_Name(t *testing.T) {
+	// arrange
+	agent, err := NewRalphexAgent()
+	if err != nil {
+		t.Fatalf("NewRalphexAgent() error = %v", err)
+	}
+
+	// act & assert
+	if agent.Name() != "ralphex" {
+		t.Errorf("Name() = %s, want ralphex", agent.Name())
+	}
+
+	if agent.Variant() != "glibc" {
+		t.Errorf("Variant() = %s, want glibc", agent.Variant())
+	}
+
+	if agent.BinaryName() != "ralphex" {
+		t.Errorf("BinaryName() = %s, want ralphex", agent.BinaryName())
+	}
+}
+
+func TestRalphexAgent_goArch(t *testing.T) {
+	// arrange
+	agent := &RalphexAgent{arch: "x64"}
+
+	// act & assert
+	if agent.goArch() != "amd64" {
+		t.Errorf("goArch() = %s, want amd64", agent.goArch())
+	}
+
+	agent.arch = "arm64"
+	if agent.goArch() != "arm64" {
+		t.Errorf("goArch() = %s, want arm64", agent.goArch())
+	}
+}
+
 func TestCodexAgent_rustArch(t *testing.T) {
 	// arrange
 	agent := &CodexAgent{arch: "arm64"}
@@ -205,7 +241,7 @@ func TestManager_AllAgents(t *testing.T) {
 	agents := manager.AllAgents()
 
 	// assert
-	expectedNames := []string{"claude", "copilot", "codex", "gemini", "opencode"}
+	expectedNames := []string{"claude", "copilot", "codex", "gemini", "opencode", "ralphex"}
 	if len(agents) != len(expectedNames) {
 		t.Fatalf("AllAgents() returned %d agents, want %d", len(agents), len(expectedNames))
 	}

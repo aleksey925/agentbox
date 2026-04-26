@@ -37,6 +37,10 @@ func NewManager(paths *config.Paths) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	ralphex, err := NewRalphexAgent()
+	if err != nil {
+		return nil, err
+	}
 
 	return &Manager{
 		paths: paths,
@@ -46,6 +50,7 @@ func NewManager(paths *config.Paths) (*Manager, error) {
 			"codex":    codex,
 			"gemini":   NewGeminiAgent(),
 			"opencode": opencode,
+			"ralphex":  ralphex,
 		},
 	}, nil
 }
@@ -62,6 +67,7 @@ func (m *Manager) AllAgents() []Agent {
 		m.agents["codex"],
 		m.agents["gemini"],
 		m.agents["opencode"],
+		m.agents["ralphex"],
 	}
 }
 
