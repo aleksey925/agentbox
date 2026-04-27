@@ -41,8 +41,8 @@ func (r *RalphexAgent) FetchLatestVersion(ctx context.Context) (string, error) {
 // goArch maps the agentbox arch (x64/arm64) to the Go release arch (amd64/arm64)
 // used by ralphex assets.
 func (r *RalphexAgent) goArch() string {
-	if r.arch == "x64" {
-		return "amd64"
+	if r.arch == archX64 {
+		return archAMD64
 	}
 	return r.arch
 }

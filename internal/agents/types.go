@@ -18,6 +18,10 @@ import (
 const (
 	userAgent    = "agentbox/1.0"
 	variantGlibc = "glibc"
+
+	archAMD64 = "amd64"
+	archARM64 = "arm64"
+	archX64   = "x64"
 )
 
 var httpClient = &http.Client{
@@ -82,10 +86,10 @@ type DownloadResult struct {
 
 func DetectArch() (string, error) {
 	switch runtime.GOARCH {
-	case "amd64":
-		return "x64", nil
-	case "arm64":
-		return "arm64", nil
+	case archAMD64:
+		return archX64, nil
+	case archARM64:
+		return archARM64, nil
 	default:
 		return "", fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)
 	}
