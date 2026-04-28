@@ -18,6 +18,10 @@ import (
 const (
 	userAgent    = "agentbox/1.0"
 	variantGlibc = "glibc"
+
+	archAMD64 = "amd64"
+	archARM64 = "arm64"
+	archX64   = "x64"
 )
 
 var httpClient = &http.Client{
@@ -82,27 +86,28 @@ type DownloadResult struct {
 
 func DetectArch() (string, error) {
 	switch runtime.GOARCH {
-	case "amd64":
-		return "x64", nil
-	case "arm64":
-		return "arm64", nil
+	case archAMD64:
+		return archX64, nil
+	case archARM64:
+		return archARM64, nil
 	default:
 		return "", fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)
 	}
 }
 
 func AllAgentNames() []string {
-	return []string{"claude", "copilot", "codex", "gemini", "opencode"}
+	return []string{"claude", "copilot", "codex", "gemini", "opencode", "ralphex"}
 }
 
 // agentConfigDirs maps agent name to its config directories (relative to $HOME).
-// Most agents use simple format (.claude), but opencode uses XDG paths.
+// Most agents use simple format (.claude), but opencode and ralphex use XDG paths.
 var agentConfigDirs = map[string][]string{
 	"claude":   {".claude"},
 	"copilot":  {".copilot"},
 	"codex":    {".codex"},
 	"gemini":   {".gemini"},
 	"opencode": {".config/opencode", ".local/share/opencode", ".local/state/opencode"},
+	"ralphex":  {".config/ralphex"},
 }
 
 // AgentConfigDirs returns all config directory paths (relative to $HOME) for all agents.
@@ -123,6 +128,7 @@ func AgentDescriptions() map[string]string {
 		"codex":    "OpenAI Codex",
 		"gemini":   "Google Gemini",
 		"opencode": "Open Source AI Coding Agent",
+		"ralphex":  "Autonomous plan execution tool by umputun",
 	}
 }
 

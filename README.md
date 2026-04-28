@@ -4,7 +4,7 @@
   <img src="img/logo.png" alt="Agentbox" width="500">
 </p>
 
-CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI, OpenCode) inside an isolated Docker container.
+CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI, OpenCode, Ralphex) inside an isolated Docker container.
 
 - [Why use Agentbox?](#why-use-agentbox)
 - [Installation](#installation)
@@ -76,6 +76,7 @@ copilot   # --allow-all-paths --allow-all-tools
 codex     # --full-auto
 gemini    # --yolo
 opencode  # build agent (full access by default)
+ralphex
 ```
 
 Your project is mounted at `/home/box/app`.

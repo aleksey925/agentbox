@@ -41,9 +41,9 @@ func (c *CodexAgent) FetchLatestVersion(ctx context.Context) (string, error) {
 
 func (c *CodexAgent) rustArch() string {
 	switch c.arch {
-	case "arm64":
+	case archARM64:
 		return "aarch64"
-	case "x64":
+	case archX64:
 		return "x86_64"
 	default:
 		return c.arch
