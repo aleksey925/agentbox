@@ -6,9 +6,8 @@ import (
 	"github.com/aleksey925/agentbox/internal/cli"
 )
 
-var version = "dev"
+var version = "0.0.0"
 
 func main() {
-	code := cli.Run(os.Args[1:], version)
-	os.Exit(code)
+	os.Exit(cli.Run(os.Args[1:], cli.NewBuildInfo(version)))
 }

@@ -1111,7 +1111,7 @@ Examples:
 
 	targetVersion = strings.TrimPrefix(targetVersion, "v")
 
-	if targetVersion == a.Version {
+	if targetVersion == a.Build.Version {
 		fmt.Printf("Already at version %s\n", targetVersion)
 		return 0
 	}

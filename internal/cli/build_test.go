@@ -1,0 +1,90 @@
+package cli
+
+import (
+	"runtime/debug"
+	"testing"
+)
+
+func TestBuildInfo_Display(t *testing.T) {
+	tests := []struct {
+		name  string
+		build BuildInfo
+		want  string
+	}{
+		{
+			name:  "version with commit",
+			build: BuildInfo{Version: "1.2.3", Commit: "abc1234"},
+			want:  "1.2.3 (abc1234)",
+		},
+		{
+			name:  "version without commit",
+			build: BuildInfo{Version: "1.2.3"},
+			want:  "1.2.3",
+		},
+		{
+			name:  "default dev version without commit",
+			build: BuildInfo{Version: "0.0.0"},
+			want:  "0.0.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.build.Display()
+			if got != tt.want {
+				t.Errorf("Display() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestExtractRevision(t *testing.T) {
+	tests := []struct {
+		name     string
+		settings []debug.BuildSetting
+		want     string
+	}{
+		{
+			name:     "empty settings",
+			settings: nil,
+			want:     "",
+		},
+		{
+			name: "no vcs.revision key",
+			settings: []debug.BuildSetting{
+				{Key: "GOOS", Value: "linux"},
+			},
+			want: "",
+		},
+		{
+			name: "valid revision is truncated to short hash",
+			settings: []debug.BuildSetting{
+				{Key: "vcs.revision", Value: "abc1234567890def1234567890"},
+			},
+			want: "abc1234",
+		},
+		{
+			name: "revision shorter than shortHashLen is rejected",
+			settings: []debug.BuildSetting{
+				{Key: "vcs.revision", Value: "abc"},
+			},
+			want: "",
+		},
+		{
+			name: "revision exactly shortHashLen long",
+			settings: []debug.BuildSetting{
+				{Key: "vcs.revision", Value: "abc1234"},
+			},
+			want: "abc1234",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := extractRevision(tt.settings)
+			if got != tt.want {
+				t.Errorf("extractRevision() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

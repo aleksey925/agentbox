@@ -1,4 +1,4 @@
-VERSION ?= $(shell git rev-parse --short HEAD)
+VERSION ?= 0.0.0
 LDFLAGS = -ldflags "-X main.version=$(VERSION)"
 
 DIST_DIR = dist
