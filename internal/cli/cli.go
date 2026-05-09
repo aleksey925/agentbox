@@ -11,7 +11,7 @@ import (
 
 // App holds CLI state and provides lazy-cached resources.
 type App struct {
-	Version string
+	Build BuildInfo
 
 	// lazy-cached resources
 	paths        *config.Paths
@@ -48,8 +48,8 @@ func (a *App) AgentManager() (*agents.Manager, error) {
 }
 
 // Run is the main entry point for CLI.
-func Run(args []string, version string) int {
-	app := &App{Version: version}
+func Run(args []string, build BuildInfo) int {
+	app := &App{Build: build}
 	return app.dispatch(args)
 }
 
@@ -69,7 +69,7 @@ func (a *App) dispatch(args []string) int {
 		a.printHelp()
 		return 0
 	case "-v", "--version":
-		fmt.Println(a.Version)
+		fmt.Println(a.Build.Display())
 		return 0
 	}
 
@@ -86,7 +86,7 @@ func (a *App) dispatch(args []string) int {
 		return 0
 	}
 	if cmd.Name == "version" {
-		fmt.Println(a.Version)
+		fmt.Println(a.Build.Display())
 		return 0
 	}
 
@@ -133,7 +133,7 @@ Usage:
   agentbox <command> [options]
 
 Commands:
-`, a.Version)
+`, a.Build.Display())
 
 	for _, cmd := range commandTree() {
 		// Skip help and version from commands list (they're in Global Flags)

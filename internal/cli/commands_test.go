@@ -101,7 +101,7 @@ func TestAgentSubcommandHelp(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// act
 			output := captureOutput(func() {
-				Run(tt.args, "test")
+				Run(tt.args, BuildInfo{Version: "test"})
 			})
 
 			// assert
@@ -147,7 +147,7 @@ func TestSelfSubcommandHelp(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			// act
 			output := captureOutput(func() {
-				Run(tt.args, "test")
+				Run(tt.args, BuildInfo{Version: "test"})
 			})
 
 			// assert
@@ -164,7 +164,7 @@ func TestSelfSubcommandHelp(t *testing.T) {
 // Test that unknown flags are rejected with proper error messages.
 // This prevents regression where unknown flags were silently ignored.
 func TestUnknownFlagRejection(t *testing.T) {
-	app := &App{Version: "test"}
+	app := &App{Build: BuildInfo{Version: "test"}}
 
 	tests := []struct {
 		name    string
@@ -201,7 +201,7 @@ func TestAgentUpdateUnknownFlagRejection(t *testing.T) {
 	// act
 	var exitCode int
 	stderr := captureStderr(func() {
-		exitCode = Run([]string{"agent", "update", "--unknown"}, "test")
+		exitCode = Run([]string{"agent", "update", "--unknown"}, BuildInfo{Version: "test"})
 	})
 
 	// assert
@@ -239,7 +239,7 @@ func TestHelpExitCode(t *testing.T) {
 			// act
 			var exitCode int
 			captureOutput(func() {
-				exitCode = Run(tt.args, "test")
+				exitCode = Run(tt.args, BuildInfo{Version: "test"})
 			})
 
 			// assert
@@ -487,7 +487,7 @@ func TestZshCompletionContainsAllShells(t *testing.T) {
 func TestCliRouterHandlesAllCommands(t *testing.T) {
 	// act
 	for _, cmd := range AllCommands() {
-		exitCode := Run([]string{cmd, "--help"}, "test")
+		exitCode := Run([]string{cmd, "--help"}, BuildInfo{Version: "test"})
 
 		// assert - help should return 0 for all commands
 		if exitCode != 0 {
@@ -508,7 +508,7 @@ func TestAllCommandsRejectUnknownFlags(t *testing.T) {
 			// act
 			var exitCode int
 			stderr := captureStderr(func() {
-				exitCode = Run([]string{cmd, "--unknown-flag-xyz"}, "test")
+				exitCode = Run([]string{cmd, "--unknown-flag-xyz"}, BuildInfo{Version: "test"})
 			})
 
 			// assert
@@ -541,7 +541,7 @@ func TestAllSubcommandsRejectUnknownFlags(t *testing.T) {
 			// act
 			var exitCode int
 			stderr := captureStderr(func() {
-				exitCode = Run(args, "test")
+				exitCode = Run(args, BuildInfo{Version: "test"})
 			})
 
 			// assert
