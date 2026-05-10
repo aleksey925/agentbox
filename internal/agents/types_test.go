@@ -45,7 +45,7 @@ func TestAllAgentNames(t *testing.T) {
 	names := AllAgentNames()
 
 	// assert
-	expected := []string{"claude", "copilot", "codex", "gemini", "opencode", "ralphex"}
+	expected := []string{"claude", "copilot", "codex", "cursor", "gemini", "opencode", "ralphex"}
 	if len(names) != len(expected) {
 		t.Fatalf("len(AllAgentNames()) = %d, want %d", len(names), len(expected))
 	}
@@ -121,6 +121,221 @@ func TestDownloadAndExtractTarGz__binary_not_found(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing binary")
 	}
+}
+
+func TestStripPathComponents(t *testing.T) {
+	tests := []struct {
+		name string
+		n    int
+		want string
+	}{
+		{"dist-package/cursor-agent", 1, "cursor-agent"},
+		{"dist-package/sub/file.js", 1, "sub/file.js"},
+		{"dist-package", 1, ""},
+		{"file.txt", 1, ""},
+		{"a/b/c", 2, "c"},
+		{"a/b/c", 3, ""},
+		{"/leading/slash/file", 1, "slash/file"},
+		{"keep/all", 0, "keep/all"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// act
+			got := stripPathComponents(tt.name, tt.n)
+
+			// assert
+			if got != tt.want {
+				t.Errorf("stripPathComponents(%q, %d) = %q, want %q", tt.name, tt.n, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDownloadAndExtractTarGzAll(t *testing.T) {
+	// arrange
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/main", content: []byte("#!/bin/bash\necho hi"), mode: 0o755},
+		{name: "pkg/sub/lib.js", content: []byte("console.log(1)"), mode: 0o644},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	err := downloadAndExtractTarGzAll(context.Background(), server.URL, destDir, nil)
+
+	// assert
+	if err != nil {
+		t.Fatalf("downloadAndExtractTarGzAll() error = %v", err)
+	}
+
+	mainPath := filepath.Join(destDir, "main")
+	mainContent, err := os.ReadFile(mainPath)
+	if err != nil {
+		t.Fatalf("read main: %v", err)
+	}
+	if string(mainContent) != "#!/bin/bash\necho hi" {
+		t.Errorf("main content = %q", mainContent)
+	}
+
+	mainInfo, err := os.Stat(mainPath)
+	if err != nil {
+		t.Fatalf("stat main: %v", err)
+	}
+	if mainInfo.Mode().Perm() != 0o755 {
+		t.Errorf("main perms = %o, want 755", mainInfo.Mode().Perm())
+	}
+
+	libContent, err := os.ReadFile(filepath.Join(destDir, "sub", "lib.js"))
+	if err != nil {
+		t.Fatalf("read lib.js: %v", err)
+	}
+	if string(libContent) != "console.log(1)" {
+		t.Errorf("lib.js content = %q", libContent)
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__rejects_escaping_symlink(t *testing.T) {
+	// arrange
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/leak", isSymlink: true, symlinkTo: "../../../etc/passwd"},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	err := downloadAndExtractTarGzAll(context.Background(), server.URL, destDir, nil)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error for escaping symlink")
+	}
+	if _, statErr := os.Lstat(filepath.Join(destDir, "leak")); !os.IsNotExist(statErr) {
+		t.Errorf("escaping symlink should not have been created (lstat err = %v)", statErr)
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__allows_internal_symlink(t *testing.T) {
+	// arrange
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/real", content: []byte("hi"), mode: 0o644},
+		{name: "pkg/link", isSymlink: true, symlinkTo: "real"},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	err := downloadAndExtractTarGzAll(context.Background(), server.URL, destDir, nil)
+
+	// assert
+	if err != nil {
+		t.Fatalf("downloadAndExtractTarGzAll() error = %v", err)
+	}
+	target, err := os.Readlink(filepath.Join(destDir, "link"))
+	if err != nil {
+		t.Fatalf("readlink: %v", err)
+	}
+	if target != "real" {
+		t.Errorf("symlink target = %q, want %q", target, "real")
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__strips_setuid(t *testing.T) {
+	// arrange — archive declares mode with setuid bit; extractor must strip it.
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/bin", content: []byte("x"), mode: 0o4755},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	if err := downloadAndExtractTarGzAll(context.Background(), server.URL, destDir, nil); err != nil {
+		t.Fatalf("downloadAndExtractTarGzAll() error = %v", err)
+	}
+
+	// assert
+	info, err := os.Stat(filepath.Join(destDir, "bin"))
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode()&os.ModeSetuid != 0 {
+		t.Errorf("setuid bit not stripped (mode = %o)", info.Mode())
+	}
+	if info.Mode().Perm() != 0o755 {
+		t.Errorf("perms = %o, want 755", info.Mode().Perm())
+	}
+}
+
+type tarFile struct {
+	name      string
+	content   []byte
+	mode      int64
+	isDir     bool
+	symlinkTo string
+	isSymlink bool
+}
+
+func createMultiFileTarGz(t *testing.T, files []tarFile) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+
+	for _, f := range files {
+		hdr := &tar.Header{Name: f.name, Mode: f.mode}
+		switch {
+		case f.isDir:
+			hdr.Typeflag = tar.TypeDir
+		case f.isSymlink:
+			hdr.Typeflag = tar.TypeSymlink
+			hdr.Linkname = f.symlinkTo
+		default:
+			hdr.Typeflag = tar.TypeReg
+			hdr.Size = int64(len(f.content))
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			t.Fatalf("write tar header: %v", err)
+		}
+		if hdr.Typeflag == tar.TypeReg {
+			if _, err := tw.Write(f.content); err != nil {
+				t.Fatalf("write tar content: %v", err)
+			}
+		}
+	}
+
+	if err := tw.Close(); err != nil {
+		t.Fatalf("close tar writer: %v", err)
+	}
+	if err := gw.Close(); err != nil {
+		t.Fatalf("close gzip writer: %v", err)
+	}
+
+	return buf.Bytes()
 }
 
 func createTarGz(t *testing.T, filename string, content []byte) []byte {

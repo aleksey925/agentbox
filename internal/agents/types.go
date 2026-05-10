@@ -96,7 +96,7 @@ func DetectArch() (string, error) {
 }
 
 func AllAgentNames() []string {
-	return []string{"claude", "copilot", "codex", "gemini", "opencode", "ralphex"}
+	return []string{"claude", "copilot", "codex", "cursor", "gemini", "opencode", "ralphex"}
 }
 
 // agentConfigDirs maps agent name to its config directories (relative to $HOME).
@@ -105,6 +105,7 @@ var agentConfigDirs = map[string][]string{
 	"claude":   {".claude"},
 	"copilot":  {".copilot"},
 	"codex":    {".codex"},
+	"cursor":   {".cursor"},
 	"gemini":   {".gemini"},
 	"opencode": {".config/opencode", ".local/share/opencode", ".local/state/opencode"},
 	"ralphex":  {".config/ralphex"},
@@ -126,6 +127,7 @@ func AgentDescriptions() map[string]string {
 		"claude":   "Claude Code by Anthropic",
 		"copilot":  "GitHub Copilot",
 		"codex":    "OpenAI Codex",
+		"cursor":   "Cursor CLI",
 		"gemini":   "Google Gemini",
 		"opencode": "Open Source AI Coding Agent",
 		"ralphex":  "Autonomous plan execution tool by umputun",
@@ -234,4 +236,134 @@ func downloadAndExtractTarGz(
 	}
 
 	return fmt.Errorf("binary '%s' not found in archive", binaryInArchive)
+}
+
+// downloadAndExtractTarGzAll extracts the whole archive into destDir while
+// dropping the leading path component (mirrors `tar --strip-components=1`),
+// which is how vendor archives like cursor's `dist-package/...` are shaped.
+func downloadAndExtractTarGzAll(
+	ctx context.Context,
+	assetURL, destDir string,
+	progress func(downloaded, total int64),
+) error {
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return fmt.Errorf("create dest dir: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, http.NoBody)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("http get: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to download asset: %s", resp.Status)
+	}
+
+	pr := &progressReader{
+		reader:   resp.Body,
+		total:    resp.ContentLength,
+		progress: progress,
+	}
+
+	gzr, err := gzip.NewReader(pr)
+	if err != nil {
+		return fmt.Errorf("create gzip reader: %w", err)
+	}
+	defer gzr.Close()
+
+	tr := tar.NewReader(gzr)
+	cleanDestDir := filepath.Clean(destDir) + string(os.PathSeparator)
+
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("read tar header: %w", err)
+		}
+
+		if err := extractTarEntry(tr, hdr, destDir, cleanDestDir); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func extractTarEntry(tr *tar.Reader, hdr *tar.Header, destDir, cleanDestDir string) error {
+	stripped := stripPathComponents(hdr.Name, 1)
+	if stripped == "" {
+		return nil
+	}
+
+	destPath := filepath.Join(destDir, stripped)
+	if !strings.HasPrefix(destPath, cleanDestDir) && filepath.Clean(destPath) != filepath.Clean(destDir) {
+		return fmt.Errorf("invalid file path in archive: %s", hdr.Name)
+	}
+
+	switch hdr.Typeflag {
+	case tar.TypeDir:
+		if err := os.MkdirAll(destPath, 0o755); err != nil {
+			return fmt.Errorf("create dir: %w", err)
+		}
+	case tar.TypeReg:
+		return writeTarFile(tr, hdr, destPath)
+	case tar.TypeSymlink:
+		// reject targets that escape destDir — otherwise a malicious archive
+		// could plant links pointing to arbitrary host files (e.g. /etc/passwd).
+		resolvedTarget := filepath.Join(filepath.Dir(destPath), hdr.Linkname) //nolint:gosec // checked next line
+		if !strings.HasPrefix(resolvedTarget, cleanDestDir) && filepath.Clean(resolvedTarget) != filepath.Clean(destDir) {
+			return fmt.Errorf("symlink target escapes archive root: %s -> %s", hdr.Name, hdr.Linkname)
+		}
+		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+			return fmt.Errorf("create parent dir: %w", err)
+		}
+		if err := os.Symlink(hdr.Linkname, destPath); err != nil {
+			return fmt.Errorf("create symlink: %w", err)
+		}
+	}
+	return nil
+}
+
+func writeTarFile(tr *tar.Reader, hdr *tar.Header, destPath string) error {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		return fmt.Errorf("create parent dir: %w", err)
+	}
+
+	out, err := os.Create(destPath)
+	if err != nil {
+		return fmt.Errorf("create file: %w", err)
+	}
+
+	if _, err := io.Copy(out, tr); err != nil {
+		out.Close()
+		return fmt.Errorf("copy to file: %w", err)
+	}
+	out.Close()
+
+	// mask drops setuid/setgid/sticky bits — extracted files should never be
+	// privileged regardless of what the archive declares.
+	mode := os.FileMode(uint32(hdr.Mode) & 0o777) //nolint:gosec // value bounded by mask
+	if err := os.Chmod(destPath, mode); err != nil {
+		return fmt.Errorf("chmod: %w", err)
+	}
+	return nil
+}
+
+func stripPathComponents(name string, n int) string {
+	if n <= 0 {
+		return name
+	}
+	parts := strings.Split(strings.TrimPrefix(name, "/"), "/")
+	if len(parts) <= n {
+		return ""
+	}
+	return strings.Join(parts[n:], "/")
 }

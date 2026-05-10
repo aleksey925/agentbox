@@ -33,6 +33,10 @@ func NewManager(paths *config.Paths) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	cursor, err := NewCursorAgent()
+	if err != nil {
+		return nil, err
+	}
 	opencode, err := NewOpenCodeAgent()
 	if err != nil {
 		return nil, err
@@ -48,6 +52,7 @@ func NewManager(paths *config.Paths) (*Manager, error) {
 			"claude":   claude,
 			"copilot":  copilot,
 			"codex":    codex,
+			"cursor":   cursor,
 			"gemini":   NewGeminiAgent(),
 			"opencode": opencode,
 			"ralphex":  ralphex,
@@ -65,6 +70,7 @@ func (m *Manager) AllAgents() []Agent {
 		m.agents["claude"],
 		m.agents["copilot"],
 		m.agents["codex"],
+		m.agents["cursor"],
 		m.agents["gemini"],
 		m.agents["opencode"],
 		m.agents["ralphex"],

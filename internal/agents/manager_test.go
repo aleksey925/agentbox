@@ -99,6 +99,27 @@ func TestCodexAgent_Name(t *testing.T) {
 	}
 }
 
+func TestCursorAgent_Name(t *testing.T) {
+	// arrange
+	agent, err := NewCursorAgent()
+	if err != nil {
+		t.Fatalf("NewCursorAgent() error = %v", err)
+	}
+
+	// act & assert
+	if agent.Name() != "cursor" {
+		t.Errorf("Name() = %s, want cursor", agent.Name())
+	}
+
+	if agent.Variant() != "glibc" {
+		t.Errorf("Variant() = %s, want glibc", agent.Variant())
+	}
+
+	if agent.BinaryName() != "cursor-agent" {
+		t.Errorf("BinaryName() = %s, want cursor-agent", agent.BinaryName())
+	}
+}
+
 func TestGeminiAgent_Name(t *testing.T) {
 	// arrange
 	agent := NewGeminiAgent()
@@ -241,7 +262,7 @@ func TestManager_AllAgents(t *testing.T) {
 	agents := manager.AllAgents()
 
 	// assert
-	expectedNames := []string{"claude", "copilot", "codex", "gemini", "opencode", "ralphex"}
+	expectedNames := []string{"claude", "copilot", "codex", "cursor", "gemini", "opencode", "ralphex"}
 	if len(agents) != len(expectedNames) {
 		t.Fatalf("AllAgents() returned %d agents, want %d", len(agents), len(expectedNames))
 	}
