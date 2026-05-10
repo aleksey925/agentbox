@@ -207,7 +207,6 @@ func (a *App) doInit() int {
 		fmt.Printf("  %s\n", name)
 	}
 
-	a.setupGitExclude(cwd)
 	a.createMiseToml(cwd)
 
 	if code := a.ensureAgentsInstalled(paths); code != 0 {
@@ -393,17 +392,6 @@ func (a *App) confirmAction(prompt string) bool {
 	}
 	answer = strings.TrimSpace(strings.ToLower(answer))
 	return answer == "" || answer == "y" || answer == "yes"
-}
-
-func (a *App) setupGitExclude(cwd string) {
-	added, err := addToGitExcludeVerbose(cwd)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: could not update .git/info/exclude: %v\n", err)
-		return
-	}
-	for _, name := range added {
-		fmt.Printf("  Added to .git/info/exclude: %s\n", name)
-	}
 }
 
 func (a *App) createMiseToml(cwd string) {
@@ -895,57 +883,8 @@ This command removes the .agentbox/ directory from the current project.
 	}
 
 	fmt.Println("Removed: .agentbox/")
-
-	// remove from .git/info/exclude
-	for _, entry := range skeleton.GitExcludeEntries() {
-		if err := removeFromGitExclude(cwd, entry); err == nil {
-			fmt.Printf("Removed from .git/info/exclude: %s\n", entry)
-		}
-	}
-
 	fmt.Println("Cleaned successfully")
 	return 0
-}
-
-func addToGitExcludeVerbose(projectDir string) ([]string, error) {
-	excludePath := filepath.Join(projectDir, ".git", "info", "exclude")
-
-	if _, err := os.Stat(filepath.Join(projectDir, ".git")); os.IsNotExist(err) {
-		return nil, nil
-	}
-
-	existing, err := os.ReadFile(excludePath)
-	if err != nil && !os.IsNotExist(err) {
-		return nil, fmt.Errorf("read exclude file: %w", err)
-	}
-
-	content := string(existing)
-	entries := skeleton.GitExcludeEntries()
-
-	var toAdd []string
-	for _, entry := range entries {
-		if !strings.Contains(content, entry) {
-			toAdd = append(toAdd, entry)
-		}
-	}
-
-	if len(toAdd) == 0 {
-		return nil, nil
-	}
-
-	f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return nil, fmt.Errorf("open exclude file: %w", err)
-	}
-	defer f.Close()
-
-	for _, entry := range toAdd {
-		if _, err := f.WriteString(entry + "\n"); err != nil {
-			return nil, fmt.Errorf("write to exclude file: %w", err)
-		}
-	}
-
-	return toAdd, nil
 }
 
 func createMiseTomlIfNotExists(projectDir string) error {
@@ -957,36 +896,6 @@ func createMiseTomlIfNotExists(projectDir string) error {
 
 	if err := os.WriteFile(misePath, []byte{}, 0o644); err != nil {
 		return fmt.Errorf("write mise.toml: %w", err)
-	}
-	return nil
-}
-
-func removeFromGitExclude(projectDir, entry string) error {
-	excludePath := filepath.Join(projectDir, ".git", "info", "exclude")
-
-	content, err := os.ReadFile(excludePath)
-	if err != nil {
-		return fmt.Errorf("read exclude file: %w", err)
-	}
-
-	lines := strings.Split(string(content), "\n")
-	newLines := make([]string, 0, len(lines))
-	found := false
-
-	for _, line := range lines {
-		if strings.TrimSpace(line) == entry {
-			found = true
-			continue
-		}
-		newLines = append(newLines, line)
-	}
-
-	if !found {
-		return errors.New("not found")
-	}
-
-	if err := os.WriteFile(excludePath, []byte(strings.Join(newLines, "\n")), 0o644); err != nil {
-		return fmt.Errorf("write exclude file: %w", err)
 	}
 	return nil
 }

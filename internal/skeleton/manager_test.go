@@ -190,6 +190,15 @@ func TestCopyToProject(t *testing.T) {
 	if _, err := os.Stat(localFile); os.IsNotExist(err) {
 		t.Error("local.yml not created")
 	}
+
+	// check .gitignore created with `*` so .agentbox/ stays out of git
+	gitignore, readErr := os.ReadFile(filepath.Join(agentboxDir, ".gitignore"))
+	if readErr != nil {
+		t.Fatalf("read .gitignore: %v", readErr)
+	}
+	if string(gitignore) != "*\n" {
+		t.Errorf(".gitignore content = %q, want %q", gitignore, "*\n")
+	}
 }
 
 func TestCopyToProject__preserves_local_yml(t *testing.T) {
@@ -228,17 +237,6 @@ func TestCopyToProject__preserves_local_yml(t *testing.T) {
 	}
 	if !bytes.Equal(content, customContent) {
 		t.Errorf("local.yml was overwritten, got: %s", content)
-	}
-}
-
-func TestGitExcludeEntries(t *testing.T) {
-	// act
-	entries := GitExcludeEntries()
-
-	// assert
-	expected := []string{".agentbox/"}
-	if !slices.Equal(entries, expected) {
-		t.Errorf("entries = %v, want %v", entries, expected)
 	}
 }
 

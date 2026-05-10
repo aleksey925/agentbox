@@ -195,6 +195,13 @@ func (m *Manager) CopyToProject(projectDir string) ([]string, error) {
 		copiedFiles = append(copiedFiles, e.Name())
 	}
 
+	// .agentbox/ is local-only state — keep it out of git regardless of the
+	// repo's root .gitignore.
+	gitignorePath := filepath.Join(agentboxDir, ".gitignore")
+	if err := os.WriteFile(gitignorePath, []byte("*\n"), 0o644); err != nil {
+		return nil, fmt.Errorf("write .gitignore: %w", err)
+	}
+
 	return copiedFiles, nil
 }
 
@@ -210,12 +217,4 @@ func HasRealFiles(dir string) bool {
 		}
 	}
 	return false
-}
-
-// ProjectAgentboxDir is the name of the agentbox directory in projects.
-const ProjectAgentboxDir = ".agentbox"
-
-// GitExcludeEntries returns entries to add to .git/info/exclude.
-func GitExcludeEntries() []string {
-	return []string{ProjectAgentboxDir + "/"}
 }
