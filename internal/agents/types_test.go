@@ -227,6 +227,33 @@ func TestDownloadAndExtractTarGzAll__rejects_escaping_symlink(t *testing.T) {
 	}
 }
 
+func TestDownloadAndExtractTarGzAll__rejects_absolute_symlink(t *testing.T) {
+	// arrange — absolute targets bypass the join-based prefix check, so they
+	// must be rejected explicitly.
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/leak", isSymlink: true, symlinkTo: "/etc/passwd"},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	err := downloadAndExtractTarGzAll(context.Background(), server.URL, destDir, nil)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error for absolute symlink target")
+	}
+	if _, statErr := os.Lstat(filepath.Join(destDir, "leak")); !os.IsNotExist(statErr) {
+		t.Errorf("absolute symlink should not have been created (lstat err = %v)", statErr)
+	}
+}
+
 func TestDownloadAndExtractTarGzAll__allows_internal_symlink(t *testing.T) {
 	// arrange
 	tarGzData := createMultiFileTarGz(t, []tarFile{

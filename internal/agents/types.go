@@ -316,8 +316,12 @@ func extractTarEntry(tr *tar.Reader, hdr *tar.Header, destDir, cleanDestDir stri
 	case tar.TypeReg:
 		return writeTarFile(tr, hdr, destPath)
 	case tar.TypeSymlink:
-		// reject targets that escape destDir — otherwise a malicious archive
-		// could plant links pointing to arbitrary host files (e.g. /etc/passwd).
+		// absolute targets resolve outside destDir at runtime; filepath.Join
+		// would swallow the leading "/" and make the relative-path check below
+		// pass even though os.Symlink stores the original absolute target.
+		if filepath.IsAbs(hdr.Linkname) {
+			return fmt.Errorf("symlink has absolute target: %s -> %s", hdr.Name, hdr.Linkname)
+		}
 		resolvedTarget := filepath.Join(filepath.Dir(destPath), hdr.Linkname) //nolint:gosec // checked next line
 		if !strings.HasPrefix(resolvedTarget, cleanDestDir) && filepath.Clean(resolvedTarget) != filepath.Clean(destDir) {
 			return fmt.Errorf("symlink target escapes archive root: %s -> %s", hdr.Name, hdr.Linkname)

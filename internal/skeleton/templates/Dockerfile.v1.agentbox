@@ -68,7 +68,7 @@ RUN mkdir -p /home/box/.local/bin && \
         > /home/box/.local/bin/codex && \
     printf '#!/bin/bash\nexec /opt/agentbox/bin/cursor/$(cat /opt/agentbox/bin/cursor/current)/cursor-agent "$@"\n' \
         > /home/box/.local/bin/cursor && \
-    printf '#!/bin/bash\nmise exec node -- node /opt/agentbox/bin/gemini/$(cat /opt/agentbox/bin/gemini/current)/gemini.js "$@"\n' \
+    printf '#!/bin/bash\nmise exec node -- node /opt/agentbox/bin/gemini/$(cat /opt/agentbox/bin/gemini/current)/bundle/gemini.js "$@"\n' \
         > /home/box/.local/bin/gemini && \
     printf '#!/bin/bash\nexec /opt/agentbox/bin/opencode/$(cat /opt/agentbox/bin/opencode/current)/opencode "$@"\n' \
         > /home/box/.local/bin/opencode && \
@@ -85,7 +85,7 @@ RUN mkdir -p /home/box/.local/bin && \
 # aliases with skip-permissions flags
 RUN echo 'alias claude="/home/box/.local/bin/claude --dangerously-skip-permissions"' >> /home/box/.bashrc && \
     echo 'alias copilot="/home/box/.local/bin/copilot --allow-all-paths --allow-all-tools"' >> /home/box/.bashrc && \
-    echo 'alias codex="/home/box/.local/bin/codex --full-auto"' >> /home/box/.bashrc && \
+    echo 'alias codex="/home/box/.local/bin/codex --dangerously-bypass-approvals-and-sandbox"' >> /home/box/.bashrc && \
     echo 'alias cursor="/home/box/.local/bin/cursor --force"' >> /home/box/.bashrc && \
     echo 'alias gemini="/home/box/.local/bin/gemini --yolo"' >> /home/box/.bashrc && \
     echo 'alias opencode="/home/box/.local/bin/opencode"' >> /home/box/.bashrc && \

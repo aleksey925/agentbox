@@ -1,6 +1,11 @@
 package agents
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/aleksey925/agentbox/internal/config"
@@ -133,8 +138,98 @@ func TestGeminiAgent_Name(t *testing.T) {
 		t.Errorf("Variant() = %s, want js", agent.Variant())
 	}
 
-	if agent.BinaryName() != "gemini.js" {
-		t.Errorf("BinaryName() = %s, want gemini.js", agent.BinaryName())
+	if agent.BinaryName() != "bundle/gemini.js" {
+		t.Errorf("BinaryName() = %s, want bundle/gemini.js", agent.BinaryName())
+	}
+}
+
+func TestGeminiAgent_FetchLatestVersion(t *testing.T) {
+	// arrange
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/@google/gemini-cli/latest" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"version":"1.2.3","name":"@google/gemini-cli"}`))
+	}))
+	defer server.Close()
+
+	prev := npmRegistryBaseURL
+	npmRegistryBaseURL = server.URL
+	defer func() { npmRegistryBaseURL = prev }()
+
+	// act
+	version, err := NewGeminiAgent().FetchLatestVersion(context.Background())
+
+	// assert
+	if err != nil {
+		t.Fatalf("FetchLatestVersion() error = %v", err)
+	}
+	if version != "1.2.3" {
+		t.Errorf("version = %q, want %q", version, "1.2.3")
+	}
+}
+
+func TestGeminiAgent_FetchLatestVersion__missing_version(t *testing.T) {
+	// arrange
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	}))
+	defer server.Close()
+
+	prev := npmRegistryBaseURL
+	npmRegistryBaseURL = server.URL
+	defer func() { npmRegistryBaseURL = prev }()
+
+	// act
+	_, err := NewGeminiAgent().FetchLatestVersion(context.Background())
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error for empty version field")
+	}
+}
+
+func TestGeminiAgent_Download(t *testing.T) {
+	// arrange
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "package/", isDir: true},
+		{name: "package/LICENSE", content: []byte("MIT"), mode: 0o644},
+		{name: "package/bundle/", isDir: true},
+		{name: "package/bundle/gemini.js", content: []byte("#!/usr/bin/env node"), mode: 0o644},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		expected := "/@google/gemini-cli/-/gemini-cli-1.2.3.tgz"
+		if r.URL.Path != expected {
+			t.Errorf("path = %q, want %q", r.URL.Path, expected)
+		}
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	prev := npmRegistryBaseURL
+	npmRegistryBaseURL = server.URL
+	defer func() { npmRegistryBaseURL = prev }()
+
+	destDir := t.TempDir()
+
+	// act
+	err := NewGeminiAgent().Download(context.Background(), "1.2.3", destDir, nil)
+
+	// assert
+	if err != nil {
+		t.Fatalf("Download() error = %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(destDir, "bundle", "gemini.js"))
+	if err != nil {
+		t.Fatalf("read bundle/gemini.js: %v", err)
+	}
+	if string(content) != "#!/usr/bin/env node" {
+		t.Errorf("content = %q", content)
+	}
+	if _, err := os.Stat(filepath.Join(destDir, "LICENSE")); err != nil {
+		t.Errorf("LICENSE not extracted: %v", err)
 	}
 }
 

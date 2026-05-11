@@ -51,7 +51,8 @@ func (c *CodexAgent) rustArch() string {
 }
 
 func (c *CodexAgent) Download(ctx context.Context, version, destDir string, progress func(downloaded, total int64)) error {
-	binaryName := fmt.Sprintf("codex-%s-unknown-linux-gnu", c.rustArch())
+	// upstream dropped linux-gnu; static musl is the only linux build now.
+	binaryName := fmt.Sprintf("codex-%s-unknown-linux-musl", c.rustArch())
 	assetName := binaryName + ".tar.gz"
 	assetURL := fmt.Sprintf("https://github.com/openai/codex/releases/download/rust-v%s/%s", version, assetName)
 
