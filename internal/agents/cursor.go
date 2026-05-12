@@ -29,10 +29,6 @@ func (c *CursorAgent) Name() string {
 	return "cursor"
 }
 
-func (c *CursorAgent) Variant() string {
-	return variantGlibc
-}
-
 func (c *CursorAgent) BinaryName() string {
 	return "cursor-agent"
 }

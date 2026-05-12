@@ -24,10 +24,6 @@ func (g *GeminiAgent) Name() string {
 	return "gemini"
 }
 
-func (g *GeminiAgent) Variant() string {
-	return "js"
-}
-
 func (g *GeminiAgent) BinaryName() string {
 	return "bundle/gemini.js"
 }

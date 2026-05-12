@@ -53,10 +53,6 @@ func TestClaudeAgent_Name(t *testing.T) {
 		t.Errorf("Name() = %s, want claude", agent.Name())
 	}
 
-	if agent.Variant() != "glibc" {
-		t.Errorf("Variant() = %s, want glibc", agent.Variant())
-	}
-
 	if agent.BinaryName() != "claude" {
 		t.Errorf("BinaryName() = %s, want claude", agent.BinaryName())
 	}
@@ -72,10 +68,6 @@ func TestCopilotAgent_Name(t *testing.T) {
 	// act & assert
 	if agent.Name() != "copilot" {
 		t.Errorf("Name() = %s, want copilot", agent.Name())
-	}
-
-	if agent.Variant() != "glibc" {
-		t.Errorf("Variant() = %s, want glibc", agent.Variant())
 	}
 
 	if agent.BinaryName() != "copilot" {
@@ -95,10 +87,6 @@ func TestCodexAgent_Name(t *testing.T) {
 		t.Errorf("Name() = %s, want codex", agent.Name())
 	}
 
-	if agent.Variant() != "glibc" {
-		t.Errorf("Variant() = %s, want glibc", agent.Variant())
-	}
-
 	if agent.BinaryName() != "codex" {
 		t.Errorf("BinaryName() = %s, want codex", agent.BinaryName())
 	}
@@ -116,10 +104,6 @@ func TestCursorAgent_Name(t *testing.T) {
 		t.Errorf("Name() = %s, want cursor", agent.Name())
 	}
 
-	if agent.Variant() != "glibc" {
-		t.Errorf("Variant() = %s, want glibc", agent.Variant())
-	}
-
 	if agent.BinaryName() != "cursor-agent" {
 		t.Errorf("BinaryName() = %s, want cursor-agent", agent.BinaryName())
 	}
@@ -132,10 +116,6 @@ func TestGeminiAgent_Name(t *testing.T) {
 	// act & assert
 	if agent.Name() != "gemini" {
 		t.Errorf("Name() = %s, want gemini", agent.Name())
-	}
-
-	if agent.Variant() != "js" {
-		t.Errorf("Variant() = %s, want js", agent.Variant())
 	}
 
 	if agent.BinaryName() != "bundle/gemini.js" {
@@ -245,10 +225,6 @@ func TestOpenCodeAgent_Name(t *testing.T) {
 		t.Errorf("Name() = %s, want opencode", agent.Name())
 	}
 
-	if agent.Variant() != "glibc" {
-		t.Errorf("Variant() = %s, want glibc", agent.Variant())
-	}
-
 	if agent.BinaryName() != "opencode" {
 		t.Errorf("BinaryName() = %s, want opencode", agent.BinaryName())
 	}
@@ -264,10 +240,6 @@ func TestRalphexAgent_Name(t *testing.T) {
 	// act & assert
 	if agent.Name() != "ralphex" {
 		t.Errorf("Name() = %s, want ralphex", agent.Name())
-	}
-
-	if agent.Variant() != "glibc" {
-		t.Errorf("Variant() = %s, want glibc", agent.Variant())
 	}
 
 	if agent.BinaryName() != "ralphex" {

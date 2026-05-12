@@ -22,10 +22,6 @@ func (c *CopilotAgent) Name() string {
 	return "copilot"
 }
 
-func (c *CopilotAgent) Variant() string {
-	return variantGlibc
-}
-
 func (c *CopilotAgent) BinaryName() string {
 	return "copilot"
 }

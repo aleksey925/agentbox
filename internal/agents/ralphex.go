@@ -22,10 +22,6 @@ func (r *RalphexAgent) Name() string {
 	return "ralphex"
 }
 
-func (r *RalphexAgent) Variant() string {
-	return variantGlibc
-}
-
 func (r *RalphexAgent) BinaryName() string {
 	return "ralphex"
 }

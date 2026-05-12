@@ -257,7 +257,6 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 			results[i] = DownloadResult{
 				Agent:   info.name,
 				Version: info.latestVersion,
-				Variant: info.agent.Variant(),
 			}
 			continue
 		}
@@ -328,7 +327,6 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 			results[idx] = DownloadResult{
 				Agent:   info.name,
 				Version: info.latestVersion,
-				Variant: info.agent.Variant(),
 			}
 		}(i, info)
 	}

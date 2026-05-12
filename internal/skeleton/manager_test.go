@@ -240,6 +240,44 @@ func TestCopyToProject__preserves_local_yml(t *testing.T) {
 	}
 }
 
+func TestCopyToProject__preserves_gitignore(t *testing.T) {
+	// arrange
+	paths := createTestPaths(t)
+	manager := NewManager(paths)
+	if err := manager.CreateSkeleton([]string{"go"}); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := t.TempDir()
+	agentboxDir := filepath.Join(projectDir, ".agentbox")
+	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// create existing .gitignore with custom content
+	gitignoreFile := filepath.Join(agentboxDir, ".gitignore")
+	customContent := []byte("*\n!keep.txt\n")
+	if err := os.WriteFile(gitignoreFile, customContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	_, err := manager.CopyToProject(projectDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("CopyToProject error: %v", err)
+	}
+
+	content, err := os.ReadFile(gitignoreFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(content, customContent) {
+		t.Errorf(".gitignore was overwritten, got: %s", content)
+	}
+}
+
 func TestIsSystemFile(t *testing.T) {
 	tests := []struct {
 		name     string

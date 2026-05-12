@@ -16,8 +16,7 @@ import (
 )
 
 const (
-	userAgent    = "agentbox/1.0"
-	variantGlibc = "glibc"
+	userAgent = "agentbox/1.0"
 
 	archAMD64 = "amd64"
 	archARM64 = "arm64"
@@ -71,7 +70,6 @@ func FetchLatestGitHubTag(ctx context.Context, owner, repo string) (string, erro
 
 type Agent interface {
 	Name() string
-	Variant() string
 	FetchLatestVersion(ctx context.Context) (string, error)
 	Download(ctx context.Context, version, destDir string, progress func(downloaded, total int64)) error
 	BinaryName() string
@@ -80,7 +78,6 @@ type Agent interface {
 type DownloadResult struct {
 	Agent   string
 	Version string
-	Variant string
 	Error   error
 }
 
@@ -254,6 +251,7 @@ func downloadAndExtractTarGzAll(
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
+	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -332,6 +330,10 @@ func extractTarEntry(tr *tar.Reader, hdr *tar.Header, destDir, cleanDestDir stri
 		if err := os.Symlink(hdr.Linkname, destPath); err != nil {
 			return fmt.Errorf("create symlink: %w", err)
 		}
+	default:
+		// hard links, device nodes, fifos — fail loudly so partial extraction
+		// doesn't silently produce a broken install if upstream archive changes.
+		return fmt.Errorf("unsupported tar entry type %d for %s", hdr.Typeflag, hdr.Name)
 	}
 	return nil
 }

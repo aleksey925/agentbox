@@ -205,7 +205,7 @@ func TestDownloadAndExtractTarGzAll__rejects_escaping_symlink(t *testing.T) {
 	// arrange
 	tarGzData := createMultiFileTarGz(t, []tarFile{
 		{name: "pkg/", isDir: true},
-		{name: "pkg/leak", isSymlink: true, symlinkTo: "../../../etc/passwd"},
+		{name: "pkg/leak", rawType: tar.TypeSymlink, linkname: "../../../etc/passwd"},
 	})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -232,7 +232,7 @@ func TestDownloadAndExtractTarGzAll__rejects_absolute_symlink(t *testing.T) {
 	// must be rejected explicitly.
 	tarGzData := createMultiFileTarGz(t, []tarFile{
 		{name: "pkg/", isDir: true},
-		{name: "pkg/leak", isSymlink: true, symlinkTo: "/etc/passwd"},
+		{name: "pkg/leak", rawType: tar.TypeSymlink, linkname: "/etc/passwd"},
 	})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -259,7 +259,7 @@ func TestDownloadAndExtractTarGzAll__allows_internal_symlink(t *testing.T) {
 	tarGzData := createMultiFileTarGz(t, []tarFile{
 		{name: "pkg/", isDir: true},
 		{name: "pkg/real", content: []byte("hi"), mode: 0o644},
-		{name: "pkg/link", isSymlink: true, symlinkTo: "real"},
+		{name: "pkg/link", rawType: tar.TypeSymlink, linkname: "real"},
 	})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -282,6 +282,31 @@ func TestDownloadAndExtractTarGzAll__allows_internal_symlink(t *testing.T) {
 	}
 	if target != "real" {
 		t.Errorf("symlink target = %q, want %q", target, "real")
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__rejects_hardlink(t *testing.T) {
+	// arrange — hard links aren't expected in upstream archives, extractor
+	// must fail loudly rather than silently skip and produce a broken install.
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/real", content: []byte("hi"), mode: 0o644},
+		{name: "pkg/link", rawType: tar.TypeLink, linkname: "pkg/real"},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	err := downloadAndExtractTarGzAll(context.Background(), server.URL, destDir, nil)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error for hard link entry")
 	}
 }
 
@@ -318,12 +343,12 @@ func TestDownloadAndExtractTarGzAll__strips_setuid(t *testing.T) {
 }
 
 type tarFile struct {
-	name      string
-	content   []byte
-	mode      int64
-	isDir     bool
-	symlinkTo string
-	isSymlink bool
+	name     string
+	content  []byte
+	mode     int64
+	isDir    bool
+	rawType  byte // overrides regular-file default; required for symlinks, hard links, etc.
+	linkname string
 }
 
 func createMultiFileTarGz(t *testing.T, files []tarFile) []byte {
@@ -336,11 +361,11 @@ func createMultiFileTarGz(t *testing.T, files []tarFile) []byte {
 	for _, f := range files {
 		hdr := &tar.Header{Name: f.name, Mode: f.mode}
 		switch {
+		case f.rawType != 0:
+			hdr.Typeflag = f.rawType
+			hdr.Linkname = f.linkname
 		case f.isDir:
 			hdr.Typeflag = tar.TypeDir
-		case f.isSymlink:
-			hdr.Typeflag = tar.TypeSymlink
-			hdr.Linkname = f.symlinkTo
 		default:
 			hdr.Typeflag = tar.TypeReg
 			hdr.Size = int64(len(f.content))

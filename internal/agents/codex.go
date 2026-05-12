@@ -22,10 +22,6 @@ func (c *CodexAgent) Name() string {
 	return "codex"
 }
 
-func (c *CodexAgent) Variant() string {
-	return variantGlibc
-}
-
 func (c *CodexAgent) BinaryName() string {
 	return "codex"
 }
