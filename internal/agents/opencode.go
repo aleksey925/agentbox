@@ -22,10 +22,6 @@ func (o *OpenCodeAgent) Name() string {
 	return "opencode"
 }
 
-func (o *OpenCodeAgent) Variant() string {
-	return variantGlibc
-}
-
 func (o *OpenCodeAgent) BinaryName() string {
 	return "opencode"
 }

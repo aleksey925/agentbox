@@ -190,6 +190,15 @@ func TestCopyToProject(t *testing.T) {
 	if _, err := os.Stat(localFile); os.IsNotExist(err) {
 		t.Error("local.yml not created")
 	}
+
+	// check .gitignore created with `*` so .agentbox/ stays out of git
+	gitignore, readErr := os.ReadFile(filepath.Join(agentboxDir, ".gitignore"))
+	if readErr != nil {
+		t.Fatalf("read .gitignore: %v", readErr)
+	}
+	if string(gitignore) != "*\n" {
+		t.Errorf(".gitignore content = %q, want %q", gitignore, "*\n")
+	}
 }
 
 func TestCopyToProject__preserves_local_yml(t *testing.T) {
@@ -231,14 +240,41 @@ func TestCopyToProject__preserves_local_yml(t *testing.T) {
 	}
 }
 
-func TestGitExcludeEntries(t *testing.T) {
+func TestCopyToProject__preserves_gitignore(t *testing.T) {
+	// arrange
+	paths := createTestPaths(t)
+	manager := NewManager(paths)
+	if err := manager.CreateSkeleton([]string{"go"}); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := t.TempDir()
+	agentboxDir := filepath.Join(projectDir, ".agentbox")
+	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// create existing .gitignore with custom content
+	gitignoreFile := filepath.Join(agentboxDir, ".gitignore")
+	customContent := []byte("*\n!keep.txt\n")
+	if err := os.WriteFile(gitignoreFile, customContent, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
 	// act
-	entries := GitExcludeEntries()
+	_, err := manager.CopyToProject(projectDir)
 
 	// assert
-	expected := []string{".agentbox/"}
-	if !slices.Equal(entries, expected) {
-		t.Errorf("entries = %v, want %v", entries, expected)
+	if err != nil {
+		t.Fatalf("CopyToProject error: %v", err)
+	}
+
+	content, err := os.ReadFile(gitignoreFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(content, customContent) {
+		t.Errorf(".gitignore was overwritten, got: %s", content)
 	}
 }
 

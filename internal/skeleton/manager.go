@@ -122,7 +122,8 @@ func (m *Manager) GetEnabledPresets() ([]string, error) {
 	return presets, nil
 }
 
-// cleanProjectDir removes all files from project's .agentbox/ except local.yml.
+// cleanProjectDir removes all files from project's .agentbox/ except those
+// preserved across reinit (local.yml, .gitignore).
 func cleanProjectDir(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -133,7 +134,7 @@ func cleanProjectDir(dir string) error {
 	}
 
 	for _, e := range entries {
-		if e.Name() == "local.yml" {
+		if e.Name() == "local.yml" || e.Name() == ".gitignore" {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
@@ -195,6 +196,15 @@ func (m *Manager) CopyToProject(projectDir string) ([]string, error) {
 		copiedFiles = append(copiedFiles, e.Name())
 	}
 
+	// .agentbox/ is local-only state — keep it out of git regardless of the
+	// repo's root .gitignore. preserve any user customizations.
+	gitignorePath := filepath.Join(agentboxDir, ".gitignore")
+	if _, err := os.Stat(gitignorePath); os.IsNotExist(err) {
+		if err := os.WriteFile(gitignorePath, []byte("*\n"), 0o644); err != nil {
+			return nil, fmt.Errorf("write .gitignore: %w", err)
+		}
+	}
+
 	return copiedFiles, nil
 }
 
@@ -210,12 +220,4 @@ func HasRealFiles(dir string) bool {
 		}
 	}
 	return false
-}
-
-// ProjectAgentboxDir is the name of the agentbox directory in projects.
-const ProjectAgentboxDir = ".agentbox"
-
-// GitExcludeEntries returns entries to add to .git/info/exclude.
-func GitExcludeEntries() []string {
-	return []string{ProjectAgentboxDir + "/"}
 }

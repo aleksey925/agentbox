@@ -39,10 +39,6 @@ func (c *ClaudeAgent) Name() string {
 	return "claude"
 }
 
-func (c *ClaudeAgent) Variant() string {
-	return variantGlibc
-}
-
 func (c *ClaudeAgent) BinaryName() string {
 	return "claude"
 }

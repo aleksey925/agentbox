@@ -4,7 +4,7 @@
   <img src="img/logo.png" alt="Agentbox" width="500">
 </p>
 
-CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Gemini CLI, OpenCode, Ralphex) inside an isolated Docker container.
+CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Cursor CLI, Gemini CLI, OpenCode, Ralphex) inside an isolated Docker container.
 
 - [Why use Agentbox?](#why-use-agentbox)
 - [Installation](#installation)
@@ -73,7 +73,8 @@ Inside the sandbox, AI agents are available with permissive flags:
 ```bash
 claude    # --dangerously-skip-permissions
 copilot   # --allow-all-paths --allow-all-tools
-codex     # --full-auto
+codex     # --dangerously-bypass-approvals-and-sandbox
+cursor    # --force (Run Everything)
 gemini    # --yolo
 opencode  # build agent (full access by default)
 ralphex

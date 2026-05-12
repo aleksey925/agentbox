@@ -17,6 +17,7 @@ services:
       - ~/.claude/:/home/box/.claude/
       - ~/.copilot/:/home/box/.copilot/
       - ~/.codex/:/home/box/.codex/
+      - ~/.cursor/:/home/box/.cursor/
       - ~/.gemini/:/home/box/.gemini/
       - ~/.config/opencode/:/home/box/.config/opencode/
       - ~/.local/share/opencode/:/home/box/.local/share/opencode/
