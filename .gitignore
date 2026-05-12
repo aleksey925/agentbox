@@ -99,5 +99,5 @@ go.work.sum
 .env
 
 ### Project
-agentbox
 vendor/
+/dist
