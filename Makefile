@@ -1,5 +1,6 @@
 VERSION ?= 0.0.0
-LDFLAGS = -ldflags "-X main.version=$(VERSION)"
+LDFLAGS = -ldflags "-s -w -X main.version=$(VERSION)"
+BUILD_FLAGS = -trimpath
 
 DIST_DIR = dist
 BINARY = agentbox
@@ -12,7 +13,7 @@ deps:
 	@go mod vendor
 
 build:
-	@go build $(LDFLAGS) -o $(BIN_PATH) ./cmd/agentbox
+	@CGO_ENABLED=0 go build $(BUILD_FLAGS) $(LDFLAGS) -o $(BIN_PATH) ./cmd/agentbox
 
 snapshot:
 	@goreleaser release --snapshot --skip=publish --clean
