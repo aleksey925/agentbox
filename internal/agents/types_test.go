@@ -66,6 +66,18 @@ func TestAgentConfigDirs__covers_all_agents(t *testing.T) {
 	}
 }
 
+func TestSuggestedFlags__covers_all_agents(t *testing.T) {
+	// act
+	suggested := SuggestedFlags()
+
+	// assert
+	for _, name := range AllAgentNames() {
+		if _, ok := suggested[name]; !ok {
+			t.Errorf("agent %q missing from SuggestedFlags map", name)
+		}
+	}
+}
+
 func TestDownloadAndExtractTarGz(t *testing.T) {
 	// arrange
 	binaryContent := []byte("#!/bin/bash\necho hello")

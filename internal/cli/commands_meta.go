@@ -78,6 +78,10 @@ func commandTree() []Command {
 			Subcommands: []Command{
 				{Name: "update", Description: "Update agents to latest version", Handler: (*App).cmdAgentUpdate},
 				{Name: "use", Description: "Switch agent to specific version", Handler: (*App).cmdAgentUse},
+				{Name: "flags", Description: "Edit flags agents are launched with", Handler: (*App).cmdAgentFlags, Flags: []Flag{
+					{"--show", "Print current flags instead of opening editor"},
+					{"--path", "Print path to the flags file"},
+				}},
 			},
 		},
 		{
@@ -227,6 +231,24 @@ func SelfSubcommands() []string {
 // SelfUninstallFlags returns self uninstall flag names.
 func SelfUninstallFlags() []string {
 	return SubcommandFlags("self", "uninstall")
+}
+
+// AgentFlagsFlags returns agent flags subcommand flag names.
+func AgentFlagsFlags() []string {
+	return SubcommandFlags("agent", "flags")
+}
+
+// AgentFlagsFlagsWithDesc returns agent flags subcommand flags with descriptions.
+func AgentFlagsFlagsWithDesc() []Subcommand {
+	parentCmd := FindCommand(commandTree(), "agent")
+	if parentCmd == nil {
+		return nil
+	}
+	subCmd := FindCommand(parentCmd.Subcommands, "flags")
+	if subCmd == nil {
+		return nil
+	}
+	return flagsToSubcommands(subCmd.Flags)
 }
 
 // InitSkeletonFlags returns init skeleton flag names.

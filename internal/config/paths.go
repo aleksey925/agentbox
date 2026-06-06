@@ -42,6 +42,17 @@ func (p *Paths) AgentCurrentFile(agent string) string {
 	return filepath.Join(p.BinDir, agent, "current")
 }
 
+// FlagsDir returns the directory holding the agent launch-flags file.
+// It is mounted into the sandbox so flags resolve live on each launch.
+func (p *Paths) FlagsDir() string {
+	return filepath.Join(p.AgentboxDir, "flags")
+}
+
+// FlagsFile returns the path to the user-editable agent launch-flags file.
+func (p *Paths) FlagsFile() string {
+	return filepath.Join(p.FlagsDir(), "agent-flags")
+}
+
 // SkeletonExists checks if the skeleton directory exists and has template files.
 func (p *Paths) SkeletonExists() bool {
 	// check if there's at least core.*.yml file in skeleton dir (flat structure)
@@ -61,6 +72,7 @@ func (p *Paths) EnsureDirs() error {
 	dirs := []string{
 		p.AgentboxDir,
 		p.BinDir,
+		p.FlagsDir(),
 	}
 
 	for _, dir := range dirs {

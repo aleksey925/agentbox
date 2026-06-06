@@ -9,6 +9,8 @@ services:
     volumes:
       # ai agents binaries (read-only mount from host)
       - ~/.agentbox/bin:/opt/agentbox/bin:ro
+      # agent launch flags (read-only; resolved live on each launch, no rebuild)
+      - ~/.agentbox/flags:/opt/agentbox/flags:ro
       # mise cache (installed tools and downloads, shared between projects)
       - mise-data:/home/box/.local/share/mise
       - mise-cache:/home/box/.cache/mise

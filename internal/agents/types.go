@@ -117,6 +117,22 @@ func AgentConfigDirs() []string {
 	return dirs
 }
 
+// SuggestedFlags returns per-agent launch flags to seed the flags file with
+// (~/.agentbox/flags/agent-flags), written as commented-out lines. It is the
+// hook for shipping recommended defaults later, but is intentionally empty for
+// every agent now: out of the box agentbox imposes no flags, so cautious users
+// are never surprised by an agent running in a permissive mode they didn't pick.
+func SuggestedFlags() map[string]string {
+	return map[string]string{
+		"claude":   "",
+		"copilot":  "",
+		"codex":    "",
+		"cursor":   "",
+		"opencode": "",
+		"ralphex":  "",
+	}
+}
+
 // AgentDescriptions returns short descriptions for all agents.
 func AgentDescriptions() map[string]string {
 	return map[string]string{

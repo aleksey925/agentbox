@@ -84,6 +84,38 @@ func TestPaths_AgentCurrentFile(t *testing.T) {
 	}
 }
 
+func TestPaths_FlagsDir(t *testing.T) {
+	// arrange
+	paths := &Paths{
+		AgentboxDir: "/home/user/.agentbox",
+	}
+
+	// act
+	result := paths.FlagsDir()
+
+	// assert
+	expected := "/home/user/.agentbox/flags"
+	if result != expected {
+		t.Errorf("FlagsDir = %s, want %s", result, expected)
+	}
+}
+
+func TestPaths_FlagsFile(t *testing.T) {
+	// arrange
+	paths := &Paths{
+		AgentboxDir: "/home/user/.agentbox",
+	}
+
+	// act
+	result := paths.FlagsFile()
+
+	// assert
+	expected := "/home/user/.agentbox/flags/agent-flags"
+	if result != expected {
+		t.Errorf("FlagsFile = %s, want %s", result, expected)
+	}
+}
+
 func TestPaths_EnsureDirs(t *testing.T) {
 	// arrange
 	tmpDir := t.TempDir()
@@ -100,7 +132,7 @@ func TestPaths_EnsureDirs(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	expectedDirs := []string{paths.AgentboxDir, paths.BinDir}
+	expectedDirs := []string{paths.AgentboxDir, paths.BinDir, paths.FlagsDir()}
 	for _, dir := range expectedDirs {
 		info, err := os.Stat(dir)
 		if err != nil {
