@@ -1,19 +1,17 @@
-# .agentbox/local.yml
-#
 # Project-specific overrides for agentbox.
 # This file is NEVER overwritten by agentbox - your changes are safe.
-#
-# Example:
-#
-#   services:
-#     agentbox:
-#       volumes:
-#         - ~/PycharmProjects:/home/box/PycharmProjects:ro
-#       environment:
-#         - MY_API_KEY=secret
-#
+
 # For advanced customization (modifying base templates, removing features),
 # edit files in ~/.agentbox/skeleton/ and run 'agentbox init' to apply.
+
+# Example:
+#
+# services:
+#   agentbox:
+#     volumes:
+#       - ~/CodeProjects:/home/box/CodeProjects:ro
+#     environment:
+#       - MY_API_KEY=secret
 
 services:
   agentbox: {}
