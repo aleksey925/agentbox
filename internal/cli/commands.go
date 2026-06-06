@@ -1069,6 +1069,10 @@ Examples:
 		return code
 	}
 
+	if guardHomebrewManaged("upgrade") {
+		return 1
+	}
+
 	var targetVersion string
 	for _, arg := range args {
 		if !strings.HasPrefix(arg, "-") {
@@ -1179,6 +1183,10 @@ Flags:
 
 	if code := RejectUnknownFlagsWithAllowed(args, SelfUninstallFlags()); code != 0 {
 		return code
+	}
+
+	if guardHomebrewManaged("uninstall") {
+		return 1
 	}
 
 	purge := false

@@ -69,7 +69,7 @@ func (a *App) dispatch(args []string) int {
 		a.printHelp()
 		return 0
 	case "-v", "--version":
-		fmt.Println(a.Build.Display())
+		a.printVersion()
 		return 0
 	}
 
@@ -86,11 +86,17 @@ func (a *App) dispatch(args []string) int {
 		return 0
 	}
 	if cmd.Name == "version" {
-		fmt.Println(a.Build.Display())
+		a.printVersion()
 		return 0
 	}
 
 	return a.executeCommand(cmd, cmdArgs)
+}
+
+// printVersion prints the version and warns if duplicate binaries shadow it.
+func (a *App) printVersion() {
+	fmt.Println(a.Build.Display())
+	warnDuplicateInstalls()
 }
 
 // executeCommand runs a command, handling subcommand dispatch.

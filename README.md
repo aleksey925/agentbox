@@ -22,8 +22,14 @@ CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Cursor CLI
 
 ## Installation
 
-Download the latest release from [releases](https://github.com/aleksey925/agentbox/releases) and install it manually
-or you can run the following commands to install the latest version to `~/.local/bin`:
+The easiest way is via [Homebrew](https://brew.sh):
+
+```bash
+brew install aleksey925/apps/agentbox
+```
+
+Alternatively, download the latest release from [releases](https://github.com/aleksey925/agentbox/releases) and install
+it manually, or run the following commands to install the latest version to `~/.local/bin`:
 
 ```bash
 VERSION=$(curl -sL -o /dev/null -w '%{url_effective}' https://github.com/aleksey925/agentbox/releases/latest | sed 's/.*\/v//')
@@ -57,7 +63,9 @@ eval "$(agentbox completion bash abox)"
 
 ## Updating
 
-Agentbox can update itself. Run `agentbox self update <version>` to update to a specific version,
+If you installed via Homebrew, update with `brew upgrade agentbox`.
+
+Otherwise agentbox can update itself. Run `agentbox self update <version>` to update to a specific version,
 or use `agentbox self update <tab>` to choose a version and install it.
 
 ## How to Use
