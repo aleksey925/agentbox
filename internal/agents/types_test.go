@@ -45,7 +45,7 @@ func TestAllAgentNames(t *testing.T) {
 	names := AllAgentNames()
 
 	// assert
-	expected := []string{"claude", "copilot", "codex", "cursor", "gemini", "opencode", "ralphex"}
+	expected := []string{"claude", "copilot", "codex", "cursor", "opencode", "ralphex"}
 	if len(names) != len(expected) {
 		t.Fatalf("len(AllAgentNames()) = %d, want %d", len(names), len(expected))
 	}
@@ -62,6 +62,18 @@ func TestAgentConfigDirs__covers_all_agents(t *testing.T) {
 	for _, name := range AllAgentNames() {
 		if _, ok := agentConfigDirs[name]; !ok {
 			t.Errorf("agent %q missing from agentConfigDirs map", name)
+		}
+	}
+}
+
+func TestSuggestedFlags__covers_all_agents(t *testing.T) {
+	// act
+	suggested := SuggestedFlags()
+
+	// assert
+	for _, name := range AllAgentNames() {
+		if _, ok := suggested[name]; !ok {
+			t.Errorf("agent %q missing from SuggestedFlags map", name)
 		}
 	}
 }

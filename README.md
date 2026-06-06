@@ -4,7 +4,7 @@
   <img src="img/logo.png" alt="Agentbox" width="500">
 </p>
 
-CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Cursor CLI, Gemini CLI, OpenCode, Ralphex) inside an isolated Docker container.
+CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Cursor CLI, OpenCode, Ralphex) inside an isolated Docker container.
 
 - [Why use Agentbox?](#why-use-agentbox)
 - [Installation](#installation)
@@ -68,17 +68,28 @@ agentbox init    # set up sandbox (configure presets on first run) and download 
 agentbox run     # start sandbox
 ```
 
-Inside the sandbox, AI agents are available with permissive flags:
+By default agents run with no extra flags. To always launch an agent with specific
+flags — for example to bump verbosity, pin a model, or enable a permissive mode —
+configure them globally:
 
 ```bash
-claude    # --dangerously-skip-permissions
-copilot   # --allow-all-paths --allow-all-tools
-codex     # --dangerously-bypass-approvals-and-sandbox
-cursor    # --force (Run Everything)
-gemini    # --yolo
-opencode  # build agent (full access by default)
-ralphex
+agentbox agent flags          # open the flags file in $EDITOR
+agentbox agent flags --show   # print current flags
+agentbox agent flags --path   # print the flags file path
 ```
+
+The flags file (`~/.agentbox/flags/agent-flags`) is global and read live on every
+launch: edits apply to the next agent run — even inside a running sandbox — with no
+image rebuild. One line per agent, `*` applies to any agent without its own line:
+
+```
+claude --verbose
+cursor --no-color
+* --some-shared-flag
+```
+
+Each agent's own flags are documented in its CLI (`<agent> --help`); agentbox just
+forwards whatever you put here.
 
 Your project is mounted at `/home/box/app`.
 
@@ -111,6 +122,7 @@ agentbox agent                      # show installed vs latest versions
 agentbox agent update               # update all agents
 agentbox agent update claude        # update specific agent
 agentbox agent use claude 2.0.67    # switch to specific version
+agentbox agent flags                # edit flags agents are launched with
 ```
 
 ### Modular Sandbox Configuration

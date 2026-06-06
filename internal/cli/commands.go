@@ -11,11 +11,13 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
 
+	"github.com/aleksey925/agentbox/internal/agentflags"
 	"github.com/aleksey925/agentbox/internal/agents"
 	"github.com/aleksey925/agentbox/internal/config"
 	"github.com/aleksey925/agentbox/internal/docker"
@@ -581,6 +583,11 @@ func (a *App) ensureProjectReady(cwd string) int {
 		return 1
 	}
 
+	if err := agentflags.EnsureFile(paths.FlagsFile()); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating agent flags file: %v\n", err)
+		return 1
+	}
+
 	if code := a.ensureAgentsInstalled(paths); code != 0 {
 		return code
 	}
@@ -604,6 +611,7 @@ Commands:
   (none)                            Show agent status (installed vs latest)
   update [agent...]                 Update agents (all or specified)
   use <agent> <version>             Switch agent to specific version
+  flags                             Edit flags agents are launched with
 
 Available agents: %s
 
@@ -612,6 +620,7 @@ Examples:
   agentbox agent update             Update all agents
   agentbox agent update claude      Update only Claude
   agentbox agent use claude 1.0.0   Switch Claude to version 1.0.0
+  agentbox agent flags              Edit agent launch flags
 
 Use "agentbox agent <command> --help" for more information about a command.
 `, CommandDesc("agent"), availableAgentsStr())
@@ -782,6 +791,99 @@ Examples:
 	}
 
 	fmt.Printf("%s switched to %s\n", agentName, version)
+	return 0
+}
+
+var agentFlagsAllowedFlags = []string{"--show", "--path"}
+
+func (a *App) cmdAgentFlags(args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Printf(`%s
+
+Usage:
+  agentbox agent flags [flags]
+
+Flags:
+  --show                            Print current flags instead of opening editor
+  --path                            Print path to the flags file
+
+Opens the global agent flags file in $VISUAL (falls back to $EDITOR, then vi).
+Edits apply to the next agent launch — even inside a running sandbox — with no
+image rebuild.
+
+Examples:
+  agentbox agent flags              Open the flags file in your editor
+  agentbox agent flags --show       Print current flags
+  agentbox agent flags --path       Print the flags file path
+`, SubcommandDesc("agent", "flags"))
+		return 0
+	}
+
+	if code := RejectUnknownFlagsWithAllowed(args, agentFlagsAllowedFlags); code != 0 {
+		return code
+	}
+
+	paths, err := a.Paths()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+	if err := paths.EnsureDirs(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+
+	flagsFile := paths.FlagsFile()
+	if err := agentflags.EnsureFile(flagsFile); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+
+	for _, arg := range args {
+		switch arg {
+		case "--path":
+			fmt.Println(flagsFile)
+			return 0
+		case "--show":
+			content, err := os.ReadFile(flagsFile)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				return 1
+			}
+			fmt.Print(string(content))
+			return 0
+		}
+	}
+
+	return openInEditor(flagsFile)
+}
+
+// openInEditor opens path in the user's editor, resolved from $VISUAL, then
+// $EDITOR, then vi. The editor value may contain arguments (e.g. "code --wait").
+func openInEditor(path string) int {
+	editor := os.Getenv("VISUAL")
+	if editor == "" {
+		editor = os.Getenv("EDITOR")
+	}
+
+	// strings.Fields handles both unset and whitespace-only env values: an empty
+	// result falls back to vi, so parts[0] below never indexes an empty slice.
+	parts := strings.Fields(editor)
+	if len(parts) == 0 {
+		parts = []string{"vi"}
+	}
+	cmdArgs := make([]string, 0, len(parts))
+	cmdArgs = append(cmdArgs, parts[1:]...)
+	cmdArgs = append(cmdArgs, path)
+	cmd := exec.CommandContext(context.Background(), parts[0], cmdArgs...) // #nosec G204 -- editor comes from user's own env
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening editor: %v\n", err)
+		return 1
+	}
 	return 0
 }
 

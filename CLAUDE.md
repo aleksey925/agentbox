@@ -260,6 +260,27 @@ Files use version suffix (`v1`) to help users track changes:
 - User can compare versions and migrate customizations
 - Old versions can be manually removed after migration
 
+## Agent Launch Flags
+
+Flags that agents (harnesses) are launched with are **user configuration, not
+build-time constants**. They live in a global, user-owned file and are resolved
+**live on every launch** by the in-sandbox launcher — so changing them never
+requires an image rebuild, and edits apply to the next launch even inside a
+running sandbox.
+
+Design principles:
+
+1. **No imposed defaults** — out of the box no extra flags are passed to any
+   agent. Cautious users are never surprised by a permissive mode they didn't
+   pick. `SuggestedFlags` is the hook for shipping recommended defaults later.
+2. **Global, not per-project** — one setting for all projects, like agent
+   binaries themselves.
+3. **Live, not baked** — the launcher reads the flags file on each invocation;
+   flags are deliberately kept out of the image to avoid rebuilds.
+4. **Bash-readable format** — a simple line-based format (one agent per line,
+   `*` for all) rather than YAML, because the launcher is plain bash with no
+   YAML parser available.
+
 ## Code Style
 
 - All comments in English

@@ -74,10 +74,11 @@ func generateBashCompletion(cmdName string) string {
 	agentSub := strings.Join(AgentSubcommands(), " ")
 	selfSub := strings.Join(SelfSubcommands(), " ")
 	selfUninstallFlags := strings.Join(SelfUninstallFlags(), " ")
+	agentFlagsFlags := strings.Join(AgentFlagsFlags(), " ")
 	shells := strings.Join(CompletionShells(), " ")
 
 	tmpl := `_{{.FuncName}}() {
-    local cur prev pprev="" commands init_sub init_skeleton_flags agent_sub self_sub agent_names run_flags ps_flags self_uninstall_flags
+    local cur prev pprev="" commands init_sub init_skeleton_flags agent_sub self_sub agent_names run_flags ps_flags self_uninstall_flags agent_flags_flags
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     [[ $COMP_CWORD -ge 2 ]] && pprev="${COMP_WORDS[COMP_CWORD-2]}"
@@ -91,6 +92,7 @@ func generateBashCompletion(cmdName string) string {
     run_flags="{{.RunFlags}}"
     ps_flags="{{.PsFlags}}"
     self_uninstall_flags="{{.SelfUninstallFlags}}"
+    agent_flags_flags="{{.AgentFlagsFlags}}"
 
     case "$prev" in
         {{.CmdName}})
@@ -131,6 +133,11 @@ func generateBashCompletion(cmdName string) string {
         use)
             COMPREPLY=($(compgen -W "$agent_names" -- "$cur"))
             ;;
+        flags)
+            if [[ "$pprev" == "agent" ]]; then
+                COMPREPLY=($(compgen -W "$agent_flags_flags" -- "$cur"))
+            fi
+            ;;
         {{.AgentNamesPattern}})
             if [[ "$pprev" == "use" ]]; then
                 local versions=$(ls ~/.agentbox/bin/"$prev"/ 2>/dev/null | grep -v current)
@@ -162,6 +169,7 @@ complete -F _{{.FuncName}} {{.CmdName}}
 	result = strings.ReplaceAll(result, "{{.RunFlags}}", runFlags)
 	result = strings.ReplaceAll(result, "{{.PsFlags}}", psFlags)
 	result = strings.ReplaceAll(result, "{{.SelfUninstallFlags}}", selfUninstallFlags)
+	result = strings.ReplaceAll(result, "{{.AgentFlagsFlags}}", agentFlagsFlags)
 	result = strings.ReplaceAll(result, "{{.Shells}}", shells)
 	return result
 }
@@ -194,10 +202,11 @@ func generateZshCompletion(cmdName string) string {
 	agentCmdsZsh := formatSubcommandsZsh(AgentSubcommandsWithDesc())
 	selfCmdsZsh := formatSubcommandsZsh(SelfSubcommandsWithDesc())
 	selfUninstallFlagsZsh := formatSubcommandsZsh(SelfUninstallFlagsWithDesc())
+	agentFlagsFlagsZsh := formatSubcommandsZsh(AgentFlagsFlagsWithDesc())
 	shellsZsh := formatSubcommandsZsh(CompletionShellsWithDesc())
 
 	base := `_agentbox() {
-    local -a commands init_cmds init_skeleton_flags agent_cmds self_cmds agent_names shells run_flags ps_flags self_uninstall_flags
+    local -a commands init_cmds init_skeleton_flags agent_cmds self_cmds agent_names shells run_flags ps_flags self_uninstall_flags agent_flags_flags
 
     commands=(
         {{.CommandsZsh}}
@@ -229,6 +238,10 @@ func generateZshCompletion(cmdName string) string {
 
     self_uninstall_flags=(
         {{.SelfUninstallFlagsZsh}}
+    )
+
+    agent_flags_flags=(
+        {{.AgentFlagsFlagsZsh}}
     )
 
     agent_names=(
@@ -290,6 +303,9 @@ func generateZshCompletion(cmdName string) string {
                         use)
                             _describe -t agents 'agent' agent_names
                             ;;
+                        flags)
+                            _describe -t flags 'flag' agent_flags_flags
+                            ;;
                     esac
                     ;;
                 self)
@@ -337,6 +353,7 @@ compdef _agentbox agentbox
 	base = strings.ReplaceAll(base, "{{.AgentCmdsZsh}}", agentCmdsZsh)
 	base = strings.ReplaceAll(base, "{{.SelfCmdsZsh}}", selfCmdsZsh)
 	base = strings.ReplaceAll(base, "{{.SelfUninstallFlagsZsh}}", selfUninstallFlagsZsh)
+	base = strings.ReplaceAll(base, "{{.AgentFlagsFlagsZsh}}", agentFlagsFlagsZsh)
 	base = strings.ReplaceAll(base, "{{.AgentNamesZsh}}", agentNamesZsh)
 	base = strings.ReplaceAll(base, "{{.ShellsZsh}}", shellsZsh)
 	base = strings.ReplaceAll(base, "{{.CmdName}}", cmdName)

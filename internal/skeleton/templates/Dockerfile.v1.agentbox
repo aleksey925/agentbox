@@ -57,38 +57,43 @@ WORKDIR /home/box/app
 COPY mise.toml /home/box/app/mise.toml
 RUN mise trust
 
-# ai agent launchers
+# ai agent launchers. agentbox-launch reads per-agent flags live from the mounted
+# flags file (kept out of the image by design — see CLAUDE.md "Agent Launch
+# Flags"); eval gives the user's flag string shell-style word splitting, and
+# printf (not a heredoc) keeps the build frontend-agnostic.
 ENV PATH="${PATH}:/home/box/.local/bin"
 RUN mkdir -p /home/box/.local/bin && \
-    printf '#!/bin/bash\nexec /opt/agentbox/bin/claude/$(cat /opt/agentbox/bin/claude/current)/claude "$@"\n' \
+    L=/home/box/.local/bin/agentbox-launch && \
+    printf '#!/bin/bash\n' > "$L" && \
+    printf 'harness="$1"; binary="$2"; shift 2\n' >> "$L" && \
+    printf 'flags_file="/opt/agentbox/flags/agent-flags"\n' >> "$L" && \
+    printf 'pick() { grep -E "$1" "$flags_file" 2>/dev/null | grep -vE "^[[:space:]]*#" | head -n1; }\n' >> "$L" && \
+    printf 'extra=()\n' >> "$L" && \
+    printf 'if [ -f "$flags_file" ]; then\n' >> "$L" && \
+    printf '  line=$(pick "^[[:space:]]*${harness}([[:space:]]|$)")\n' >> "$L" && \
+    printf '  [ -z "$line" ] && line=$(pick "^[[:space:]]*[*]([[:space:]]|$)")\n' >> "$L" && \
+    printf '  if [ -n "$line" ]; then read -r _ rest <<< "$line"; eval "extra=($rest)"; fi\n' >> "$L" && \
+    printf 'fi\n' >> "$L" && \
+    printf 'version=$(cat "/opt/agentbox/bin/${harness}/current" 2>/dev/null)\n' >> "$L" && \
+    printf 'exec "/opt/agentbox/bin/${harness}/${version}/${binary}" "${extra[@]}" "$@"\n' >> "$L" && \
+    chmod +x /home/box/.local/bin/agentbox-launch && \
+    printf '#!/bin/bash\nexec /home/box/.local/bin/agentbox-launch claude claude "$@"\n' \
         > /home/box/.local/bin/claude && \
-    printf '#!/bin/bash\nexec /opt/agentbox/bin/copilot/$(cat /opt/agentbox/bin/copilot/current)/copilot "$@"\n' \
+    printf '#!/bin/bash\nexec /home/box/.local/bin/agentbox-launch copilot copilot "$@"\n' \
         > /home/box/.local/bin/copilot && \
-    printf '#!/bin/bash\nexec /opt/agentbox/bin/codex/$(cat /opt/agentbox/bin/codex/current)/codex "$@"\n' \
+    printf '#!/bin/bash\nexec /home/box/.local/bin/agentbox-launch codex codex "$@"\n' \
         > /home/box/.local/bin/codex && \
-    printf '#!/bin/bash\nexec /opt/agentbox/bin/cursor/$(cat /opt/agentbox/bin/cursor/current)/cursor-agent "$@"\n' \
+    printf '#!/bin/bash\nexec /home/box/.local/bin/agentbox-launch cursor cursor-agent "$@"\n' \
         > /home/box/.local/bin/cursor && \
-    printf '#!/bin/bash\nmise exec node -- node /opt/agentbox/bin/gemini/$(cat /opt/agentbox/bin/gemini/current)/bundle/gemini.js "$@"\n' \
-        > /home/box/.local/bin/gemini && \
-    printf '#!/bin/bash\nexec /opt/agentbox/bin/opencode/$(cat /opt/agentbox/bin/opencode/current)/opencode "$@"\n' \
+    printf '#!/bin/bash\nexec /home/box/.local/bin/agentbox-launch opencode opencode "$@"\n' \
         > /home/box/.local/bin/opencode && \
-    printf '#!/bin/bash\nexec /opt/agentbox/bin/ralphex/$(cat /opt/agentbox/bin/ralphex/current)/ralphex "$@"\n' \
+    printf '#!/bin/bash\nexec /home/box/.local/bin/agentbox-launch ralphex ralphex "$@"\n' \
         > /home/box/.local/bin/ralphex && \
     chmod +x /home/box/.local/bin/claude \
              /home/box/.local/bin/copilot \
              /home/box/.local/bin/codex \
              /home/box/.local/bin/cursor \
-             /home/box/.local/bin/gemini \
              /home/box/.local/bin/opencode \
              /home/box/.local/bin/ralphex
-
-# aliases with skip-permissions flags
-RUN echo 'alias claude="/home/box/.local/bin/claude --dangerously-skip-permissions"' >> /home/box/.bashrc && \
-    echo 'alias copilot="/home/box/.local/bin/copilot --allow-all-paths --allow-all-tools"' >> /home/box/.bashrc && \
-    echo 'alias codex="/home/box/.local/bin/codex --dangerously-bypass-approvals-and-sandbox"' >> /home/box/.bashrc && \
-    echo 'alias cursor="/home/box/.local/bin/cursor --force"' >> /home/box/.bashrc && \
-    echo 'alias gemini="/home/box/.local/bin/gemini --yolo"' >> /home/box/.bashrc && \
-    echo 'alias opencode="/home/box/.local/bin/opencode"' >> /home/box/.bashrc && \
-    echo 'alias ralphex="/home/box/.local/bin/ralphex"' >> /home/box/.bashrc
 
 ENTRYPOINT ["/bin/bash"]

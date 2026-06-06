@@ -95,6 +95,12 @@ func TestAgentSubcommandHelp(t *testing.T) {
 			shouldContain:    "agentbox agent use <agent> <version>",
 			shouldNotContain: "agentbox agent [command]",
 		},
+		{
+			name:             "agent flags --help shows flags help",
+			args:             []string{"agent", "flags", "--help"},
+			shouldContain:    "agentbox agent flags [flags]",
+			shouldNotContain: "agentbox agent [command]",
+		},
 	}
 
 	for _, tt := range tests {
@@ -340,6 +346,20 @@ func TestBashCompletionContainsAllSelfUninstallFlags(t *testing.T) {
 	}
 }
 
+// TestBashCompletionContainsAllAgentFlagsFlags verifies that bash completion
+// includes all agent flags subcommand flags.
+func TestBashCompletionContainsAllAgentFlagsFlags(t *testing.T) {
+	// act
+	completion := generateBashCompletion("agentbox")
+
+	// assert
+	for _, flag := range AgentFlagsFlags() {
+		if !strings.Contains(completion, flag) {
+			t.Errorf("bash completion missing agent flags flag: %s", flag)
+		}
+	}
+}
+
 // TestBashCompletionContainsAllAgentNames verifies that bash completion
 // includes all agent names from agents package.
 func TestBashCompletionContainsAllAgentNames(t *testing.T) {
@@ -464,6 +484,20 @@ func TestZshCompletionContainsAllSelfUninstallFlags(t *testing.T) {
 	for _, flag := range SelfUninstallFlags() {
 		if !strings.Contains(completion, "'"+flag+":") {
 			t.Errorf("zsh completion missing self uninstall flag: %s", flag)
+		}
+	}
+}
+
+// TestZshCompletionContainsAllAgentFlagsFlags verifies that zsh completion
+// includes all agent flags subcommand flags.
+func TestZshCompletionContainsAllAgentFlagsFlags(t *testing.T) {
+	// act
+	completion := generateZshCompletion("agentbox")
+
+	// assert
+	for _, flag := range AgentFlagsFlags() {
+		if !strings.Contains(completion, "'"+flag+":") {
+			t.Errorf("zsh completion missing agent flags flag: %s", flag)
 		}
 	}
 }
