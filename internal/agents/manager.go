@@ -53,7 +53,6 @@ func NewManager(paths *config.Paths) (*Manager, error) {
 			"copilot":  copilot,
 			"codex":    codex,
 			"cursor":   cursor,
-			"gemini":   NewGeminiAgent(),
 			"opencode": opencode,
 			"ralphex":  ralphex,
 		},
@@ -71,7 +70,6 @@ func (m *Manager) AllAgents() []Agent {
 		m.agents["copilot"],
 		m.agents["codex"],
 		m.agents["cursor"],
-		m.agents["gemini"],
 		m.agents["opencode"],
 		m.agents["ralphex"],
 	}

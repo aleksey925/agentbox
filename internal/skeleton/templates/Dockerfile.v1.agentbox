@@ -68,8 +68,6 @@ RUN mkdir -p /home/box/.local/bin && \
         > /home/box/.local/bin/codex && \
     printf '#!/bin/bash\nexec /opt/agentbox/bin/cursor/$(cat /opt/agentbox/bin/cursor/current)/cursor-agent "$@"\n' \
         > /home/box/.local/bin/cursor && \
-    printf '#!/bin/bash\nmise exec node -- node /opt/agentbox/bin/gemini/$(cat /opt/agentbox/bin/gemini/current)/bundle/gemini.js "$@"\n' \
-        > /home/box/.local/bin/gemini && \
     printf '#!/bin/bash\nexec /opt/agentbox/bin/opencode/$(cat /opt/agentbox/bin/opencode/current)/opencode "$@"\n' \
         > /home/box/.local/bin/opencode && \
     printf '#!/bin/bash\nexec /opt/agentbox/bin/ralphex/$(cat /opt/agentbox/bin/ralphex/current)/ralphex "$@"\n' \
@@ -78,7 +76,6 @@ RUN mkdir -p /home/box/.local/bin && \
              /home/box/.local/bin/copilot \
              /home/box/.local/bin/codex \
              /home/box/.local/bin/cursor \
-             /home/box/.local/bin/gemini \
              /home/box/.local/bin/opencode \
              /home/box/.local/bin/ralphex
 
@@ -87,7 +84,6 @@ RUN echo 'alias claude="/home/box/.local/bin/claude --dangerously-skip-permissio
     echo 'alias copilot="/home/box/.local/bin/copilot --allow-all-paths --allow-all-tools"' >> /home/box/.bashrc && \
     echo 'alias codex="/home/box/.local/bin/codex --dangerously-bypass-approvals-and-sandbox"' >> /home/box/.bashrc && \
     echo 'alias cursor="/home/box/.local/bin/cursor --force"' >> /home/box/.bashrc && \
-    echo 'alias gemini="/home/box/.local/bin/gemini --yolo"' >> /home/box/.bashrc && \
     echo 'alias opencode="/home/box/.local/bin/opencode"' >> /home/box/.bashrc && \
     echo 'alias ralphex="/home/box/.local/bin/ralphex"' >> /home/box/.bashrc
 
