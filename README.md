@@ -105,13 +105,15 @@ git config --global user.email "your@email.com"
 
 **Other Commands**
 
-| Command                         | Description                       |
-| ------------------------------- | --------------------------------- |
-| `agentbox run --build`          | Rebuild and run sandbox           |
-| `agentbox run --build-no-cache` | Full rebuild without cache        |
-| `agentbox ps`                   | List running sandboxes            |
-| `agentbox attach`               | Attach to running sandbox         |
-| `agentbox clean`                | Remove sandbox files from project |
+| Command                         | Description                                        |
+| ------------------------------- | -------------------------------------------------- |
+| `agentbox run`                  | Start sandbox, or attach if one is already running |
+| `agentbox run --new`            | Force a new container even if one is running       |
+| `agentbox run --container <id>` | Attach to a specific container by name or ID       |
+| `agentbox run --build`          | Rebuild image and start a new container            |
+| `agentbox run --build-no-cache` | Full rebuild without cache                         |
+| `agentbox ps`                   | List running sandboxes                             |
+| `agentbox clean`                | Remove sandbox files from project                  |
 
 **Managing Agents**
 
