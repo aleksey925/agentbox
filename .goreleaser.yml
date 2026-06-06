@@ -39,6 +39,10 @@ brews:
     homepage: "https://github.com/aleksey925/agentbox"
     description: "CLI for running AI agents inside an isolated Docker container"
     license: "MIT"
+    caveats: |
+      If you previously installed agentbox manually (e.g. to ~/.local/bin),
+      remove that copy to avoid PATH conflicts:
+        rm ~/.local/bin/agentbox
 
 checksum:
   name_template: "checksums.txt"

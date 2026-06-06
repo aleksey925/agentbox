@@ -63,7 +63,9 @@ eval "$(agentbox completion bash abox)"
 
 ## Updating
 
-Agentbox can update itself. Run `agentbox self update <version>` to update to a specific version,
+If you installed via Homebrew, update with `brew upgrade agentbox`.
+
+Otherwise agentbox can update itself. Run `agentbox self update <version>` to update to a specific version,
 or use `agentbox self update <tab>` to choose a version and install it.
 
 ## How to Use
