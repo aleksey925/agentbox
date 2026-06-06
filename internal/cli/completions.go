@@ -104,7 +104,7 @@ func generateBashCompletion(cmdName string) string {
         run)
             COMPREPLY=($(compgen -W "$run_flags" -- "$cur"))
             ;;
-        attach)
+        --container)
             local containers=$(docker ps --filter "label=com.docker.compose.service=agentbox" --filter "label=com.docker.compose.project.working_dir=$(pwd)" --format "{{.ID}}" 2>/dev/null)
             COMPREPLY=($(compgen -W "$containers" -- "$cur"))
             ;;
@@ -255,6 +255,13 @@ func generateZshCompletion(cmdName string) string {
     local cmd=${words[2]}
     local subcmd=${words[3]}
 
+    if [[ $cmd == run && ${words[CURRENT-1]} == --container ]]; then
+        local -a containers
+        containers=(${(f)"$(docker ps --filter 'label=com.docker.compose.service=agentbox' --filter "label=com.docker.compose.project.working_dir=$(pwd)" --format '{{.ID}}:{{.Names}}' 2>/dev/null)"})
+        (( ${#containers} )) && _describe -t containers 'container' containers
+        return
+    fi
+
     case $CURRENT in
         2)
             _describe -t commands 'command' commands
@@ -266,11 +273,6 @@ func generateZshCompletion(cmdName string) string {
                     ;;
                 run)
                     _describe -t flags 'flag' run_flags
-                    ;;
-                attach)
-                    local -a containers
-                    containers=(${(f)"$(docker ps --filter 'label=com.docker.compose.service=agentbox' --filter "label=com.docker.compose.project.working_dir=$(pwd)" --format '{{.ID}}:{{.Names}}' 2>/dev/null)"})
-                    (( ${#containers} )) && _describe -t containers 'container' containers
                     ;;
                 ps)
                     _describe -t flags 'flag' ps_flags

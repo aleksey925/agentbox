@@ -167,6 +167,36 @@ func TestSelfSubcommandHelp(t *testing.T) {
 	}
 }
 
+func TestParseRunFlags(t *testing.T) {
+	app := &App{}
+
+	tests := []struct {
+		name string
+		args []string
+		want runOptions
+	}{
+		{"no flags", nil, runOptions{}},
+		{"build", []string{"--build"}, runOptions{build: true}},
+		{"build no cache", []string{"--build-no-cache"}, runOptions{build: true, noCache: true}},
+		{"new", []string{"--new"}, runOptions{forceNew: true}},
+		{"container", []string{"--container", "abc123"}, runOptions{container: "abc123"}},
+		{"container without value", []string{"--container"}, runOptions{}},
+		{"combined", []string{"--new", "--container", "box-1"}, runOptions{forceNew: true, container: "box-1"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// act
+			got := app.parseRunFlags(tt.args)
+
+			// assert
+			if got != tt.want {
+				t.Errorf("parseRunFlags(%v) = %+v, want %+v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
+
 // Test that unknown flags are rejected with proper error messages.
 // This prevents regression where unknown flags were silently ignored.
 func TestUnknownFlagRejection(t *testing.T) {
@@ -180,7 +210,6 @@ func TestUnknownFlagRejection(t *testing.T) {
 		{"ps rejects unknown flag", app.cmdPs, []string{"--unknown"}},
 		{"ps rejects unknown short flag", app.cmdPs, []string{"-x"}},
 		{"run rejects unknown flag", app.cmdRun, []string{"--unknown"}},
-		{"attach rejects flag-like arg", app.cmdAttach, []string{"--unknown"}},
 	}
 
 	for _, tt := range tests {
@@ -228,7 +257,6 @@ func TestHelpExitCode(t *testing.T) {
 		{"init --help", []string{"init", "--help"}},
 		{"init skeleton --help", []string{"init", "skeleton", "--help"}},
 		{"run --help", []string{"run", "--help"}},
-		{"attach --help", []string{"attach", "--help"}},
 		{"ps --help", []string{"ps", "--help"}},
 		{"agent --help", []string{"agent", "--help"}},
 		{"agent update --help", []string{"agent", "update", "--help"}},
@@ -535,7 +563,7 @@ func TestCliRouterHandlesAllCommands(t *testing.T) {
 func TestAllCommandsRejectUnknownFlags(t *testing.T) {
 	// Commands that should reject unknown flags
 	// Note: help and version are special and handled before flag validation
-	commands := []string{"init", "run", "attach", "ps", "clean", "agent", "completion"}
+	commands := []string{"init", "run", "ps", "clean", "agent", "completion"}
 
 	for _, cmd := range commands {
 		t.Run(cmd, func(t *testing.T) {
@@ -657,7 +685,7 @@ func TestCommandDesc(t *testing.T) {
 		expected string
 	}{
 		{"init", "init", "Initialize sandbox in current directory"},
-		{"run", "run", "Start sandbox"},
+		{"run", "run", "Start sandbox or attach if running"},
 		{"nonexistent", "nonexistent", ""},
 	}
 

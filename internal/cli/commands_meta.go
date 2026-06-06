@@ -51,17 +51,14 @@ func commandTree() []Command {
 		},
 		{
 			Name:        "run",
-			Description: "Start sandbox",
+			Description: "Start sandbox or attach if running",
 			Handler:     (*App).cmdRun,
 			Flags: []Flag{
-				{"--build", "Rebuild image before running"},
-				{"--build-no-cache", "Rebuild image without Docker cache"},
+				{"--build", "Rebuild image before running (implies --new)"},
+				{"--build-no-cache", "Rebuild image without Docker cache (implies --new)"},
+				{"--new", "Force a new container even if one is running"},
+				{"--container", "Attach to a specific container by name or ID"},
 			},
-		},
-		{
-			Name:        "attach",
-			Description: "Attach to running sandbox",
-			Handler:     (*App).cmdAttach,
 		},
 		{
 			Name:        "ps",

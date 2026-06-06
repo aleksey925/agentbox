@@ -408,11 +408,11 @@ func (a *App) createMiseToml(cwd string) {
 }
 
 type runOptions struct {
-	build   bool
-	noCache bool
+	build     bool
+	noCache   bool
+	forceNew  bool
+	container string
 }
-
-var runAllowedFlags = []string{"--build", "--build-no-cache"}
 
 func (a *App) cmdRun(args []string) int {
 	if hasHelpFlag(args) {
@@ -422,13 +422,18 @@ Usage:
   agentbox run [flags]
 
 Flags:
-  --build                           Rebuild image before running
-  --build-no-cache                  Rebuild image without Docker cache
+  --build                           Rebuild image before running (implies --new)
+  --build-no-cache                  Rebuild image without Docker cache (implies --new)
+  --new                             Force a new container even if one is running
+  --container <name|id>             Attach to a specific container by name or ID
+
+By default run attaches to a running sandbox for this project if one exists,
+otherwise it starts a new one.
 `, CommandDesc("run"))
 		return 0
 	}
 
-	if code := RejectUnknownFlagsWithAllowed(args, runAllowedFlags); code != 0 {
+	if code := RejectUnknownFlagsWithAllowed(args, CommandFlags()["run"]); code != 0 {
 		return code
 	}
 
@@ -440,18 +445,36 @@ Flags:
 		return 1
 	}
 
+	if opts.container != "" {
+		return a.attachToContainer(opts.container)
+	}
+
+	// --build implies --new: a live container can't pick up a freshly built image
+	if !opts.forceNew && !opts.build {
+		containers, err := docker.ListContainers(cwd, false)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			return 1
+		}
+		if len(containers) > 0 {
+			return a.attachToContainer(containers[0].ID)
+		}
+	}
+
+	return a.startNewContainer(cwd, opts)
+}
+
+func (a *App) startNewContainer(cwd string, opts runOptions) int {
 	if code := a.ensureProjectReady(cwd); code != exitOK {
 		return toShellExit(code)
 	}
 
 	// ensure shared volumes exist (prevents "volume created for different project" warning)
-	err = docker.EnsureSharedVolumes()
-	if err != nil {
+	if err := docker.EnsureSharedVolumes(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating shared volumes: %v\n", err)
 		return 1
 	}
 
-	// discover compose files
 	composeFiles, err := docker.DiscoverComposeFiles(cwd)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error discovering compose files: %v\n", err)
@@ -479,79 +502,23 @@ Flags:
 // Assumes validation was already done by RejectUnknownFlagsWithAllowed.
 func (a *App) parseRunFlags(args []string) runOptions {
 	var opts runOptions
-	for _, arg := range args {
-		switch arg {
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
 		case "--build":
 			opts.build = true
 		case "--build-no-cache":
 			opts.build = true
 			opts.noCache = true
+		case "--new":
+			opts.forceNew = true
+		case "--container":
+			if i+1 < len(args) {
+				opts.container = args[i+1]
+				i++
+			}
 		}
 	}
 	return opts
-}
-
-func (a *App) cmdAttach(args []string) int {
-	if hasHelpFlag(args) {
-		fmt.Printf(`%s
-
-Usage:
-  agentbox attach [container-id]
-
-Arguments:
-  container-id                      Container ID (optional, auto-select if only one)
-
-If multiple sandboxes are running, you will be prompted to select one.
-`, CommandDesc("attach"))
-		return 0
-	}
-
-	if code := RejectUnknownFlags(args); code != 0 {
-		return code
-	}
-
-	if len(args) > 0 {
-		return a.attachToContainer(args[0])
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return 1
-	}
-
-	containers, err := docker.ListContainers(cwd, false)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-		return 1
-	}
-
-	if len(containers) == 0 {
-		fmt.Println("No running sandboxes in this project")
-		return 1
-	}
-
-	if len(containers) == 1 {
-		return a.attachToContainer(containers[0].ID)
-	}
-
-	return a.selectAndAttach(containers)
-}
-
-func (a *App) selectAndAttach(containers []docker.Container) int {
-	fmt.Println("Multiple running sandboxes found:")
-	for i, c := range containers {
-		fmt.Printf("  %d) %s (started %s)\n", i+1, c.ID, c.Started)
-	}
-	fmt.Printf("Select [1-%d]: ", len(containers))
-
-	var selection int
-	if _, err := fmt.Scanf("%d", &selection); err != nil || selection < 1 || selection > len(containers) {
-		fmt.Fprintln(os.Stderr, "Invalid selection")
-		return 1
-	}
-
-	return a.attachToContainer(containers[selection-1].ID)
 }
 
 func (a *App) attachToContainer(containerID string) int {

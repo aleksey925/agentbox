@@ -172,7 +172,7 @@ return 1
 
 ## Naming Conventions
 
-- **Commands**: singular nouns (`agent`, `completion`) or verbs (`init`, `run`, `attach`)
+- **Commands**: singular nouns (`agent`, `completion`) or verbs (`init`, `run`, `clean`)
 - **Subcommands**: verbs (`update`, `use`)
 - **Flags**: lowercase, hyphen-separated (`--no-cache`, `--build-no-cache`)
 - **Handlers**: `cmd` + command path (`cmdInit`, `cmdAgentUpdate`, `cmdSelfUninstall`)
