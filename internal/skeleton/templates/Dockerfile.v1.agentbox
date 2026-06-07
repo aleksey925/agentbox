@@ -52,10 +52,7 @@ USER box
 # pre-create directories so volumes inherit correct ownership
 RUN mkdir -p /home/box/.local/share/mise /home/box/.cache/mise /home/box/.cache/opencode
 
-WORKDIR /home/box/app
-
-COPY mise.toml /home/box/app/mise.toml
-RUN mise trust
+WORKDIR /home/box
 
 # ai agent launchers. agentbox-launch reads per-agent flags live from the mounted
 # flags file (kept out of the image by design — see CLAUDE.md "Agent Launch

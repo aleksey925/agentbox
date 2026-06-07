@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/aleksey925/agentbox/internal/skeleton"
@@ -32,6 +33,21 @@ func EnsureSharedVolumes() error {
 	return nil
 }
 
+// containerProjectPath returns the in-container path a project is mounted at.
+// mirror scheme (see CLAUDE.md "Project Mount Path"): identical to the host path.
+func containerProjectPath(hostProjectDir string) string {
+	return hostProjectDir
+}
+
+// buildRunEnv builds the environment for docker compose invocations, exporting
+// the per-project mount path consumed by ${AGENTBOX_PROJECT_PATH} in core.v1.yml.
+func buildRunEnv(projectDir string) []string {
+	env := slices.DeleteFunc(os.Environ(), func(e string) bool {
+		return strings.HasPrefix(e, "AGENTBOX_PROJECT_PATH=")
+	})
+	return append(env, "AGENTBOX_PROJECT_PATH="+containerProjectPath(projectDir))
+}
+
 // buildRunArgs builds docker compose run arguments.
 func buildRunArgs(projectDir string, composeFiles []string) []string {
 	args := []string{"compose", "--project-directory", projectDir}
@@ -49,6 +65,7 @@ func Run(projectDir string, composeFiles []string) error {
 
 	cmd := exec.CommandContext(ctx, "docker", args...) // #nosec G204 -- args built from validated compose files
 	cmd.Dir = projectDir
+	cmd.Env = buildRunEnv(projectDir)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -61,7 +78,16 @@ func Run(projectDir string, composeFiles []string) error {
 
 func Attach(containerID string) error {
 	ctx := context.Background()
-	cmd := exec.CommandContext(ctx, "docker", "exec", "-it", containerID, "/bin/bash")
+
+	// land in the project directory: the mount path is set live via working_dir
+	// at compose-run time, so it isn't baked into the image WORKDIR exec defaults to.
+	args := []string{"exec", "-it"}
+	if wd := containerWorkingDir(containerID); wd != "" {
+		args = append(args, "-w", wd)
+	}
+	args = append(args, containerID, "/bin/bash")
+
+	cmd := exec.CommandContext(ctx, "docker", args...) // #nosec G204 -- containerID from docker ps, wd from docker inspect
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -70,6 +96,17 @@ func Attach(containerID string) error {
 		return fmt.Errorf("docker exec: %w", err)
 	}
 	return nil
+}
+
+func containerWorkingDir(containerID string) string {
+	ctx := context.Background()
+	cmd := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.Config.WorkingDir}}", containerID)
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	if err := cmd.Run(); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(out.String())
 }
 
 // buildBuildArgs builds docker compose build arguments.
@@ -92,6 +129,7 @@ func Build(projectDir string, composeFiles []string, noCache bool) error {
 
 	cmd := exec.CommandContext(ctx, "docker", args...) // #nosec G204 -- args built from validated compose files
 	cmd.Dir = projectDir
+	cmd.Env = buildRunEnv(projectDir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 

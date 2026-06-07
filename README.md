@@ -99,7 +99,9 @@ cursor --no-color
 Each agent's own flags are documented in its CLI (`<agent> --help`); agentbox just
 forwards whatever you put here.
 
-Your project is mounted at `/home/box/app`.
+Your project is mounted inside the sandbox at the same absolute path it has on the host.
+This keeps each project's agent session history (e.g. `claude --resume`) separate per project,
+and shared with non-sandbox runs of the same agent.
 
 **Git Configuration**
 

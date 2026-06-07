@@ -345,6 +345,63 @@ func TestBuildBuildArgs__with_no_cache(t *testing.T) {
 	}
 }
 
+func TestContainerProjectPath__mirrors_host_path(t *testing.T) {
+	// arrange
+	hostDir := "/Users/alex/projects/myapp"
+
+	// act
+	got := containerProjectPath(hostDir)
+
+	// assert
+	if got != hostDir {
+		t.Errorf("containerProjectPath(%q) = %q, want %q", hostDir, got, hostDir)
+	}
+}
+
+func TestBuildRunEnv__exports_project_path(t *testing.T) {
+	// arrange
+	projectDir := "/Users/alex/projects/myapp"
+
+	// act
+	env := buildRunEnv(projectDir)
+
+	// assert
+	want := "AGENTBOX_PROJECT_PATH=" + projectDir
+	if !slices.Contains(env, want) {
+		t.Errorf("env does not contain %q", want)
+	}
+}
+
+func TestBuildRunEnv__overrides_existing_project_path(t *testing.T) {
+	// arrange
+	t.Setenv("AGENTBOX_PROJECT_PATH", "/stale/value")
+	projectDir := "/Users/alex/projects/myapp"
+
+	// act
+	env := buildRunEnv(projectDir)
+
+	// assert
+	if !slices.Contains(env, "AGENTBOX_PROJECT_PATH="+projectDir) {
+		t.Errorf("env does not contain AGENTBOX_PROJECT_PATH=%s", projectDir)
+	}
+	if slices.Contains(env, "AGENTBOX_PROJECT_PATH=/stale/value") {
+		t.Error("env still contains the stale AGENTBOX_PROJECT_PATH value")
+	}
+}
+
+func TestBuildRunEnv__preserves_inherited_env(t *testing.T) {
+	// arrange
+	projectDir := "/Users/alex/projects/myapp"
+
+	// act
+	env := buildRunEnv(projectDir)
+
+	// assert
+	if len(env) != len(os.Environ())+1 {
+		t.Errorf("len(env) = %d, want %d (inherited env + project path)", len(env), len(os.Environ())+1)
+	}
+}
+
 func TestSharedVolumes__match_core_template(t *testing.T) {
 	// arrange
 	coreTemplate, err := skeleton.GetCoreTemplate()

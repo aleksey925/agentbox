@@ -6,6 +6,11 @@ services:
     build:
       context: .
       dockerfile: .agentbox/Dockerfile.v1.agentbox
+    # mirror the host project path (see CLAUDE.md "Project Mount Path").
+    # agentbox exports AGENTBOX_PROJECT_PATH; ${PWD} is the fallback for manual runs.
+    working_dir: ${AGENTBOX_PROJECT_PATH:-${PWD}}
+    environment:
+      - MISE_TRUSTED_CONFIG_PATHS=${AGENTBOX_PROJECT_PATH:-${PWD}}
     volumes:
       # ai agents binaries (read-only mount from host)
       - ~/.agentbox/bin:/opt/agentbox/bin:ro
@@ -27,8 +32,8 @@ services:
       - ~/.config/ralphex/:/home/box/.config/ralphex/
       # git config (for commits inside sandbox)
       - ~/.gitconfig:/home/box/.gitconfig:ro
-      # project files
-      - .:/home/box/app
+      # project files (mounted at the host path, see working_dir above)
+      - .:${AGENTBOX_PROJECT_PATH:-${PWD}}
 
 volumes:
   mise-data:

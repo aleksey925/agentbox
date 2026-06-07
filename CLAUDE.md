@@ -281,6 +281,24 @@ Design principles:
    `*` for all) rather than YAML, because the launcher is plain bash with no
    YAML parser available.
 
+## Project Mount Path
+
+The project is mounted into the sandbox at the **same absolute path it has on the
+host** (mirrored), not at a fixed location.
+
+Why: agents key their per-project state by the working directory. Claude Code, for
+example, stores session history (`--resume`) in a directory derived from the cwd.
+A single fixed mount path makes every project share one history bucket; mirroring
+the host path gives each project its own, and lines sandbox history up with
+non-sandbox runs of the same agent.
+
+Design principles:
+
+1. **Live, not baked** — the path is resolved on each launch, never baked into the
+   image (the image is shared across all projects).
+2. **Fallback for manual runs** — direct compose invocations fall back to the
+   current directory, so they keep working without the launcher.
+
 ## Code Style
 
 - All comments in English
