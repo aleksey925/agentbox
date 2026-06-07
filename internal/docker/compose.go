@@ -34,7 +34,7 @@ func EnsureSharedVolumes() error {
 }
 
 // containerProjectPath returns the in-container path a project is mounted at.
-// mirror scheme (see CLAUDE.md "Project Mount Path"): identical to the host path.
+// mirror scheme (see CLAUDE.md "Live, not baked"): identical to the host path.
 func containerProjectPath(hostProjectDir string) string {
 	return hostProjectDir
 }

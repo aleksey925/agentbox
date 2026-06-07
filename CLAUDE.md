@@ -1,307 +1,101 @@
-# Agentbox Development Guide
-
-## CLI Architecture
-
-This project uses a **data-driven CLI** pattern inspired by urfave/cli. The `commandTree()` function in `commands_meta.go` is the **single source of truth** for all commands, subcommands, and flags. Everything else (router, help, completions, tests) derives from it automatically.
-
-### Command Structure
-
-```
-agentbox <command> [subcommand] [flags] [arguments]
-```
-
-### Adding a New Command
-
-1. **Add entry to `commandTree()` in `commands_meta.go`:**
-
-```go
-func commandTree() []Command {
-    return []Command{
-        // ... existing commands ...
-        {
-            Name:        "mycommand",
-            Description: "Short description for help",
-            Handler:     (*App).cmdMyCommand,
-            Flags: []Flag{
-                {"-s, --short", "Short flag description"},
-                {"--long-only", "Long-only flag description"},
-            },
-        },
-    }
-}
-```
-
-2. **Implement handler in `commands.go`:**
-
-```go
-func (a *App) cmdMyCommand(args []string) int {
-    if hasHelpFlag(args) {
-        fmt.Printf(`%s
-
-Usage:
-  agentbox mycommand [flags] <required-arg>
-
-Arguments:
-  required-arg                      Description of required argument
-
-Flags:
-  -s, --short                       Short flag description
-  --long-only                       Long-only flag description
-`, CommandDesc("mycommand"))
-        return 0
-    }
-
-    // Get allowed flags from commandTree (defined once!)
-    flags := CommandFlags()["mycommand"]
-    if code := RejectUnknownFlagsWithAllowed(args, flags); code != 0 {
-        return code
-    }
-
-    // Command logic using lazy-cached resources
-    paths, err := a.Paths()
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-        return 1
-    }
-
-    // ... command logic ...
-    return 0
-}
-```
-
-**That's it!** Router, completions, and help are automatically generated from `commandTree()`.
-
-### Adding Subcommands
-
-```go
-{
-    Name:        "parent",
-    Description: "Parent command description",
-    Handler:     (*App).cmdParentStatus,  // default action, or nil if subcommand required
-    Subcommands: []Command{
-        {Name: "sub1", Description: "First subcommand", Handler: (*App).cmdParentSub1},
-        {Name: "sub2", Description: "Second subcommand", Handler: (*App).cmdParentSub2, Flags: []Flag{
-            {"--flag", "Subcommand-specific flag"},
-        }},
-    },
-},
-```
-
-If `Handler` is `nil`, the command requires a subcommand. Help is auto-generated for parent-only commands.
-
-### Lazy-Cached Resources
-
-Use `App` methods instead of creating resources directly:
-
-```go
-// Instead of:
-paths, err := config.NewPaths()
-manager, err := agents.NewManager(paths)
-
-// Use:
-paths, err := a.Paths()        // cached
-manager, err := a.AgentManager()  // cached
-```
-
-Resources are created once and reused across subcommands.
-
-## Flag Conventions
-
-| Convention            | Example         | Description                           |
-|-----------------------|-----------------|---------------------------------------|
-| Short first           | `-a, --all`     | Short form always before long form    |
-| Single dash for short | `-a`            | Single character flags                |
-| Double dash for long  | `--all`         | Multi-character flags                 |
-| No value flags        | `--verbose`     | Boolean flags don't take values       |
-| Value flags           | `--output file` | Flags with values use space separator |
-
-### Flag Validation
-
-```go
-// Get flags from commandTree - single source of truth
-flags := CommandFlags()["mycommand"]
-if code := RejectUnknownFlagsWithAllowed(args, flags); code != 0 {
-    return code
-}
-```
-
-## Help Format
-
-### Main Help (`agentbox --help`)
-
-Auto-generated from `commandTree()`. Shows all commands with descriptions.
-
-### Command Help (`agentbox <command> --help`)
-
-```
-Command short description
-
-Usage:
-  agentbox command [flags] [arguments]
-
-Arguments:
-  arg-name                          Description (column at position 36)
-
-Flags:
-  -s, --short                       Description (column at position 36)
-
-Examples:
-  agentbox command arg              Description of example
-```
-
-Rules:
-- Description column starts at position 36
-- Short flag first: `-s, --short`
-- Do NOT include `-h, --help` in Flags section
-- Use `<required>` and `[optional]` brackets
-
-## Error Messages
-
-```go
-fmt.Fprintf(os.Stderr, "Unknown flag: %s\n", arg)
-fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-return 1
-```
-
-## Exit Codes
-
-| Code | Meaning                                   |
-|------|-------------------------------------------|
-| 0    | Success                                   |
-| 1    | Error (invalid args, runtime error, etc.) |
-
-## Naming Conventions
-
-- **Commands**: singular nouns (`agent`, `completion`) or verbs (`init`, `run`, `clean`)
-- **Subcommands**: verbs (`update`, `use`)
-- **Flags**: lowercase, hyphen-separated (`--no-cache`, `--build-no-cache`)
-- **Handlers**: `cmd` + command path (`cmdInit`, `cmdAgentUpdate`, `cmdSelfUninstall`)
-
-## Environment Presets Terminology
-
-Sandbox supports multiple development tools (Go, Python, etc.) via **environment presets**.
-Presets mount host caches and configs into the sandbox for better performance.
-
-### Terminology by Context
-
-| Context                | Term                  | Example                                    |
-|------------------------|-----------------------|--------------------------------------------|
-| **Global concept**     | Sandbox configuration | "Update sandbox configuration"             |
-| **Components**         | Environment presets   | "Available presets: Go, Python"            |
-| **UI (user-friendly)** | Development tools     | "Select your development tools"            |
-| **Code (internal)**    | `Preset`              | `type Preset struct`, `SupportedPresets()` |
-
-### Examples
-
-**UI Prompt:**
-```
-Configure sandbox
-Select your development tools — sandbox will mount
-their caches and configs for better performance
-```
-
-**Help text:**
-```
-Update sandbox configuration (change enabled Go, Python presets)
-```
-
-## Skeleton Architecture
-
-Skeleton is the user's global sandbox configuration stored in `~/.agentbox/skeleton/`. It contains Docker Compose files and Dockerfile that define the sandbox environment.
-
-### Directory Structure
-
-```
-~/.agentbox/skeleton/           # global skeleton (user-owned)
-├── core.v1.yml                 # base compose config (always present)
-├── go.v1.yml                   # Go preset (optional)
-├── python.v1.yml               # Python preset (optional)
-├── Dockerfile.v1.agentbox      # sandbox Dockerfile
-└── local.yml                   # user customizations template
-
-project/.agentbox/              # project sandbox (copied from skeleton)
-├── core.v1.yml
-├── go.v1.yml
-├── Dockerfile.v1.agentbox
-└── local.yml                   # project-specific customizations (never overwritten)
-```
-
-### Core Concepts
-
-| Concept             | Description                                                                 |
-|---------------------|-----------------------------------------------------------------------------|
-| **Skeleton**        | Global template at `~/.agentbox/skeleton/`, user fully owns and can edit    |
-| **Presets**         | Environment configs (Go, Python) that mount host caches into sandbox        |
-| **local.yml**       | Project-specific overrides, preserved during reinit                         |
-| **Versioned files** | `*.v1.yml`, `Dockerfile.v1.agentbox` — version in name for tracking changes |
-
-### Design Principles
-
-1. **Single source of truth** — skeleton is the only source, no merging or layering
-2. **Flat structure** — all files at one level, no nested directories
-3. **User ownership** — user can freely edit skeleton files
-4. **Explicit updates** — no auto-updates, user controls when to reinit with `--force`
-5. **Deterministic** — same skeleton always produces same project config
-6. **Safe local.yml** — project's `local.yml` is never overwritten
-
-### Commands
-
-| Command                          | Behavior                                                                                    |
-|----------------------------------|---------------------------------------------------------------------------------------------|
-| `agentbox init`                  | If no skeleton → TUI for preset selection → create skeleton → copy to project               |
-| `agentbox init`                  | If skeleton exists → clean project's `.agentbox/` (except `local.yml`) → copy from skeleton |
-| `agentbox init skeleton`         | Error if skeleton exists (suggests `--force`)                                               |
-| `agentbox init skeleton --force` | TUI with current presets pre-selected → recreate skeleton after confirmation                |
-
-### File Versioning
-
-Files use version suffix (`v1`) to help users track changes:
-- `core.v1.yml` — when we release `core.v2.yml`, user sees a new file appeared
-- User can compare versions and migrate customizations
-- Old versions can be manually removed after migration
-
-## Agent Launch Flags
-
-Flags that agents (harnesses) are launched with are **user configuration, not
-build-time constants**. They live in a global, user-owned file and are resolved
-**live on every launch** by the in-sandbox launcher — so changing them never
-requires an image rebuild, and edits apply to the next launch even inside a
-running sandbox.
-
-Design principles:
-
-1. **No imposed defaults** — out of the box no extra flags are passed to any
-   agent. Cautious users are never surprised by a permissive mode they didn't
-   pick. `SuggestedFlags` is the hook for shipping recommended defaults later.
-2. **Global, not per-project** — one setting for all projects, like agent
-   binaries themselves.
-3. **Live, not baked** — the launcher reads the flags file on each invocation;
-   flags are deliberately kept out of the image to avoid rebuilds.
-4. **Bash-readable format** — a simple line-based format (one agent per line,
-   `*` for all) rather than YAML, because the launcher is plain bash with no
-   YAML parser available.
-
-## Project Mount Path
-
-The project is mounted into the sandbox at the **same absolute path it has on the
-host** (mirrored), not at a fixed location.
-
-Why: agents key their per-project state by the working directory. Claude Code, for
-example, stores session history (`--resume`) in a directory derived from the cwd.
-A single fixed mount path makes every project share one history bucket; mirroring
-the host path gives each project its own, and lines sandbox history up with
-non-sandbox runs of the same agent.
-
-Design principles:
-
-1. **Live, not baked** — the path is resolved on each launch, never baked into the
-   image (the image is shared across all projects).
-2. **Fallback for manual runs** — direct compose invocations fall back to the
-   current directory, so they keep working without the launcher.
-
-## Code Style
-
-- All comments in English
-- Use `fmt.Fprintf(os.Stderr, ...)` for errors
-- Use `fmt.Printf(...)` or `fmt.Println(...)` for normal output
-- Group imports: stdlib, then external, then internal
+## What this is
+
+agentbox is a CLI that runs AI coding agents inside an isolated Docker sandbox. It
+targets developers who want an agent to act without approving every step, because
+the container blocks access to anything outside the project. Written in Go.
+
+## Design decisions
+
+### Data-driven CLI
+
+A single declarative command tree is the source of truth for every command, subcommand,
+and flag. The router, help text, shell completions, and flag validation are all derived
+from it: adding a command means adding one node to the tree plus its handler, never wiring
+the router, help, or completions by hand. A node with no default action is how a command
+declares that it requires a subcommand, and a handler rejects unknown flags using the flag
+list the tree already holds.
+
+Why: keeps the CLI surface from drifting. With one definition, help, completions, and
+validation can never disagree with the commands that actually exist.
+
+### Resources go through the App
+
+Shared resources - filesystem paths, the agent manager, and the like - are obtained
+through accessor methods on the App, which build each one once and reuse it across
+commands. Handlers never construct these directly.
+
+Why: a single invocation can pass through several subcommands. Rebuilding the same
+resource each time wastes work and lets two parts of one run disagree about state; one
+cached instance keeps the run internally consistent.
+
+### CLI surface conventions
+
+The CLI is the whole product, so its surface is kept uniform. Flags list the short form
+before the long (`-a, --all`), single dash for single-character flags, double dash for
+multi-character ones, lowercase and hyphen-separated; boolean flags take no value, and a
+flag that takes one receives it space-separated (`--output file`). Commands are singular
+nouns or verbs, subcommands are verbs, and a handler is named `cmd` followed by its
+command path.
+A command exits 0 on success and 1 on any error; error text goes to stderr, normal output
+to stdout. Generated help aligns descriptions at a fixed column, marks required arguments
+with `<>` and optional ones with `[]`, and never lists the help flag itself.
+
+Why: a predictable surface is the point of a CLI, and auto-generated help only stays
+consistent if every command follows the same rules.
+
+### Skeleton is the single configuration source
+
+The global skeleton at `~/.agentbox/skeleton/` is the only source of sandbox
+configuration. A project's `.agentbox/` directory is a plain copy of it - never a merge
+or an overlay. Files sit flat with no nested directories and carry a version in their
+name (e.g. `core.v1.yml`) so a new version shows up as a new file the user can diff
+against. Updates are explicit: nothing auto-updates, the user reinitializes when they
+choose.
+
+Why: a single, copy-only source makes the same skeleton always produce the same project
+config, and the user fully owns and can freely edit the template.
+
+Deviation: a project's `local.yml` holds project-specific overrides and is never
+overwritten on reinit.
+
+### Live, not baked
+
+Values that vary per user or per project are resolved live on every launch by the
+in-sandbox launcher, never compiled into the image.
+
+Why: the image is shared across all projects. Baking in a per-project value would force
+an image rebuild on every change and make one project's settings leak into others.
+Resolving live means an edit applies to the next launch even inside a running sandbox.
+
+This covers two cases:
+
+- Agent launch flags live in a global, user-owned file read on each launch. No flags are
+  imposed by default, so a cautious user is never surprised by a permissive mode they did
+  not pick. The format is line-based (one agent per line, `*` for any agent) rather than
+  YAML, because the launcher is plain bash with no YAML parser.
+- The project is mounted at the same absolute path it has on the host, not a fixed
+  location. Agents key per-project state by working directory (e.g. Claude Code stores
+  `--resume` history under a path derived from the cwd), so mirroring the host path gives
+  each project its own history and lines it up with non-sandbox runs of the same agent.
+  Direct compose runs that bypass the launcher fall back to the current directory.
+
+### Presets terminology
+
+The same concept is named differently by audience: "sandbox configuration" for the whole,
+"environment presets" for the Go/Python components that mount host caches, "development
+tools" in user-facing UI, and `Preset` in code.
+
+Why: each audience needs the term that reads clearest to it. Mixing the terms either
+confuses users or muddies the code.
+
+## Project commands
+
+- `make build` - build the binary into `dist/`
+- `make install` - build and install the binary to `~/.local/bin`
+- `make lint` - run formatters and linters via prek
+- `make test` - run the test suite
+- `make race` - run the suite with the race detector
+- `make cover` - run tests and print a coverage report
+- `make deps` - tidy and vendor Go dependencies
+- `make snapshot` - build a local snapshot release with goreleaser
+- `make clean` - remove `dist/` and coverage files

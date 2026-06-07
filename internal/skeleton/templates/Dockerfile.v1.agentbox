@@ -50,13 +50,16 @@ RUN mkdir -p /etc/apt/keyrings && \
 USER box
 
 # pre-create directories so volumes inherit correct ownership
-RUN mkdir -p /home/box/.local/share/mise /home/box/.cache/mise /home/box/.cache/opencode
+RUN mkdir -p /home/box/.local/share/mise \
+             /home/box/.local/state/mise \
+             /home/box/.cache/mise \
+             /home/box/.cache/opencode
 
 WORKDIR /home/box
 
 # ai agent launchers. agentbox-launch reads per-agent flags live from the mounted
-# flags file (kept out of the image by design — see CLAUDE.md "Agent Launch
-# Flags"); eval gives the user's flag string shell-style word splitting, and
+# flags file (kept out of the image by design - see CLAUDE.md "Live, not
+# baked"); eval gives the user's flag string shell-style word splitting, and
 # printf (not a heredoc) keeps the build frontend-agnostic.
 ENV PATH="${PATH}:/home/box/.local/bin"
 RUN mkdir -p /home/box/.local/bin && \
