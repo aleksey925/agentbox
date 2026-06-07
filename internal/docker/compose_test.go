@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/aleksey925/agentbox/internal/skeleton"
@@ -391,14 +392,24 @@ func TestBuildRunEnv__overrides_existing_project_path(t *testing.T) {
 
 func TestBuildRunEnv__preserves_inherited_env(t *testing.T) {
 	// arrange
+	t.Setenv("AGENTBOX_TEST_MARKER", "preserved")
 	projectDir := "/Users/alex/projects/myapp"
 
 	// act
 	env := buildRunEnv(projectDir)
 
 	// assert
-	if len(env) != len(os.Environ())+1 {
-		t.Errorf("len(env) = %d, want %d (inherited env + project path)", len(env), len(os.Environ())+1)
+	if !slices.Contains(env, "AGENTBOX_TEST_MARKER=preserved") {
+		t.Error("env does not preserve inherited variables")
+	}
+	projectPathEntries := 0
+	for _, e := range env {
+		if strings.HasPrefix(e, "AGENTBOX_PROJECT_PATH=") {
+			projectPathEntries++
+		}
+	}
+	if projectPathEntries != 1 {
+		t.Errorf("env contains %d AGENTBOX_PROJECT_PATH entries, want 1", projectPathEntries)
 	}
 }
 
