@@ -59,8 +59,9 @@ WORKDIR /home/box
 
 # ai agent launchers. agentbox-launch reads per-agent flags live from the mounted
 # flags file (kept out of the image by design - see CLAUDE.md "Live, not
-# baked"); eval gives the user's flag string shell-style word splitting, and
-# printf (not a heredoc) keeps the build frontend-agnostic.
+# baked"); xargs splits the flag string shell-style (honoring quotes) without
+# evaluating it, so a flags line cannot inject commands; printf (not a heredoc)
+# keeps the build frontend-agnostic.
 ENV PATH="${PATH}:/home/box/.local/bin"
 RUN mkdir -p /home/box/.local/bin && \
     L=/home/box/.local/bin/agentbox-launch && \
@@ -72,7 +73,7 @@ RUN mkdir -p /home/box/.local/bin && \
     printf 'if [ -f "$flags_file" ]; then\n' >> "$L" && \
     printf '  line=$(pick "^[[:space:]]*${harness}([[:space:]]|$)")\n' >> "$L" && \
     printf '  [ -z "$line" ] && line=$(pick "^[[:space:]]*[*]([[:space:]]|$)")\n' >> "$L" && \
-    printf '  if [ -n "$line" ]; then read -r _ rest <<< "$line"; eval "extra=($rest)"; fi\n' >> "$L" && \
+    printf '  if [ -n "$line" ]; then read -r _ rest <<< "$line"; mapfile -t extra < <(xargs -r printf "%%s\\n" <<< "$rest"); fi\n' >> "$L" && \
     printf 'fi\n' >> "$L" && \
     printf 'version=$(cat "/opt/agentbox/bin/${harness}/current" 2>/dev/null)\n' >> "$L" && \
     printf 'exec "/opt/agentbox/bin/${harness}/${version}/${binary}" "${extra[@]}" "$@"\n' >> "$L" && \
