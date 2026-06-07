@@ -55,6 +55,10 @@ choose.
 Why: a single, copy-only source makes the same skeleton always produce the same project
 config, and the user fully owns and can freely edit the template.
 
+The project copy is mounted read-only into the sandbox, so the agent can edit the rest of
+its project but never the files that define its own jail (Dockerfile, compose) - it cannot
+loosen the next build. The user still owns these files and edits them from the host.
+
 Deviation: a project's `local.yml` holds project-specific overrides and is never
 overwritten on reinit.
 

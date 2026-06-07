@@ -182,6 +182,20 @@ func TestCoreYml_agent_config_volumes(t *testing.T) {
 	}
 }
 
+func TestCoreYml_agentbox_dir_mounted_readonly(t *testing.T) {
+	// arrange
+	core, err := GetCoreTemplate()
+	if err != nil {
+		t.Fatalf("GetCoreTemplate error: %v", err)
+	}
+
+	// act & assert
+	expectedMount := "- ./.agentbox:${AGENTBOX_PROJECT_PATH:-${PWD}}/.agentbox:ro"
+	if !strings.Contains(string(core.Content), expectedMount) {
+		t.Errorf("core.v1.yml missing read-only .agentbox mount (expected %q)", expectedMount)
+	}
+}
+
 func TestDockerfile_agent_launchers(t *testing.T) {
 	// arrange
 	dockerfile, err := GetEmbeddedDockerfile()

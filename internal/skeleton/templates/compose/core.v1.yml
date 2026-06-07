@@ -34,6 +34,10 @@ services:
       - ~/.gitconfig:/home/box/.gitconfig:ro
       # project files (mounted at the host path, see working_dir above)
       - .:${AGENTBOX_PROJECT_PATH:-${PWD}}
+      # sandbox config is host-managed; a nested read-only mount overrides the
+      # read-write project mount above so the agent cannot rewrite its own jail
+      # (Dockerfile/compose) and weaken the next build.
+      - ./.agentbox:${AGENTBOX_PROJECT_PATH:-${PWD}}/.agentbox:ro
 
 volumes:
   mise-data:
