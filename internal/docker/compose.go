@@ -61,6 +61,16 @@ func buildRunArgs(projectDir string, composeFiles []string) []string {
 // Run starts a container using compose files from .agentbox/ directory.
 func Run(projectDir string, composeFiles []string) error {
 	ctx := context.Background()
+
+	fragment, cleanup, err := writeGitProtectionFragment(projectDir)
+	if err != nil {
+		return fmt.Errorf("prepare git protection: %w", err)
+	}
+	defer cleanup()
+	if fragment != "" {
+		composeFiles = append(composeFiles, fragment)
+	}
+
 	args := buildRunArgs(projectDir, composeFiles)
 
 	cmd := exec.CommandContext(ctx, "docker", args...) // #nosec G204 -- args built from validated compose files

@@ -45,7 +45,7 @@ consistent if every command follows the same rules.
 
 ### Skeleton is the single configuration source
 
-The global skeleton at `~/.agentbox/skeleton/` is the only source of sandbox
+The global skeleton at `~/.agentbox/skeleton/` is the source of all static sandbox
 configuration. A project's `.agentbox/` directory is a plain copy of it - never a merge
 or an overlay. Files sit flat with no nested directories and carry a version in their
 name (e.g. `core.v1.yml`) so a new version shows up as a new file the user can diff
@@ -55,12 +55,32 @@ choose.
 Why: a single, copy-only source makes the same skeleton always produce the same project
 config, and the user fully owns and can freely edit the template.
 
-The project copy is mounted read-only into the sandbox, so the agent can edit the rest of
-its project but never the files that define its own jail (Dockerfile, compose) - it cannot
-loosen the next build. The user still owns these files and edits them from the host.
-
 Deviation: a project's `local.yml` holds project-specific overrides and is never
 overwritten on reinit.
+
+Deviation: configuration that depends on per-launch state is generated live rather than
+copied from the skeleton - see "The agent cannot rewrite its own sandbox" and "Live, not
+baked". The skeleton stays the source for everything static.
+
+### The agent cannot rewrite its own sandbox
+
+The project is mounted read-write so the agent can edit its code, but the files that define
+the sandbox itself are layered read-only on top of that mount. The project's `.agentbox/`
+(Dockerfile, compose) is never agent-writable.
+
+Why: an agent that could rewrite its own jail - by accident or after being hijacked - would
+weaken the next build and break containment. The read-only layer holds even against
+in-sandbox root, since remounting it needs a capability the container does not carry. The
+user still owns these files and edits them from the host.
+
+The same protection extends to a git project's exec surface - `.git/hooks` and `.git/config`
+(which can point at hooks via `core.hooksPath`, filters, or `fsmonitor`). Writing either
+would run code on the host the next time git touches the repo, so both are mounted
+read-only. config staying read-only also confines the agent to the remotes the user already
+configured. This overlay is generated live per launch rather than copied from the skeleton,
+because it is conditional: it applies only when the project is a git repo, and the real git
+dir is resolved at launch (it can sit outside the project in worktrees and submodules, where
+it is not mounted and so needs no protection).
 
 ### Live, not baked
 
