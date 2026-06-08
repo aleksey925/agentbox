@@ -196,6 +196,38 @@ func TestCoreYml_agentbox_dir_mounted_readonly(t *testing.T) {
 	}
 }
 
+func TestCoreYml_drops_capabilities(t *testing.T) {
+	// arrange
+	core, err := GetCoreTemplate()
+	if err != nil {
+		t.Fatalf("GetCoreTemplate error: %v", err)
+	}
+
+	// act & assert
+	content := string(core.Content)
+	if !strings.Contains(content, "cap_drop:") {
+		t.Error("core.v1.yml missing cap_drop")
+	}
+	for _, capability := range []string{"NET_RAW", "MKNOD"} {
+		if !strings.Contains(content, "- "+capability) {
+			t.Errorf("core.v1.yml must drop capability %s", capability)
+		}
+	}
+}
+
+func TestCoreYml_sets_pids_limit(t *testing.T) {
+	// arrange
+	core, err := GetCoreTemplate()
+	if err != nil {
+		t.Fatalf("GetCoreTemplate error: %v", err)
+	}
+
+	// act & assert
+	if !strings.Contains(string(core.Content), "pids_limit:") {
+		t.Error("core.v1.yml missing pids_limit")
+	}
+}
+
 func TestDockerfile_agent_launchers(t *testing.T) {
 	// arrange
 	dockerfile, err := GetEmbeddedDockerfile()

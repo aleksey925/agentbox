@@ -10,6 +10,12 @@ services:
     working_dir: ${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
     environment:
       - MISE_TRUSTED_CONFIG_PATHS=${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
+    # CLAUDE.md "Container capabilities"
+    cap_drop:
+      - NET_RAW
+      - MKNOD
+    # CLAUDE.md "Container capabilities"
+    pids_limit: 4096
     volumes:
       # ai agents binaries (read-only mount from host)
       - ~/.agentbox/bin:/opt/agentbox/bin:ro

@@ -26,7 +26,7 @@ RUN apt-get update -y && \
               /var/log/alternatives.log \
               /tmp/*
 
-# create non root user to be able to run claude code with --dangerously-skip-permissions key
+# CLAUDE.md "Container capabilities"
 RUN useradd -m box && \
     echo "box ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/box && \
     chmod 0440 /etc/sudoers.d/box

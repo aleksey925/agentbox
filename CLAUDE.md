@@ -82,6 +82,32 @@ because it is conditional: it applies only when the project is a git repo, and t
 dir is resolved at launch (it can sit outside the project in worktrees and submodules, where
 it is not mounted and so needs no protection).
 
+### Container capabilities
+
+The container is the security boundary, so the agent is free inside it: it runs as a
+non-root user with passwordless sudo, which keeps in-container work convenient (e.g.
+`apt install`). sudo is not a host risk, because root inside is still bounded by the
+container's Linux capability set - sudo can reach that ceiling, never exceed it.
+
+So the lever is the capability set, not sudo. Docker's default set already omits the
+dangerous ones (`SYS_ADMIN`, `NET_ADMIN`, `SYS_MODULE`, ...); on top of that agentbox drops
+`NET_RAW` and `MKNOD`, which a normal dev workflow never needs and only sudo-as-root could
+otherwise use. The cost is small and explicit - no raw sockets, so `ping`/`tcpdump` stop
+working; a project that needs them adds the capability back in its own `local.yml`.
+
+The rest is kept on purpose: `SETUID`/`SETGID`/`CHOWN`/`DAC_OVERRIDE`/`FOWNER`/`FSETID`/
+`SETFCAP` because apt and sudo need them, `SYS_CHROOT` and `NET_BIND_SERVICE` because
+chroot builds and binding privileged ports are occasional but real dev needs. `AUDIT_WRITE`
+is kept too: dropping it only stops the container forging entries in the host audit log
+(negligible on a dev machine) while making sudo print an `unable to send audit message`
+warning on every call. `no-new-privileges` is intentionally not set: it blocks setuid and
+so would break sudo - trimming capabilities is the chosen lever instead.
+
+A generous `pids_limit` is set alongside as a cheap guard against a fork bomb exhausting
+the host's process table - high enough not to bite real parallel builds, and overridable in
+`local.yml`. Memory and CPU caps are deliberately left unset by default, because a fixed
+limit would OOM-kill legitimate heavy builds; a project sets them in its own `local.yml`.
+
 ### Live, not baked
 
 Values that vary per user or per project are resolved live on every launch by the
