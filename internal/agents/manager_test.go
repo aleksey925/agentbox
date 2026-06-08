@@ -1,6 +1,7 @@
 package agents
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/aleksey925/agentbox/internal/config"
@@ -206,6 +207,24 @@ func TestManager_GetAgent(t *testing.T) {
 	_, ok = manager.GetAgent("unknown")
 	if ok {
 		t.Error("GetAgent(unknown) should return false")
+	}
+}
+
+func TestManager_SwitchVersion__rejects_unsafe_version(t *testing.T) {
+	// arrange — ".." resolves to BinDir itself, which exists, so without the
+	// version check SwitchVersion would pass os.Stat and succeed; the check is
+	// what must reject it.
+	manager, err := NewManager(&config.Paths{BinDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+
+	// act
+	err = manager.SwitchVersion("claude", "..")
+
+	// assert
+	if err == nil || !strings.Contains(err.Error(), "invalid version") {
+		t.Fatalf("SwitchVersion must reject a path-traversing version, got %v", err)
 	}
 }
 
