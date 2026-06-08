@@ -340,6 +340,40 @@ func TestCopyToProject__skips_system_files(t *testing.T) {
 	}
 }
 
+func TestCopyToProject__skips_symlinks(t *testing.T) {
+	// arrange — a symlink planted in the skeleton must not have its target copied
+	// into the project (e.g. core.v1.yml -> ~/.ssh/id_rsa).
+	paths := createTestPaths(t)
+	manager := NewManager(paths)
+	if err := manager.CreateSkeleton(nil); err != nil {
+		t.Fatal(err)
+	}
+
+	secret := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(secret, []byte("top secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(paths.SkeletonDir, "leak.yml")); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := t.TempDir()
+
+	// act
+	copiedFiles, err := manager.CopyToProject(projectDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("CopyToProject error: %v", err)
+	}
+	if slices.Contains(copiedFiles, "leak.yml") {
+		t.Error("symlink must not be copied")
+	}
+	if _, statErr := os.Lstat(filepath.Join(projectDir, ".agentbox", "leak.yml")); !os.IsNotExist(statErr) {
+		t.Errorf("symlinked entry must not appear in project (lstat err = %v)", statErr)
+	}
+}
+
 func TestHasRealFiles(t *testing.T) {
 	// arrange
 	dir := t.TempDir()

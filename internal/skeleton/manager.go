@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/aleksey925/agentbox/internal/config"
 )
@@ -178,6 +179,12 @@ func (m *Manager) CopyToProject(projectDir string) ([]string, error) {
 			continue
 		}
 
+		// skip symlinks: a skeleton entry pointing elsewhere (e.g. core.v1.yml ->
+		// ~/.ssh/id_rsa) would otherwise copy the target's contents into the project.
+		if e.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+
 		// skip local.yml if it already exists in project
 		if e.Name() == "local.yml" && localYmlExists {
 			continue
@@ -190,8 +197,18 @@ func (m *Manager) CopyToProject(projectDir string) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", e.Name(), err)
 		}
-		if err := os.WriteFile(dstPath, content, 0o644); err != nil {
+		// O_NOFOLLOW: refuse to write through a symlink planted at the destination,
+		// so a copy can never land outside .agentbox/.
+		out, err := os.OpenFile(dstPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|syscall.O_NOFOLLOW, 0o644)
+		if err != nil {
+			return nil, fmt.Errorf("create %s: %w", e.Name(), err)
+		}
+		if _, err := out.Write(content); err != nil {
+			out.Close()
 			return nil, fmt.Errorf("write %s: %w", e.Name(), err)
+		}
+		if err := out.Close(); err != nil {
+			return nil, fmt.Errorf("close %s: %w", e.Name(), err)
 		}
 		copiedFiles = append(copiedFiles, e.Name())
 	}
