@@ -9,9 +9,15 @@
 # services:
 #   agentbox:
 #     volumes:
-#       - ~/CodeProjects:/home/box/CodeProjects:ro
+#       - ~/CodeProjects/other-project:/home/box/other-project:ro
 #     environment:
 #       - MY_API_KEY=secret
+
+# Security: anything you mount here is readable by the agent. ':ro' keeps it
+# read-only, so the agent cannot corrupt the data, but it can still read every
+# file - and the agent has network access. If a mounted directory holds secrets
+# (.env files, API keys, tokens, SSH keys), assume they can leak. Better mount a
+# single specific project you need.
 
 services:
   agentbox: {}
