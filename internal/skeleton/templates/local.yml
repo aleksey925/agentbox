@@ -11,7 +11,7 @@
 #     volumes:
 #       - ~/CodeProjects/other-project:/home/box/other-project:ro
 #     environment:
-#       - MY_API_KEY=secret
+#       - MY_CUSTOM_VAR=value
 
 # Security: anything you mount here is readable by the agent. ':ro' keeps it
 # read-only, so the agent cannot corrupt the data, but it can still read every
