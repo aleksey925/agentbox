@@ -346,6 +346,42 @@ func TestBuildBuildArgs__with_no_cache(t *testing.T) {
 	}
 }
 
+func TestBuildExecArgs(t *testing.T) {
+	// act
+	args := buildExecArgs("abc123", "/home/user/myproject")
+
+	// assert
+	expected := []string{"exec", "-it", "-w", "/home/user/myproject", "--", "abc123", "/bin/bash"}
+	if !slices.Equal(args, expected) {
+		t.Errorf("buildExecArgs() = %v, want %v", args, expected)
+	}
+}
+
+func TestBuildExecArgs__no_working_dir(t *testing.T) {
+	// act
+	args := buildExecArgs("abc123", "")
+
+	// assert
+	expected := []string{"exec", "-it", "--", "abc123", "/bin/bash"}
+	if !slices.Equal(args, expected) {
+		t.Errorf("buildExecArgs() = %v, want %v", args, expected)
+	}
+}
+
+func TestBuildExecArgs__dash_prefixed_id_lands_after_terminator(t *testing.T) {
+	// a containerID starting with "-" must never precede "--", or docker would
+	// read it as a flag (e.g. --privileged) instead of the target container.
+	// act
+	args := buildExecArgs("--privileged", "")
+
+	// assert
+	dashDash := slices.Index(args, "--")
+	id := slices.Index(args, "--privileged")
+	if dashDash == -1 || id <= dashDash {
+		t.Errorf("containerID must follow the %q terminator: %v", "--", args)
+	}
+}
+
 func TestContainerProjectPath__mirrors_host_path(t *testing.T) {
 	// arrange
 	hostDir := "/Users/alex/projects/myapp"

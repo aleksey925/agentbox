@@ -89,15 +89,9 @@ func Run(projectDir string, composeFiles []string) error {
 func Attach(containerID string) error {
 	ctx := context.Background()
 
-	// land in the project directory: the mount path is set live via working_dir
-	// at compose-run time, so it isn't baked into the image WORKDIR exec defaults to.
-	args := []string{"exec", "-it"}
-	if wd := containerWorkingDir(containerID); wd != "" {
-		args = append(args, "-w", wd)
-	}
-	args = append(args, containerID, "/bin/bash")
+	args := buildExecArgs(containerID, containerWorkingDir(containerID))
 
-	cmd := exec.CommandContext(ctx, "docker", args...) // #nosec G204 -- containerID from docker ps, wd from docker inspect
+	cmd := exec.CommandContext(ctx, "docker", args...) // #nosec G204 -- fixed argv; containerID follows "--" so docker can't read it as a flag
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -108,9 +102,22 @@ func Attach(containerID string) error {
 	return nil
 }
 
+// buildExecArgs builds the docker exec argv. The "--" terminator stops docker from
+// reading a containerID that starts with "-" as a flag (e.g. --privileged, -u, -e):
+// a value from `agentbox run --container` reaches docker only as the target container.
+func buildExecArgs(containerID, workingDir string) []string {
+	args := []string{"exec", "-it"}
+	// -w is explicit because the project path is set live via working_dir at
+	// compose-run time, so it isn't baked into the image WORKDIR exec defaults to.
+	if workingDir != "" {
+		args = append(args, "-w", workingDir)
+	}
+	return append(args, "--", containerID, "/bin/bash")
+}
+
 func containerWorkingDir(containerID string) string {
 	ctx := context.Background()
-	cmd := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.Config.WorkingDir}}", containerID)
+	cmd := exec.CommandContext(ctx, "docker", "inspect", "--format", "{{.Config.WorkingDir}}", "--", containerID)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	if err := cmd.Run(); err != nil {
