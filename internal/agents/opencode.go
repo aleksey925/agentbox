@@ -39,5 +39,6 @@ func (o *OpenCodeAgent) Download(ctx context.Context, version, destDir string, p
 	assetName := fmt.Sprintf("opencode-linux-%s.tar.gz", o.arch)
 	assetURL := fmt.Sprintf("https://github.com/anomalyco/opencode/releases/download/v%s/%s", version, assetName)
 
-	return downloadAndExtractTarGz(ctx, assetURL, destDir, "opencode", "opencode", progress)
+	// unverified, see CLAUDE.md "Download integrity"
+	return downloadAndExtractTarGz(ctx, assetURL, destDir, "opencode", "opencode", "", progress)
 }

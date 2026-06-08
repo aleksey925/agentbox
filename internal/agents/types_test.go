@@ -5,6 +5,9 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -91,7 +94,7 @@ func TestDownloadAndExtractTarGz(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	err := downloadAndExtractTarGz(context.Background(), server.URL, destDir, "testbin", "output", nil)
+	err := downloadAndExtractTarGz(context.Background(), server.URL, destDir, "testbin", "output", "", nil)
 
 	// assert
 	if err != nil {
@@ -127,11 +130,100 @@ func TestDownloadAndExtractTarGz__binary_not_found(t *testing.T) {
 	defer server.Close()
 
 	// act
-	err := downloadAndExtractTarGz(context.Background(), server.URL, t.TempDir(), "missing", "output", nil)
+	err := downloadAndExtractTarGz(context.Background(), server.URL, t.TempDir(), "missing", "output", "", nil)
 
 	// assert
 	if err == nil {
 		t.Fatal("expected error for missing binary")
+	}
+}
+
+func TestDownloadAndExtractTarGz__checksum_match(t *testing.T) {
+	// arrange
+	binaryContent := []byte("#!/bin/bash\necho hello")
+	tarGzData := createTarGz(t, "testbin", binaryContent)
+	sum := sha256.Sum256(tarGzData)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	err := downloadAndExtractTarGz(
+		context.Background(), server.URL, destDir, "testbin", "output", hex.EncodeToString(sum[:]), nil,
+	)
+
+	// assert
+	if err != nil {
+		t.Fatalf("downloadAndExtractTarGz() error = %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(destDir, "output"))
+	if err != nil {
+		t.Fatalf("read extracted file: %v", err)
+	}
+	if !bytes.Equal(content, binaryContent) {
+		t.Errorf("extracted content = %q, want %q", content, binaryContent)
+	}
+}
+
+func TestDownloadAndExtractTarGz__checksum_mismatch(t *testing.T) {
+	// arrange
+	tarGzData := createTarGz(t, "testbin", []byte("#!/bin/bash\necho hello"))
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	err := downloadAndExtractTarGz(
+		context.Background(), server.URL, destDir, "testbin", "output", "deadbeef", nil,
+	)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected checksum mismatch error")
+	}
+	if _, statErr := os.Stat(filepath.Join(destDir, "output")); !os.IsNotExist(statErr) {
+		t.Errorf("binary must not be extracted on checksum mismatch (stat err = %v)", statErr)
+	}
+}
+
+func TestFetchChecksum(t *testing.T) {
+	// arrange
+	body := "111  other-asset.tar.gz\n" +
+		"222  *binary-mode-asset.tar.gz\n" +
+		"333  wanted-asset.tar.gz\n"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(w, body)
+	}))
+	defer server.Close()
+
+	// act
+	got, err := fetchChecksum(context.Background(), server.URL, "wanted-asset.tar.gz")
+	binaryMode, binaryErr := fetchChecksum(context.Background(), server.URL, "binary-mode-asset.tar.gz")
+	_, missingErr := fetchChecksum(context.Background(), server.URL, "absent.tar.gz")
+
+	// assert
+	if err != nil {
+		t.Fatalf("fetchChecksum() error = %v", err)
+	}
+	if got != "333" {
+		t.Errorf("fetchChecksum() = %q, want %q", got, "333")
+	}
+	if binaryErr != nil {
+		t.Fatalf("fetchChecksum() binary-mode error = %v", binaryErr)
+	}
+	if binaryMode != "222" {
+		t.Errorf("fetchChecksum() binary-mode = %q, want %q", binaryMode, "222")
+	}
+	if missingErr == nil {
+		t.Error("expected error for asset missing from checksums file")
 	}
 }
 

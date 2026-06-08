@@ -4,6 +4,8 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -171,31 +173,69 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 	}
 }
 
-// downloadAndExtractTarGz downloads a tar.gz archive and extracts a specific binary.
-// binaryInArchive is the name of the binary to look for inside the archive.
-// destBinaryName is the name to save the binary as in destDir.
-func downloadAndExtractTarGz(
-	ctx context.Context,
-	assetURL, destDir, binaryInArchive, destBinaryName string,
-	progress func(downloaded, total int64),
-) error {
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
-		return fmt.Errorf("create dest dir: %w", err)
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, http.NoBody)
+// fetchChecksum downloads a SHA256SUMS-style file (each line "<hex>  <name>",
+// the name optionally "*"-prefixed for binary mode) and returns the hash
+// recorded for assetName. A missing entry is an error rather than a silent
+// skip, so a truncated or wrong-version checksums file can't downgrade a
+// verified download to an unverified one.
+func fetchChecksum(ctx context.Context, checksumsURL, assetName string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, checksumsURL, http.NoBody)
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return "", fmt.Errorf("create request: %w", err)
 	}
+	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("http get: %w", err)
+		return "", fmt.Errorf("fetch checksums: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download asset: %s", resp.Status)
+		return "", fmt.Errorf("failed to fetch checksums: %s", resp.Status)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read checksums: %w", err)
+	}
+
+	for line := range strings.SplitSeq(string(body), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		if strings.TrimPrefix(fields[1], "*") == assetName {
+			return fields[0], nil
+		}
+	}
+
+	return "", fmt.Errorf("checksum for %s not found", assetName)
+}
+
+// downloadArchive fetches an asset for extraction. With a non-empty expectedSHA256
+// it buffers the archive to a temp file and verifies the hash before returning, so a
+// tampered archive never reaches the extractor; with an empty one it streams the body
+// straight through (see CLAUDE.md "Download integrity"). cleanup must always be called.
+func downloadArchive(
+	ctx context.Context,
+	assetURL, expectedSHA256 string,
+	progress func(downloaded, total int64),
+) (io.Reader, func(), error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, http.NoBody)
+	if err != nil {
+		return nil, nil, fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("User-Agent", userAgent)
+
+	resp, err := httpClient.Do(req) //nolint:bodyclose // closed via the returned cleanup (streaming) or the defer below (verified)
+	if err != nil {
+		return nil, nil, fmt.Errorf("http get: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
+		return nil, nil, fmt.Errorf("failed to download asset: %s", resp.Status)
 	}
 
 	pr := &progressReader{
@@ -204,7 +244,61 @@ func downloadAndExtractTarGz(
 		progress: progress,
 	}
 
-	gzr, err := gzip.NewReader(pr)
+	if expectedSHA256 == "" {
+		return pr, func() { resp.Body.Close() }, nil
+	}
+
+	defer resp.Body.Close()
+
+	tmp, err := os.CreateTemp("", "agentbox-download-*")
+	if err != nil {
+		return nil, nil, fmt.Errorf("create temp file: %w", err)
+	}
+	cleanup := func() {
+		tmp.Close()
+		os.Remove(tmp.Name())
+	}
+
+	hasher := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(tmp, hasher), pr); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("download asset: %w", err)
+	}
+
+	got := hex.EncodeToString(hasher.Sum(nil))
+	if !strings.EqualFold(got, expectedSHA256) {
+		cleanup()
+		return nil, nil, fmt.Errorf("checksum mismatch: expected %s, got %s", expectedSHA256, got)
+	}
+
+	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("seek temp file: %w", err)
+	}
+
+	return tmp, cleanup, nil
+}
+
+// downloadAndExtractTarGz downloads a tar.gz archive and extracts a specific binary.
+// binaryInArchive is the name of the binary to look for inside the archive.
+// destBinaryName is the name to save the binary as in destDir.
+// expectedSHA256 verifies the archive before extraction (empty = unverified).
+func downloadAndExtractTarGz(
+	ctx context.Context,
+	assetURL, destDir, binaryInArchive, destBinaryName, expectedSHA256 string,
+	progress func(downloaded, total int64),
+) error {
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return fmt.Errorf("create dest dir: %w", err)
+	}
+
+	archive, cleanup, err := downloadArchive(ctx, assetURL, expectedSHA256, progress)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	gzr, err := gzip.NewReader(archive)
 	if err != nil {
 		return fmt.Errorf("create gzip reader: %w", err)
 	}
@@ -252,6 +346,8 @@ func downloadAndExtractTarGz(
 // downloadAndExtractTarGzAll extracts the whole archive into destDir while
 // dropping the leading path component (mirrors `tar --strip-components=1`),
 // which is how vendor archives like cursor's `dist-package/...` are shaped.
+// It takes no checksum: archives extracted this way are unverified (see
+// CLAUDE.md "Download integrity").
 func downloadAndExtractTarGzAll(
 	ctx context.Context,
 	assetURL, destDir string,
@@ -261,29 +357,13 @@ func downloadAndExtractTarGzAll(
 		return fmt.Errorf("create dest dir: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetURL, http.NoBody)
+	archive, cleanup, err := downloadArchive(ctx, assetURL, "", progress)
 	if err != nil {
-		return fmt.Errorf("create request: %w", err)
+		return err
 	}
-	req.Header.Set("User-Agent", userAgent)
+	defer cleanup()
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("http get: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to download asset: %s", resp.Status)
-	}
-
-	pr := &progressReader{
-		reader:   resp.Body,
-		total:    resp.ContentLength,
-		progress: progress,
-	}
-
-	gzr, err := gzip.NewReader(pr)
+	gzr, err := gzip.NewReader(archive)
 	if err != nil {
 		return fmt.Errorf("create gzip reader: %w", err)
 	}

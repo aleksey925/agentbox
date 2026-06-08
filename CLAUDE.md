@@ -112,6 +112,30 @@ tools" in user-facing UI, and `Preset` in code.
 Why: each audience needs the term that reads clearest to it. Mixing the terms either
 confuses users or muddies the code.
 
+### Download integrity
+
+A downloaded agent binary becomes executable inside the sandbox with every secret and
+directory mounted, so it is verified against a vendor-published SHA-256 before install
+whenever one exists for the exact asset we fetch. The archive is streamed to a temp file
+while hashed and is only extracted after the hash matches; a mismatch removes the temp file
+and fails the install. The checksum is fetched over the same channel as the binary, so this
+guards against a corrupted or partially-tampered release, not a full takeover of the host
+that serves both - the same trust model the Claude download already uses. An agent with no
+published checksum streams straight to extraction instead of buffering: buffering an archive
+we cannot verify would add latency without adding any safety.
+
+Coverage is dictated by what each vendor actually publishes for the asset we download, not
+by choice:
+
+- `claude` verifies a SHA-256 from its release manifest.
+- `copilot` and `ralphex` verify against the `SHA256SUMS`-style file in their GitHub
+  release. A missing entry is a hard error, never a silent skip, so a truncated or
+  wrong-version checksums file cannot downgrade to an unverified install.
+- `codex`, `opencode`, `cursor` are unverified: codex publishes only a sigstore bundle for
+  this asset (no plain checksum), opencode checksums only its desktop builds, and cursor
+  publishes nothing and has its version scraped from a live install script. Pinning hashes
+  in-repo is not an option because the version is resolved live ("latest") on each install.
+
 ## Project commands
 
 - `make build` - build the binary into `dist/`

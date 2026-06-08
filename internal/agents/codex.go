@@ -52,5 +52,6 @@ func (c *CodexAgent) Download(ctx context.Context, version, destDir string, prog
 	assetName := binaryName + ".tar.gz"
 	assetURL := fmt.Sprintf("https://github.com/openai/codex/releases/download/rust-v%s/%s", version, assetName)
 
-	return downloadAndExtractTarGz(ctx, assetURL, destDir, binaryName, "codex", progress)
+	// unverified, see CLAUDE.md "Download integrity"
+	return downloadAndExtractTarGz(ctx, assetURL, destDir, binaryName, "codex", "", progress)
 }

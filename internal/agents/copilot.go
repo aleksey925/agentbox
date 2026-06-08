@@ -36,7 +36,12 @@ func (c *CopilotAgent) FetchLatestVersion(ctx context.Context) (string, error) {
 
 func (c *CopilotAgent) Download(ctx context.Context, version, destDir string, progress func(downloaded, total int64)) error {
 	assetName := fmt.Sprintf("copilot-linux-%s.tar.gz", c.arch)
-	assetURL := fmt.Sprintf("https://github.com/github/copilot-cli/releases/download/v%s/%s", version, assetName)
+	baseURL := "https://github.com/github/copilot-cli/releases/download/v" + version
 
-	return downloadAndExtractTarGz(ctx, assetURL, destDir, "copilot", "copilot", progress)
+	checksum, err := fetchChecksum(ctx, baseURL+"/SHA256SUMS.txt", assetName)
+	if err != nil {
+		return fmt.Errorf("fetch checksum: %w", err)
+	}
+
+	return downloadAndExtractTarGz(ctx, baseURL+"/"+assetName, destDir, "copilot", "copilot", checksum, progress)
 }
