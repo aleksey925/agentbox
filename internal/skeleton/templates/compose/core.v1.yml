@@ -6,8 +6,7 @@ services:
     build:
       context: .
       dockerfile: .agentbox/Dockerfile.v1.agentbox
-    # mirror the host project path (see CLAUDE.md "Live, not baked"). the agentbox CLI
-    # sets AGENTBOX_PROJECT_PATH; the :? makes a launcher-bypassing run fail loudly.
+    # mirror the host project path (see CLAUDE.md "Live, not baked")
     working_dir: ${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
     environment:
       - MISE_TRUSTED_CONFIG_PATHS=${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
