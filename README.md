@@ -17,8 +17,16 @@ CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Cursor CLI
 
 ## Why use Agentbox?
 
-- **Security** — agents run in a sandbox and cannot access files outside the project, modify system configs, or cause unintended side effects
-- **Convenience** — no need to approve every agent action since it works in an isolated environment
+- **Security** — agents run in an isolated Docker container scoped to your
+  project; the rest of your machine - other files, your host system and its
+  settings - stays out of reach
+- **Peace of mind** — let the agent work freely without reviewing every step,
+  since it can't change your host system or files outside the project
+- **One CLI for every agent** — run Claude Code, Copilot, Codex, Cursor, OpenCode,
+  or Ralphex through the same commands, and pin or update each agent's version
+  without touching your host
+- **Consistent, fast environment** — a reproducible toolchain on every run, with
+  presets that reuse your host's package caches so dependencies aren't re-downloaded
 
 ## Installation
 
