@@ -6,11 +6,11 @@ services:
     build:
       context: .
       dockerfile: .agentbox/Dockerfile.v1.agentbox
-    # mirror the host project path (see CLAUDE.md "Live, not baked").
-    # agentbox exports AGENTBOX_PROJECT_PATH; ${PWD} is the fallback for manual runs.
-    working_dir: ${AGENTBOX_PROJECT_PATH:-${PWD}}
+    # mirror the host project path (see CLAUDE.md "Live, not baked"). the agentbox CLI
+    # sets AGENTBOX_PROJECT_PATH; the :? makes a launcher-bypassing run fail loudly.
+    working_dir: ${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
     environment:
-      - MISE_TRUSTED_CONFIG_PATHS=${AGENTBOX_PROJECT_PATH:-${PWD}}
+      - MISE_TRUSTED_CONFIG_PATHS=${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
     volumes:
       # ai agents binaries (read-only mount from host)
       - ~/.agentbox/bin:/opt/agentbox/bin:ro
@@ -33,11 +33,11 @@ services:
       # git config (for commits inside sandbox)
       - ~/.gitconfig:/home/box/.gitconfig:ro
       # project files (mounted at the host path, see working_dir above)
-      - .:${AGENTBOX_PROJECT_PATH:-${PWD}}
+      - .:${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
       # sandbox config is host-managed; a nested read-only mount overrides the
       # read-write project mount above so the agent cannot rewrite its own jail
       # (Dockerfile/compose) and weaken the next build.
-      - ./.agentbox:${AGENTBOX_PROJECT_PATH:-${PWD}}/.agentbox:ro
+      - ./.agentbox:${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}/.agentbox:ro
 
 volumes:
   mise-data:

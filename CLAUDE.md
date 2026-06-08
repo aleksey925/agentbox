@@ -101,7 +101,11 @@ This covers two cases:
   location. Agents key per-project state by working directory (e.g. Claude Code stores
   `--resume` history under a path derived from the cwd), so mirroring the host path gives
   each project its own history and lines it up with non-sandbox runs of the same agent.
-  Direct compose runs that bypass the launcher fall back to the current directory.
+  The CLI exports this path as `AGENTBOX_PROJECT_PATH`; the compose file requires it
+  (`:?`) rather than falling back to `${PWD}`. A direct `docker compose` run leaves it
+  unset and fails loudly, because such a run also skips the launcher's protections (the
+  read-only git exec-surface overlay, project-readiness checks) and would otherwise mount
+  a weaker sandbox at a guessed path without warning.
 
 ### Presets terminology
 
