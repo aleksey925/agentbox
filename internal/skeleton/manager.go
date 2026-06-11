@@ -146,11 +146,33 @@ func cleanProjectDir(dir string) error {
 	return nil
 }
 
+// ensureRealDir rejects a path that exists but is a symlink or a non-directory.
+// A cloned repo can commit `.agentbox -> ..` (or any other target), and
+// cleanProjectDir would then delete the target's contents while the copy lands
+// outside the project.
+func ensureRealDir(path string) error {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("inspect %s: %w", path, err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+		return fmt.Errorf("%s exists but is not a real directory, refusing to use it", path)
+	}
+	return nil
+}
+
 // CopyToProject copies skeleton files to project's .agentbox/ directory.
 // All files except local.yml are removed first, then skeleton is copied.
 // local.yml is only created if it doesn't exist in project.
 func (m *Manager) CopyToProject(projectDir string) ([]string, error) {
 	agentboxDir := filepath.Join(projectDir, ".agentbox")
+
+	if err := ensureRealDir(agentboxDir); err != nil {
+		return nil, err
+	}
 
 	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create .agentbox dir: %w", err)

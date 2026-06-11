@@ -16,6 +16,10 @@ import (
 
 const claudeBucketURL = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"
 
+// maxVersionBytes bounds the /latest response; an endless stream would
+// otherwise exhaust memory in io.ReadAll.
+const maxVersionBytes = 1 << 10 // 1 KiB
+
 type ClaudeAgent struct {
 	arch string
 }
@@ -61,7 +65,7 @@ func (c *ClaudeAgent) FetchLatestVersion(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("failed to fetch stable version: %s", resp.Status)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxVersionBytes))
 	if err != nil {
 		return "", fmt.Errorf("read response body: %w", err)
 	}
@@ -161,10 +165,14 @@ func (c *ClaudeAgent) downloadAndVerify(
 	hasher := sha256.New()
 	writer := io.MultiWriter(out, hasher)
 
+	// cap the stream so an endless response cannot fill the disk - same bound
+	// as the shared download path (see CLAUDE.md "Download integrity")
+	body := io.LimitReader(resp.Body, download.MaxArtifactBytes+1)
+
 	var downloaded int64
 	buf := make([]byte, 32*1024)
 	for {
-		n, readErr := resp.Body.Read(buf)
+		n, readErr := body.Read(buf)
 		if n > 0 {
 			if _, writeErr := writer.Write(buf[:n]); writeErr != nil {
 				out.Close()
@@ -184,6 +192,12 @@ func (c *ClaudeAgent) downloadAndVerify(
 			os.Remove(tmpPath)
 			return fmt.Errorf("read response: %w", readErr)
 		}
+	}
+
+	if downloaded > download.MaxArtifactBytes {
+		out.Close()
+		os.Remove(tmpPath)
+		return fmt.Errorf("binary exceeds %d bytes", download.MaxArtifactBytes)
 	}
 
 	checksum := hex.EncodeToString(hasher.Sum(nil))

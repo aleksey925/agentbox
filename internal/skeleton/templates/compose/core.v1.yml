@@ -14,7 +14,6 @@ services:
     cap_drop:
       - NET_RAW
       - MKNOD
-    # CLAUDE.md "Container capabilities"
     pids_limit: 4096
     volumes:
       # ai agents binaries (read-only mount from host)
@@ -37,12 +36,18 @@ services:
       - ~/.config/ralphex/:/home/box/.config/ralphex/
       # git config (for commits inside sandbox)
       - ~/.gitconfig:/home/box/.gitconfig:ro
-      # project files (mounted at the host path, see working_dir above)
-      - .:${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
+      # project files (mounted at the host path, see working_dir above). long
+      # bind syntax: the short form would split on a ":" in the project path
+      - type: bind
+        source: .
+        target: ${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
       # sandbox config is host-managed; a nested read-only mount overrides the
       # read-write project mount above so the agent cannot rewrite its own jail
       # (Dockerfile/compose) and weaken the next build.
-      - ./.agentbox:${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}/.agentbox:ro
+      - type: bind
+        source: ./.agentbox
+        target: ${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}/.agentbox
+        read_only: true
 
 volumes:
   mise-data:

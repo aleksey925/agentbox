@@ -56,9 +56,9 @@ func TestDownloadAndExtractTarGz(t *testing.T) {
 
 func TestDownloadAndExtractTarGz__rejects_oversize(t *testing.T) {
 	// arrange — lower the cap so a small archive trips it without a multi-GB file.
-	original := maxExtractedBytes
-	maxExtractedBytes = 1024
-	defer func() { maxExtractedBytes = original }()
+	original := MaxArtifactBytes
+	MaxArtifactBytes = 1024
+	defer func() { MaxArtifactBytes = original }()
 
 	tarGzData := createTarGz(t, "testbin", make([]byte, 8192))
 

@@ -196,6 +196,13 @@ func (a *App) doInit() int {
 		}
 	}
 
+	// a pre-existing local.yml is kept as is and silently customizes the sandbox
+	// (extra mounts, env) - in a freshly cloned repo it may come from the repo
+	// author, not the user, so point at it explicitly.
+	localYmlPath := filepath.Join(agentboxDir, "local.yml")
+	_, localYmlErr := os.Lstat(localYmlPath)
+	keptLocalYml := localYmlErr == nil
+
 	// copy skeleton to project
 	copiedFiles, err := manager.CopyToProject(cwd)
 	if err != nil {
@@ -205,6 +212,10 @@ func (a *App) doInit() int {
 	fmt.Println("Created .agentbox/ (from skeleton)")
 	for _, name := range copiedFiles {
 		fmt.Printf("  %s\n", name)
+	}
+	if keptLocalYml {
+		fmt.Println("Warning: kept existing .agentbox/local.yml - it adds mounts and")
+		fmt.Println("environment to the sandbox; review it if you did not create it.")
 	}
 
 	a.createMiseToml(cwd)

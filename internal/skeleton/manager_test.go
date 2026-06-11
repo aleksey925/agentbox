@@ -341,7 +341,7 @@ func TestCopyToProject__skips_system_files(t *testing.T) {
 }
 
 func TestCopyToProject__skips_symlinks(t *testing.T) {
-	// arrange — a symlink planted in the skeleton must not have its target copied
+	// arrange - a symlink planted in the skeleton must not have its target copied
 	// into the project (e.g. core.v1.yml -> ~/.ssh/id_rsa).
 	paths := createTestPaths(t)
 	manager := NewManager(paths)
@@ -371,6 +371,38 @@ func TestCopyToProject__skips_symlinks(t *testing.T) {
 	}
 	if _, statErr := os.Lstat(filepath.Join(projectDir, ".agentbox", "leak.yml")); !os.IsNotExist(statErr) {
 		t.Errorf("symlinked entry must not appear in project (lstat err = %v)", statErr)
+	}
+}
+
+func TestCopyToProject__rejects_symlinked_agentbox_dir(t *testing.T) {
+	// arrange - a cloned repo can commit `.agentbox` as a symlink (e.g. -> ..);
+	// following it would let cleanProjectDir delete the target's contents and
+	// land the copy outside the project.
+	paths := createTestPaths(t)
+	manager := NewManager(paths)
+	if err := manager.CreateSkeleton(nil); err != nil {
+		t.Fatal(err)
+	}
+
+	target := t.TempDir()
+	sentinel := filepath.Join(target, "sentinel")
+	if err := os.WriteFile(sentinel, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	projectDir := t.TempDir()
+	if err := os.Symlink(target, filepath.Join(projectDir, ".agentbox")); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	_, err := manager.CopyToProject(projectDir)
+
+	// assert
+	if err == nil {
+		t.Fatal("CopyToProject must refuse a symlinked .agentbox")
+	}
+	if _, statErr := os.Stat(sentinel); statErr != nil {
+		t.Errorf("symlink target content must stay untouched: %v", statErr)
 	}
 }
 

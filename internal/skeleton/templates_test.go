@@ -190,7 +190,10 @@ func TestCoreYml_agentbox_dir_mounted_readonly(t *testing.T) {
 	}
 
 	// act & assert
-	expectedMount := "- ./.agentbox:${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}/.agentbox:ro"
+	expectedMount := `- type: bind
+        source: ./.agentbox
+        target: ${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}/.agentbox
+        read_only: true`
 	if !strings.Contains(string(core.Content), expectedMount) {
 		t.Errorf("core.v1.yml missing read-only .agentbox mount (expected %q)", expectedMount)
 	}

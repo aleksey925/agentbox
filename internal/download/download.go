@@ -28,11 +28,15 @@ var Client = &http.Client{
 	Timeout: 5 * time.Minute,
 }
 
-// maxExtractedBytes bounds both the buffered raw download and the decompressed
+// MaxArtifactBytes bounds both the buffered raw download and the decompressed
 // output, so a gzip bomb or an endless stream can't exhaust disk. Far above any
 // real agent/self-update artifact (tens to a few hundred MB). A var, not a const,
 // so tests can lower it without producing a real multi-GB archive.
-var maxExtractedBytes int64 = 1 << 30 // 1 GiB
+var MaxArtifactBytes int64 = 1 << 30 // 1 GiB
+
+// maxChecksumsBytes bounds a checksums/manifest-style text response; an endless
+// stream would otherwise exhaust memory in io.ReadAll.
+const maxChecksumsBytes = 1 << 20 // 1 MiB
 
 // FetchLatestGitHubTag gets latest release tag via redirect (bypasses API rate limit)
 func FetchLatestGitHubTag(ctx context.Context, owner, repo string) (string, error) {
@@ -123,7 +127,7 @@ func FetchChecksum(ctx context.Context, checksumsURL, assetName string) (string,
 		return "", fmt.Errorf("failed to fetch checksums: %s", resp.Status)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxChecksumsBytes))
 	if err != nil {
 		return "", fmt.Errorf("read checksums: %w", err)
 	}
@@ -188,14 +192,14 @@ func downloadArchive(
 	}
 
 	hasher := sha256.New()
-	n, err := io.Copy(io.MultiWriter(tmp, hasher), io.LimitReader(pr, maxExtractedBytes+1))
+	n, err := io.Copy(io.MultiWriter(tmp, hasher), io.LimitReader(pr, MaxArtifactBytes+1))
 	if err != nil {
 		cleanup()
 		return nil, nil, fmt.Errorf("download asset: %w", err)
 	}
-	if n > maxExtractedBytes {
+	if n > MaxArtifactBytes {
 		cleanup()
-		return nil, nil, fmt.Errorf("asset exceeds %d bytes", maxExtractedBytes)
+		return nil, nil, fmt.Errorf("asset exceeds %d bytes", MaxArtifactBytes)
 	}
 
 	got := hex.EncodeToString(hasher.Sum(nil))
@@ -239,7 +243,7 @@ func DownloadAndExtractTarGz(
 
 	// cap total decompressed bytes: a gzip bomb is small on the wire but expands
 	// without bound, so the limit goes on the gzip output, not the archive.
-	tr := tar.NewReader(io.LimitReader(gzr, maxExtractedBytes+1))
+	tr := tar.NewReader(io.LimitReader(gzr, MaxArtifactBytes+1))
 
 	for {
 		hdr, err := tr.Next()
@@ -305,7 +309,7 @@ func DownloadAndExtractTarGzAll(
 	defer gzr.Close()
 
 	// cap total decompressed bytes against a gzip bomb (see DownloadAndExtractTarGz).
-	tr := tar.NewReader(io.LimitReader(gzr, maxExtractedBytes+1))
+	tr := tar.NewReader(io.LimitReader(gzr, MaxArtifactBytes+1))
 	cleanDestDir := filepath.Clean(destDir) + string(os.PathSeparator)
 
 	for {

@@ -77,10 +77,17 @@ The same protection extends to a git project's exec surface - `.git/hooks` and `
 (which can point at hooks via `core.hooksPath`, filters, or `fsmonitor`). Writing either
 would run code on the host the next time git touches the repo, so both are mounted
 read-only. config staying read-only also confines the agent to the remotes the user already
-configured. This overlay is generated live per launch rather than copied from the skeleton,
-because it is conditional: it applies only when the project is a git repo, and the real git
-dir is resolved at launch (it can sit outside the project in worktrees and submodules, where
-it is not mounted and so needs no protection).
+configured. The surface includes git dirs nested inside `.git`: each submodule git dir
+under `.git/modules/` carries its own hooks and config, and each worktree's
+`config.worktree` under `.git/worktrees/` can set `core.hooksPath` - a hook planted there
+runs on the host just like a top-level one. A missing surface entry is created empty at
+launch so it can be mounted; skipped, the agent could create it from inside the sandbox.
+This overlay is generated live per launch rather than copied from the skeleton, because it
+is conditional: it applies only when the project is a git repo, and the real git dir is
+resolved at launch (it can sit outside the project in worktrees and submodules, where it is
+not mounted and so needs no protection). The check fails closed: a `.git` that exists but
+cannot be resolved (git missing, `safe.directory` refusal) aborts the launch instead of
+silently starting an unprotected sandbox.
 
 ### Container capabilities
 
