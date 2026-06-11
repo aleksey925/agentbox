@@ -136,11 +136,24 @@ This covers two cases:
 ### Presets terminology
 
 The same concept is named differently by audience: "sandbox configuration" for the whole,
-"environment presets" for the Go/Python components that mount host caches, "development
-tools" in user-facing UI, and `Preset` in code.
+"environment presets" for the Go/Python language components, "development tools" in
+user-facing UI, and `Preset` in code.
 
 Why: each audience needs the term that reads clearest to it. Mixing the terms either
 confuses users or muddies the code.
+
+### Preset caches are sandbox-local
+
+A preset's dependency cache (Go module cache, uv cache) is a named Docker volume shared
+across agentbox projects, never a bind mount of the host's real cache - the same scheme the
+mise and opencode caches already use.
+
+Why: the host cache is executable surface. Go does not re-verify already-extracted module
+sources on each build, so a writable bind mount lets an agent poison a cached module that
+the host's `go` later compiles. A sandbox-local volume keeps the cache writable (the agent
+can still add dependencies) and warm across runs, while a poisoned entry can never reach the
+host. The cost is a one-time re-download per volume; a project that deliberately wants the
+host cache mounts it in its own `local.yml`.
 
 ### Download integrity
 

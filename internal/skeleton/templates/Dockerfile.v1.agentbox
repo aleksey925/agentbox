@@ -53,7 +53,9 @@ USER box
 RUN mkdir -p /home/box/.local/share/mise \
              /home/box/.local/state/mise \
              /home/box/.cache/mise \
-             /home/box/.cache/opencode
+             /home/box/.cache/opencode \
+             /home/box/go \
+             /home/box/.cache/uv
 
 WORKDIR /home/box
 

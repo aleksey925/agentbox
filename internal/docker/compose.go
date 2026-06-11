@@ -19,6 +19,8 @@ var SharedVolumes = []string{
 	"agentbox-mise-data",
 	"agentbox-mise-cache",
 	"agentbox-opencode-cache",
+	"agentbox-go-cache",
+	"agentbox-uv-cache",
 }
 
 // EnsureSharedVolumes creates shared volumes if they don't exist.

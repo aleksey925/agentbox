@@ -449,29 +449,25 @@ func TestBuildRunEnv__preserves_inherited_env(t *testing.T) {
 	}
 }
 
-func TestSharedVolumes__match_core_template(t *testing.T) {
-	// arrange
-	coreTemplate, err := skeleton.GetCoreTemplate()
-	if err != nil {
-		t.Fatalf("GetCoreTemplate error: %v", err)
-	}
-	content := string(coreTemplate.Content)
+func TestSharedVolumes__match_templates(t *testing.T) {
+	// arrange — gather external volumes declared across core + all preset templates
+	contents := gatherTemplateContents(t)
 
-	// extract volume names with "external: true" from YAML
 	// pattern matches: name: volume-name followed by external: true
 	re := regexp.MustCompile(`name:\s*(\S+)\s+external:\s*true`)
-	matches := re.FindAllStringSubmatch(content, -1)
-
-	externalVolumes := make([]string, 0, len(matches))
-	for _, m := range matches {
-		externalVolumes = append(externalVolumes, m[1])
+	var externalVolumes []string
+	for _, content := range contents {
+		for _, m := range re.FindAllStringSubmatch(content, -1) {
+			externalVolumes = append(externalVolumes, m[1])
+		}
 	}
 
 	if len(externalVolumes) == 0 {
-		t.Fatal("no external volumes found in core template")
+		t.Fatal("no external volumes found in templates")
 	}
 
-	// act & assert
+	// act & assert — SharedVolumes and declared external volumes must match exactly,
+	// so every shared volume is created (EnsureSharedVolumes) and none is orphaned.
 	sharedSet := make(map[string]bool)
 	for _, v := range SharedVolumes {
 		sharedSet[v] = true
@@ -479,14 +475,61 @@ func TestSharedVolumes__match_core_template(t *testing.T) {
 
 	for _, vol := range externalVolumes {
 		if !sharedSet[vol] {
-			t.Errorf("external volume %q in core.v1.yml is missing from SharedVolumes", vol)
+			t.Errorf("external volume %q declared in a template is missing from SharedVolumes", vol)
 		}
 	}
 
-	// also check reverse: all SharedVolumes should be in template
 	for _, vol := range SharedVolumes {
 		if !slices.Contains(externalVolumes, vol) {
-			t.Errorf("SharedVolumes contains %q but it's not in core.v1.yml as external", vol)
+			t.Errorf("SharedVolumes contains %q but no template declares it as external", vol)
 		}
 	}
+}
+
+func TestDockerfile_precreates_named_volume_mountpoints(t *testing.T) {
+	// a fresh named volume mounted on a path absent from the image is root-owned,
+	// so the non-root box user could not write it; every named-volume mount target
+	// in a template must be pre-created in the Dockerfile.
+	dockerfile, err := skeleton.GetEmbeddedDockerfile()
+	if err != nil {
+		t.Fatalf("GetEmbeddedDockerfile error: %v", err)
+	}
+	df := string(dockerfile.Content)
+
+	// the mountpoint must be created AS box (after `USER box`), or the volume root
+	// inherits root ownership and the non-root agent can't write it.
+	userBox := strings.Index(df, "USER box")
+	if userBox < 0 {
+		t.Fatal("Dockerfile must drop to the non-root box user")
+	}
+	asBox := df[userBox:]
+
+	// service volume entries that reference a named volume: "- <name>:<target>",
+	// where <name> is a bare identifier (bind mounts start with ~, ., / or $).
+	re := regexp.MustCompile(`(?m)^\s*-\s+([a-z][a-z0-9-]*):(/\S+)`)
+	for _, content := range gatherTemplateContents(t) {
+		for _, m := range re.FindAllStringSubmatch(content, -1) {
+			if target := m[2]; !strings.Contains(asBox, target) {
+				t.Errorf("named volume target %q is not pre-created as box in the Dockerfile (volume would be root-owned)", target)
+			}
+		}
+	}
+}
+
+func gatherTemplateContents(t *testing.T) []string {
+	t.Helper()
+
+	core, err := skeleton.GetCoreTemplate()
+	if err != nil {
+		t.Fatalf("GetCoreTemplate error: %v", err)
+	}
+	contents := []string{string(core.Content)}
+	for _, p := range skeleton.SupportedPresets() {
+		tmpl, err := skeleton.GetPresetTemplate(p.TemplateName)
+		if err != nil {
+			t.Fatalf("GetPresetTemplate(%s) error: %v", p.TemplateName, err)
+		}
+		contents = append(contents, string(tmpl.Content))
+	}
+	return contents
 }
