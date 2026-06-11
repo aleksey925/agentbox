@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/aleksey925/agentbox/internal/download"
 )
 
 type OpenCodeAgent struct {
@@ -27,7 +29,7 @@ func (o *OpenCodeAgent) BinaryName() string {
 }
 
 func (o *OpenCodeAgent) FetchLatestVersion(ctx context.Context) (string, error) {
-	tag, err := FetchLatestGitHubTag(ctx, "anomalyco", "opencode")
+	tag, err := download.FetchLatestGitHubTag(ctx, "anomalyco", "opencode")
 	if err != nil {
 		return "", fmt.Errorf("fetch github tag: %w", err)
 	}
@@ -40,5 +42,8 @@ func (o *OpenCodeAgent) Download(ctx context.Context, version, destDir string, p
 	assetURL := fmt.Sprintf("https://github.com/anomalyco/opencode/releases/download/v%s/%s", version, assetName)
 
 	// unverified, see CLAUDE.md "Download integrity"
-	return downloadAndExtractTarGz(ctx, assetURL, destDir, "opencode", "opencode", "", progress)
+	if err := download.DownloadAndExtractTarGz(ctx, assetURL, destDir, "opencode", "opencode", "", progress); err != nil {
+		return fmt.Errorf("opencode: %w", err)
+	}
+	return nil
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/aleksey925/agentbox/internal/download"
 )
 
 type CopilotAgent struct {
@@ -27,7 +29,7 @@ func (c *CopilotAgent) BinaryName() string {
 }
 
 func (c *CopilotAgent) FetchLatestVersion(ctx context.Context) (string, error) {
-	tag, err := FetchLatestGitHubTag(ctx, "github", "copilot-cli")
+	tag, err := download.FetchLatestGitHubTag(ctx, "github", "copilot-cli")
 	if err != nil {
 		return "", fmt.Errorf("fetch github tag: %w", err)
 	}
@@ -38,10 +40,13 @@ func (c *CopilotAgent) Download(ctx context.Context, version, destDir string, pr
 	assetName := fmt.Sprintf("copilot-linux-%s.tar.gz", c.arch)
 	baseURL := "https://github.com/github/copilot-cli/releases/download/v" + version
 
-	checksum, err := fetchChecksum(ctx, baseURL+"/SHA256SUMS.txt", assetName)
+	checksum, err := download.FetchChecksum(ctx, baseURL+"/SHA256SUMS.txt", assetName)
 	if err != nil {
 		return fmt.Errorf("fetch checksum: %w", err)
 	}
 
-	return downloadAndExtractTarGz(ctx, baseURL+"/"+assetName, destDir, "copilot", "copilot", checksum, progress)
+	if err := download.DownloadAndExtractTarGz(ctx, baseURL+"/"+assetName, destDir, "copilot", "copilot", checksum, progress); err != nil {
+		return fmt.Errorf("copilot: %w", err)
+	}
+	return nil
 }

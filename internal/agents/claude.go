@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/aleksey925/agentbox/internal/download"
 )
 
 const claudeBucketURL = "https://storage.googleapis.com/claude-code-dist-86c565f3-f756-42ad-8dfa-d59b1c096819/claude-code-releases"
@@ -49,7 +51,7 @@ func (c *ClaudeAgent) FetchLatestVersion(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("create request: %w", err)
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := download.Client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fetch latest version: %w", err)
 	}
@@ -74,7 +76,7 @@ func (c *ClaudeAgent) fetchManifest(ctx context.Context, version string) (*claud
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := download.Client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch manifest: %w", err)
 	}
@@ -141,7 +143,7 @@ func (c *ClaudeAgent) downloadAndVerify(
 		return fmt.Errorf("create request: %w", err)
 	}
 
-	resp, err := httpClient.Do(req)
+	resp, err := download.Client.Do(req)
 	if err != nil {
 		return fmt.Errorf("http get: %w", err)
 	}

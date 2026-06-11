@@ -137,8 +137,8 @@ func (m *Manager) Install(name string, onProgress func(agent string, downloaded,
 	if err != nil {
 		return fmt.Errorf("fetch latest version: %w", err)
 	}
-	if err := validateVersion(version); err != nil {
-		return err
+	if err := config.ValidateVersion(version); err != nil {
+		return fmt.Errorf("validate version: %w", err)
 	}
 
 	destDir := m.paths.AgentVersionDir(name, version)
@@ -209,7 +209,7 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 				}
 				return
 			}
-			if err := validateVersion(latest); err != nil {
+			if err := config.ValidateVersion(latest); err != nil {
 				infos[idx] = agentVersionInfo{
 					name:  agentName,
 					agent: agent,
@@ -350,8 +350,8 @@ func (m *Manager) SwitchVersion(name, version string) error {
 	if _, ok := m.agents[name]; !ok {
 		return fmt.Errorf("unknown agent: %s", name)
 	}
-	if err := validateVersion(version); err != nil {
-		return err
+	if err := config.ValidateVersion(version); err != nil {
+		return fmt.Errorf("validate version: %w", err)
 	}
 
 	versionDir := m.paths.AgentVersionDir(name, version)

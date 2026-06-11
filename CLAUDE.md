@@ -165,6 +165,13 @@ by choice:
   this asset (no plain checksum), opencode checksums only its desktop builds, and cursor
   publishes nothing and has its version scraped from a live install script. Pinning hashes
   in-repo is not an option because the version is resolved live ("latest") on each install.
+- `self update` replaces the running binary, so it verifies against the release's
+  goreleaser `checksums.txt` the same way, and validates the target version before it
+  reaches a URL.
+
+Both the buffered download and the decompressed output are bounded by a fixed cap, so a
+gzip bomb or an endless stream can exhaust neither disk nor the host - the extractor fails
+closed once the limit is crossed.
 
 ## Project commands
 

@@ -1,12 +1,9 @@
 package cli
 
 import (
-	"archive/tar"
 	"bufio"
-	"compress/gzip"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -21,6 +18,7 @@ import (
 	"github.com/aleksey925/agentbox/internal/agents"
 	"github.com/aleksey925/agentbox/internal/config"
 	"github.com/aleksey925/agentbox/internal/docker"
+	"github.com/aleksey925/agentbox/internal/download"
 	"github.com/aleksey925/agentbox/internal/skeleton"
 	"github.com/charmbracelet/huh"
 )
@@ -1093,6 +1091,11 @@ Examples:
 
 	targetVersion = strings.TrimPrefix(targetVersion, "v")
 
+	if err := config.ValidateVersion(targetVersion); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: invalid version %q\n", targetVersion)
+		return 1
+	}
+
 	if targetVersion == a.Build.Version {
 		fmt.Printf("Already at version %s\n", targetVersion)
 		return 0
@@ -1112,10 +1115,9 @@ Examples:
 		return 1
 	}
 
-	downloadURL := fmt.Sprintf(
-		"https://github.com/%s/releases/download/v%s/agentbox_%s_%s_%s.tar.gz",
-		githubRepo, targetVersion, targetVersion, runtime.GOOS, runtime.GOARCH,
-	)
+	baseURL := fmt.Sprintf("https://github.com/%s/releases/download/v%s", githubRepo, targetVersion)
+	assetName := fmt.Sprintf("agentbox_%s_%s_%s.tar.gz", targetVersion, runtime.GOOS, runtime.GOARCH)
+	downloadURL := baseURL + "/" + assetName
 
 	fmt.Printf("Downloading from %s\n", downloadURL)
 
@@ -1126,28 +1128,20 @@ Examples:
 	}
 	defer os.RemoveAll(tmpDir)
 
-	resp, cancel, err := httpDownload(downloadURL)
+	ctx := context.Background()
+	checksum, err := download.FetchChecksum(ctx, baseURL+"/checksums.txt", assetName)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error downloading: %v\n", err)
-		return 1
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		resp.Body.Close()
-		cancel()
-		fmt.Fprintf(os.Stderr, "Error: download failed with status %d\n", resp.StatusCode)
+		fmt.Fprintf(os.Stderr, "Error fetching checksum: %v\n", err)
 		fmt.Fprintf(os.Stderr, "Version %s may not exist for %s/%s\n", targetVersion, runtime.GOOS, runtime.GOARCH)
 		return 1
 	}
 
-	newBinaryPath := filepath.Join(tmpDir, "agentbox")
-	err = extractBinaryFromTarGz(resp.Body, newBinaryPath)
-	resp.Body.Close()
-	cancel()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error extracting archive: %v\n", err)
+	if err := download.DownloadAndExtractTarGz(ctx, downloadURL, tmpDir, "agentbox", "agentbox", checksum, nil); err != nil {
+		fmt.Fprintf(os.Stderr, "Error downloading update: %v\n", err)
 		return 1
 	}
+
+	newBinaryPath := filepath.Join(tmpDir, "agentbox")
 
 	backupPath := execPath + ".bak"
 	if err := os.Rename(execPath, backupPath); err != nil {
@@ -1321,19 +1315,11 @@ func fetchLatestVersion() (string, error) {
 	return strings.TrimPrefix(release.TagName, "v"), nil
 }
 
-const (
-	httpTimeout         = 30 * time.Second
-	httpDownloadTimeout = 5 * time.Minute
-)
+const httpTimeout = 30 * time.Second
 
 // httpGet performs a GET request with standard timeout.
 func httpGet(url string) (resp *http.Response, cancel context.CancelFunc, err error) {
 	return httpGetWithTimeout(url, httpTimeout)
-}
-
-// httpDownload performs a GET request with extended timeout for file downloads.
-func httpDownload(url string) (resp *http.Response, cancel context.CancelFunc, err error) {
-	return httpGetWithTimeout(url, httpDownloadTimeout)
 }
 
 func httpGetWithTimeout(url string, timeout time.Duration) (resp *http.Response, cancel context.CancelFunc, err error) {
@@ -1352,47 +1338,6 @@ func httpGetWithTimeout(url string, timeout time.Duration) (resp *http.Response,
 		return nil, nil, fmt.Errorf("execute request: %w", err)
 	}
 	return resp, cancel, nil
-}
-
-func extractBinaryFromTarGz(r io.Reader, destPath string) error {
-	gzr, err := gzip.NewReader(r)
-	if err != nil {
-		return fmt.Errorf("create gzip reader: %w", err)
-	}
-	defer gzr.Close()
-
-	tr := tar.NewReader(gzr)
-	for {
-		header, err := tr.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("read tar header: %w", err)
-		}
-
-		if header.Typeflag == tar.TypeReg && filepath.Base(header.Name) == "agentbox" {
-			if err := extractFile(tr, destPath); err != nil {
-				return err
-			}
-			return nil
-		}
-	}
-
-	return errors.New("agentbox binary not found in archive")
-}
-
-func extractFile(r io.Reader, destPath string) error {
-	outFile, err := os.Create(destPath)
-	if err != nil {
-		return fmt.Errorf("create file: %w", err)
-	}
-	defer outFile.Close()
-
-	if _, err := io.Copy(outFile, r); err != nil {
-		return fmt.Errorf("write file: %w", err)
-	}
-	return nil
 }
 
 func copyFile(src, dst string) error {
