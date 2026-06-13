@@ -186,9 +186,10 @@ func (a *App) doInit() int {
 		return code
 	}
 
-	// check if .agentbox/ already exists in project
+	// only guard a working config: an empty or local.yml-only .agentbox/ is not
+	// something the user would mind reseeding, and CopyToProject keeps local.yml.
 	agentboxDir := filepath.Join(cwd, ".agentbox")
-	if _, statErr := os.Stat(agentboxDir); statErr == nil {
+	if skeleton.ProjectInitialized(agentboxDir) {
 		fmt.Println("Warning: .agentbox/ already exists and will be overwritten (except local.yml)")
 		if !a.confirmAction("Continue?") {
 			fmt.Println("Aborted")
@@ -540,8 +541,8 @@ func (a *App) attachToContainer(containerID string) int {
 
 func (a *App) ensureProjectReady(cwd string) int {
 	agentboxDir := filepath.Join(cwd, ".agentbox")
-	if _, err := os.Stat(agentboxDir); os.IsNotExist(err) {
-		fmt.Println("Warning: not initialized, running init first...")
+	if !skeleton.ProjectInitialized(agentboxDir) {
+		fmt.Println("Warning: not initialized or incomplete, running init first...")
 		if code := a.doInit(); code != 0 {
 			return code
 		}

@@ -225,6 +225,30 @@ func TestDiscoverComposeFiles__empty_directory__returns_error(t *testing.T) {
 	}
 }
 
+func TestDiscoverComposeFiles__local_yml_only__returns_error(t *testing.T) {
+	// arrange
+	tmpDir := t.TempDir()
+	agentboxDir := filepath.Join(tmpDir, ".agentbox")
+	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentboxDir, "local.yml"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	_, err := DiscoverComposeFiles(tmpDir)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error for .agentbox with only local.yml")
+	}
+	expectedMsg := "core compose file missing in .agentbox/. Run 'agentbox init' to fix"
+	if err.Error() != expectedMsg {
+		t.Errorf("error = %q, want %q", err.Error(), expectedMsg)
+	}
+}
+
 func TestDiscoverComposeFiles__no_agentbox_dir__returns_error(t *testing.T) {
 	// arrange
 	tmpDir := t.TempDir()

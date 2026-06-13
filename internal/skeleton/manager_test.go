@@ -464,6 +464,52 @@ func TestHasRealFiles__nonexistent_dir(t *testing.T) {
 	}
 }
 
+func TestProjectInitialized(t *testing.T) {
+	tests := []struct {
+		name  string
+		files []string
+		want  bool
+	}{
+		{name: "core_and_dockerfile", files: []string{"core.v1.yml", "Dockerfile.v1.agentbox"}, want: true},
+		{name: "core_dockerfile_and_presets", files: []string{"core.v1.yml", "Dockerfile.v1.agentbox", "go.v1.yml", "local.yml"}, want: true},
+		{name: "empty", files: nil, want: false},
+		{name: "local_yml_only", files: []string{"local.yml"}, want: false},
+		{name: "core_without_dockerfile", files: []string{"core.v1.yml", "local.yml"}, want: false},
+		{name: "dockerfile_without_core", files: []string{"Dockerfile.v1.agentbox"}, want: false},
+		{name: "preset_without_core", files: []string{"go.v1.yml", "Dockerfile.v1.agentbox"}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// arrange
+			dir := t.TempDir()
+			for _, f := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			// act
+			got := ProjectInitialized(dir)
+
+			// assert
+			if got != tt.want {
+				t.Errorf("ProjectInitialized(%v) = %v, want %v", tt.files, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProjectInitialized__nonexistent_dir(t *testing.T) {
+	// act
+	got := ProjectInitialized("/nonexistent/path")
+
+	// assert
+	if got {
+		t.Error("expected false for nonexistent directory")
+	}
+}
+
 func TestCleanProjectDir(t *testing.T) {
 	// arrange
 	dir := t.TempDir()

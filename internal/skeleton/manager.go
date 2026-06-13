@@ -247,6 +247,36 @@ func (m *Manager) CopyToProject(projectDir string) ([]string, error) {
 	return copiedFiles, nil
 }
 
+// ProjectInitialized reports whether .agentbox/ holds the minimal files a
+// sandbox needs to build and run: a versioned core compose file and the
+// Dockerfile it builds from. Presets and local.yml are optional, so an empty
+// directory or one holding only local.yml counts as uninitialized and should be
+// re-seeded from the skeleton.
+//
+// It gates on presence, not version: an old core.v* still counts as initialized.
+func ProjectInitialized(agentboxDir string) bool {
+	entries, err := os.ReadDir(agentboxDir)
+	if err != nil {
+		return false
+	}
+
+	hasCore, hasDockerfile := false, false
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name, _ := ParseTemplateName(e.Name())
+		switch {
+		case name == "core" && (strings.HasSuffix(e.Name(), ".yml") || strings.HasSuffix(e.Name(), ".yaml")):
+			hasCore = true
+		case name == "Dockerfile":
+			hasDockerfile = true
+		}
+	}
+
+	return hasCore && hasDockerfile
+}
+
 // HasRealFiles checks if directory contains any non-system files.
 func HasRealFiles(dir string) bool {
 	entries, err := os.ReadDir(dir)

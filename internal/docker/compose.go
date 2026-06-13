@@ -167,16 +167,27 @@ func DiscoverComposeFiles(projectDir string) ([]string, error) {
 		return nil, fmt.Errorf("read .agentbox directory: %w", err)
 	}
 
-	var files []string
+	files := make([]string, 0, len(entries))
+	hasCore := false
 	for _, e := range entries {
 		name := e.Name()
-		if strings.HasSuffix(name, ".yml") || strings.HasSuffix(name, ".yaml") {
-			files = append(files, filepath.Join(agentboxDir, name))
+		if !strings.HasSuffix(name, ".yml") && !strings.HasSuffix(name, ".yaml") {
+			continue
+		}
+		files = append(files, filepath.Join(agentboxDir, name))
+		if baseName, _ := skeleton.ParseTemplateName(name); baseName == "core" {
+			hasCore = true
 		}
 	}
 
 	if len(files) == 0 {
 		return nil, errors.New("no compose files found in .agentbox/. Run 'agentbox init' to fix")
+	}
+
+	// a lone local.yml satisfies len>0 but has no service or build section; the
+	// core file is what actually defines the sandbox, so require it explicitly.
+	if !hasCore {
+		return nil, errors.New("core compose file missing in .agentbox/. Run 'agentbox init' to fix")
 	}
 
 	skeleton.SortComposeFiles(files)
