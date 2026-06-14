@@ -241,8 +241,8 @@ func TestDockerfile_agent_launchers(t *testing.T) {
 
 	// act & assert
 	for _, name := range agents.AllAgentNames() {
-		// check launcher script exists: > /home/box/.local/bin/{agent}
-		expectedLauncher := "> /home/box/.local/bin/" + name
+		// check launcher script exists: > /usr/local/bin/{agent}
+		expectedLauncher := "> /usr/local/bin/" + name
 		if !strings.Contains(content, expectedLauncher) {
 			t.Errorf("Dockerfile missing launcher script for %s (expected %q)", name, expectedLauncher)
 		}

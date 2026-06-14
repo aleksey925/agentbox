@@ -47,26 +47,12 @@ RUN mkdir -p /etc/apt/keyrings && \
     echo 'eval "$(mise activate bash)"' >> /home/box/.bashrc && \
     echo 'mise ls --missing --quiet 2>/dev/null | grep -q . && mise install' >> /home/box/.bashrc
 
-USER box
+ENV DISABLE_AUTOUPDATER=1
 
-# pre-create directories so volumes inherit correct ownership
-RUN mkdir -p /home/box/.local/share/mise \
-             /home/box/.local/state/mise \
-             /home/box/.cache/mise \
-             /home/box/.cache/opencode \
-             /home/box/go \
-             /home/box/.cache/uv
-
-WORKDIR /home/box
-
-# ai agent launchers. agentbox-launch reads per-agent flags live from the mounted
-# flags file (kept out of the image by design - see CLAUDE.md "Live, not
-# baked"); xargs splits the flag string shell-style (honoring quotes) without
-# evaluating it, so a flags line cannot inject commands; printf (not a heredoc)
-# keeps the build frontend-agnostic.
-ENV PATH="${PATH}:/home/box/.local/bin"
-RUN mkdir -p /home/box/.local/bin && \
-    L=/home/box/.local/bin/agentbox-launch && \
+# ai agent launchers, in root-owned /usr/local/bin so Claude Code's self-update
+# can't clobber the wrapper - see CLAUDE.md "Live, not baked". xargs splits the
+# flags line shell-style without evaluating it, so it cannot inject commands.
+RUN L=/usr/local/bin/agentbox-launch && \
     printf '#!/bin/bash\n' > "$L" && \
     printf 'harness="$1"; binary="$2"; shift 2\n' >> "$L" && \
     printf 'flags_file="/opt/agentbox/flags/agent-flags"\n' >> "$L" && \
@@ -79,24 +65,38 @@ RUN mkdir -p /home/box/.local/bin && \
     printf 'fi\n' >> "$L" && \
     printf 'version=$(cat "/opt/agentbox/bin/${harness}/current" 2>/dev/null)\n' >> "$L" && \
     printf 'exec "/opt/agentbox/bin/${harness}/${version}/${binary}" "${extra[@]}" "$@"\n' >> "$L" && \
-    chmod +x /home/box/.local/bin/agentbox-launch && \
-    printf '#!/bin/bash\nexec /home/box/.local/bin/agentbox-launch claude claude "$@"\n' \
-        > /home/box/.local/bin/claude && \
-    printf '#!/bin/bash\nexec /home/box/.local/bin/agentbox-launch copilot copilot "$@"\n' \
-        > /home/box/.local/bin/copilot && \
-    printf '#!/bin/bash\nexec /home/box/.local/bin/agentbox-launch codex codex "$@"\n' \
-        > /home/box/.local/bin/codex && \
-    printf '#!/bin/bash\nexec /home/box/.local/bin/agentbox-launch cursor cursor-agent "$@"\n' \
-        > /home/box/.local/bin/cursor && \
-    printf '#!/bin/bash\nexec /home/box/.local/bin/agentbox-launch opencode opencode "$@"\n' \
-        > /home/box/.local/bin/opencode && \
-    printf '#!/bin/bash\nexec /home/box/.local/bin/agentbox-launch ralphex ralphex "$@"\n' \
-        > /home/box/.local/bin/ralphex && \
-    chmod +x /home/box/.local/bin/claude \
-             /home/box/.local/bin/copilot \
-             /home/box/.local/bin/codex \
-             /home/box/.local/bin/cursor \
-             /home/box/.local/bin/opencode \
-             /home/box/.local/bin/ralphex
+    chmod +x /usr/local/bin/agentbox-launch && \
+    printf '#!/bin/bash\nexec /usr/local/bin/agentbox-launch claude claude "$@"\n' \
+        > /usr/local/bin/claude && \
+    printf '#!/bin/bash\nexec /usr/local/bin/agentbox-launch copilot copilot "$@"\n' \
+        > /usr/local/bin/copilot && \
+    printf '#!/bin/bash\nexec /usr/local/bin/agentbox-launch codex codex "$@"\n' \
+        > /usr/local/bin/codex && \
+    printf '#!/bin/bash\nexec /usr/local/bin/agentbox-launch cursor cursor-agent "$@"\n' \
+        > /usr/local/bin/cursor && \
+    printf '#!/bin/bash\nexec /usr/local/bin/agentbox-launch opencode opencode "$@"\n' \
+        > /usr/local/bin/opencode && \
+    printf '#!/bin/bash\nexec /usr/local/bin/agentbox-launch ralphex ralphex "$@"\n' \
+        > /usr/local/bin/ralphex && \
+    chmod +x /usr/local/bin/claude \
+             /usr/local/bin/copilot \
+             /usr/local/bin/codex \
+             /usr/local/bin/cursor \
+             /usr/local/bin/opencode \
+             /usr/local/bin/ralphex
+
+USER box
+
+# pre-create directories so volumes inherit correct ownership
+RUN mkdir -p /home/box/.local/share/mise \
+             /home/box/.local/state/mise \
+             /home/box/.cache/mise \
+             /home/box/.cache/opencode \
+             /home/box/go \
+             /home/box/.cache/uv
+
+ENV PATH="${PATH}:/home/box/.local/bin"
+
+WORKDIR /home/box
 
 ENTRYPOINT ["/bin/bash"]

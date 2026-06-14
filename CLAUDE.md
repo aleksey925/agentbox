@@ -176,7 +176,12 @@ This covers two cases:
 - Agent launch flags live in a global, user-owned file read on each launch. No flags are
   imposed by default, so a cautious user is never surprised by a permissive mode they did
   not pick. The format is line-based (one agent per line, `*` for any agent) rather than
-  YAML, because the launcher is plain bash with no YAML parser.
+  YAML, because the launcher is plain bash with no YAML parser. The per-agent wrapper
+  scripts that read this file are installed in root-owned `/usr/local/bin`, not the user's
+  `~/.local/bin`: Claude Code's self-update points `~/.local/bin/claude` at its own binary
+  and would clobber a wrapper there, silently dropping the flags. `/usr/local/bin` precedes
+  `~/.local/bin` in PATH and the sandbox user cannot write it without sudo, so the wrapper
+  wins and survives a self-update; `DISABLE_AUTOUPDATER=1` stops the update churn on top.
 - The project is mounted at the same absolute path it has on the host, not a fixed
   location. Agents key per-project state by working directory (e.g. Claude Code stores
   `--resume` history under a path derived from the cwd), so mirroring the host path gives
