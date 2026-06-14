@@ -94,6 +94,14 @@ func commandTree() []Command {
 			},
 		},
 		{
+			Name:        "upgrade",
+			Description: "Migrate projects to this version's sandbox config",
+			Handler:     (*App).cmdUpgrade,
+			Flags: []Flag{
+				{"--depth", "Directory levels to scan under a given path"},
+			},
+		},
+		{
 			Name:        "clean",
 			Description: "Remove sandbox files from project",
 			Handler:     (*App).cmdClean,
@@ -326,6 +334,15 @@ func RunFlagsWithDesc() []Subcommand {
 // PsFlagsWithDesc returns ps flags with descriptions.
 func PsFlagsWithDesc() []Subcommand {
 	cmd := FindCommand(commandTree(), "ps")
+	if cmd == nil {
+		return nil
+	}
+	return flagsToSubcommands(cmd.Flags)
+}
+
+// UpgradeFlagsWithDesc returns upgrade flags with descriptions.
+func UpgradeFlagsWithDesc() []Subcommand {
+	cmd := FindCommand(commandTree(), "upgrade")
 	if cmd == nil {
 		return nil
 	}

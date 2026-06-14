@@ -2,6 +2,7 @@ package skeleton
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -35,28 +36,24 @@ func TestCreateSkeleton(t *testing.T) {
 		t.Fatalf("CreateSkeleton error: %v", err)
 	}
 
-	// check core.v1.yml exists (flat structure)
-	coreFile := filepath.Join(paths.SkeletonDir, "core.v1.yml")
+	coreFile := filepath.Join(paths.SkeletonDir, "core.v2.yml")
 	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v1.yml not created")
+		t.Error("core.v2.yml not created")
 	}
 
-	// check go.v1.yml exists
-	goFile := filepath.Join(paths.SkeletonDir, "go.v1.yml")
+	goFile := filepath.Join(paths.SkeletonDir, "go.v2.yml")
 	if _, err := os.Stat(goFile); os.IsNotExist(err) {
-		t.Error("go.v1.yml not created")
+		t.Error("go.v2.yml not created")
 	}
 
-	// check python.v1.yml exists
-	pythonFile := filepath.Join(paths.SkeletonDir, "python.v1.yml")
+	pythonFile := filepath.Join(paths.SkeletonDir, "python.v2.yml")
 	if _, err := os.Stat(pythonFile); os.IsNotExist(err) {
-		t.Error("python.v1.yml not created")
+		t.Error("python.v2.yml not created")
 	}
 
-	// check Dockerfile.v1.agentbox exists
-	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v1.agentbox")
+	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v2.agentbox")
 	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
-		t.Error("Dockerfile.v1.agentbox not created")
+		t.Error("Dockerfile.v2.agentbox not created")
 	}
 
 	// check local.yml exists
@@ -79,22 +76,19 @@ func TestCreateSkeleton__no_presets(t *testing.T) {
 		t.Fatalf("CreateSkeleton error: %v", err)
 	}
 
-	// check core.v1.yml exists (always created)
-	coreFile := filepath.Join(paths.SkeletonDir, "core.v1.yml")
+	coreFile := filepath.Join(paths.SkeletonDir, "core.v2.yml")
 	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v1.yml not created")
+		t.Error("core.v2.yml not created")
 	}
 
-	// check local.yml exists
 	localFile := filepath.Join(paths.SkeletonDir, "local.yml")
 	if _, err := os.Stat(localFile); os.IsNotExist(err) {
 		t.Error("local.yml not created")
 	}
 
-	// check Dockerfile exists
-	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v1.agentbox")
+	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v2.agentbox")
 	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
-		t.Error("Dockerfile.v1.agentbox not created")
+		t.Error("Dockerfile.v2.agentbox not created")
 	}
 
 	// check only core + local.yml + Dockerfile (no preset files)
@@ -173,19 +167,16 @@ func TestCopyToProject(t *testing.T) {
 		t.Error(".agentbox dir not created")
 	}
 
-	// check core.v1.yml copied
-	coreFile := filepath.Join(agentboxDir, "core.v1.yml")
+	coreFile := filepath.Join(agentboxDir, "core.v2.yml")
 	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v1.yml not copied")
+		t.Error("core.v2.yml not copied")
 	}
 
-	// check Dockerfile.v1.agentbox copied (with version)
-	dockerFile := filepath.Join(agentboxDir, "Dockerfile.v1.agentbox")
+	dockerFile := filepath.Join(agentboxDir, "Dockerfile.v2.agentbox")
 	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
-		t.Error("Dockerfile.v1.agentbox not copied")
+		t.Error("Dockerfile.v2.agentbox not copied")
 	}
 
-	// check local.yml created
 	localFile := filepath.Join(agentboxDir, "local.yml")
 	if _, err := os.Stat(localFile); os.IsNotExist(err) {
 		t.Error("local.yml not created")
@@ -498,6 +489,64 @@ func TestProjectInitialized(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckVersion(t *testing.T) {
+	core, err := GetCoreTemplate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	df, err := GetEmbeddedDockerfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	goPreset, err := GetPresetTemplate("go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cv, dv, gv := core.Version, df.Version, goPreset.Version
+
+	tests := []struct {
+		name  string
+		files []string
+		want  VersionStatus
+	}{
+		{name: "current", files: []string{coreName(cv), dockerName(dv), "local.yml"}, want: VersionCurrent},
+		{name: "outdated_core", files: []string{coreName(cv - 1), dockerName(dv)}, want: VersionOutdated},
+		{name: "ahead_core", files: []string{coreName(cv + 1), dockerName(dv)}, want: VersionAhead},
+		{name: "outdated_preset", files: []string{coreName(cv), dockerName(dv), presetName("go", gv-1)}, want: VersionOutdated},
+		{name: "absent_preset_ignored", files: []string{coreName(cv), dockerName(dv)}, want: VersionCurrent},
+		{name: "ahead_preset", files: []string{coreName(cv), dockerName(dv), presetName("go", gv+1)}, want: VersionAhead},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// arrange
+			dir := t.TempDir()
+			for _, f := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			// act
+			got, err := CheckVersion(dir)
+
+			// assert
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("CheckVersion(%v) = %d, want %d", tt.files, got, tt.want)
+			}
+		})
+	}
+}
+
+func coreName(v int) string   { return fmt.Sprintf("core.v%d.yml", v) }
+func dockerName(v int) string { return fmt.Sprintf("Dockerfile.v%d.agentbox", v) }
+func presetName(name string, v int) string {
+	return fmt.Sprintf("%s.v%d.yml", name, v)
 }
 
 func TestProjectInitialized__nonexistent_dir(t *testing.T) {

@@ -277,6 +277,93 @@ func ProjectInitialized(agentboxDir string) bool {
 	return hasCore && hasDockerfile
 }
 
+// VersionStatus reports how a flat skeleton-structured directory (a project's
+// .agentbox/ or the global skeleton) compares to the versions this binary ships.
+type VersionStatus int
+
+const (
+	// VersionCurrent means every managed file present matches the embedded version.
+	VersionCurrent VersionStatus = iota
+	// VersionOutdated means some file is older than embedded - run upgrade.
+	VersionOutdated
+	// VersionAhead means some file is newer than embedded - the binary is older.
+	VersionAhead
+)
+
+// managedTemplates returns every embedded versioned template (core, presets,
+// Dockerfile) - the files whose version the gate tracks. local.yml is excluded:
+// it is user-owned and carries no version.
+func managedTemplates() ([]Template, error) {
+	compose, err := GetEmbeddedComposeTemplates()
+	if err != nil {
+		return nil, err
+	}
+	dockerfile, err := GetEmbeddedDockerfile()
+	if err != nil {
+		return nil, err
+	}
+	return append(compose, dockerfile), nil
+}
+
+// diskVersions maps each versioned managed file in dir to its version, taking the
+// highest when duplicates of a name coexist. Unversioned files and local.yml are
+// skipped.
+func diskVersions(dir string) (map[string]int, error) {
+	versions := make(map[string]int)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return versions, nil
+		}
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name, v := ParseTemplateName(e.Name())
+		if v <= 0 {
+			continue
+		}
+		if cur, ok := versions[name]; !ok || v > cur {
+			versions[name] = v
+		}
+	}
+	return versions, nil
+}
+
+// CheckVersion compares each managed file present in dir against the embedded
+// template of the same name. Mandatory files (core, Dockerfile) and any preset
+// present are checked; presets absent from dir are ignored, so a preset bump
+// never flags a project that does not use it. An outdated file wins over an
+// ahead one, since upgrade is the actionable outcome.
+func CheckVersion(dir string) (VersionStatus, error) {
+	templates, err := managedTemplates()
+	if err != nil {
+		return VersionCurrent, err
+	}
+	onDisk, err := diskVersions(dir)
+	if err != nil {
+		return VersionCurrent, err
+	}
+
+	status := VersionCurrent
+	for _, t := range templates {
+		diskV, present := onDisk[t.Name]
+		if !present {
+			continue
+		}
+		switch {
+		case diskV < t.Version:
+			return VersionOutdated, nil
+		case diskV > t.Version:
+			status = VersionAhead
+		}
+	}
+	return status, nil
+}
+
 // HasRealFiles checks if directory contains any non-system files.
 func HasRealFiles(dir string) bool {
 	entries, err := os.ReadDir(dir)

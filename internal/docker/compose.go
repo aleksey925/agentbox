@@ -23,6 +23,32 @@ var SharedVolumes = []string{
 	"agentbox-uv-cache",
 }
 
+// sandboxImage is the tag every project builds its sandbox as; it must match the
+// "image:" field in the core compose template. The tag is shared, so removing it
+// forces the next "compose run" to rebuild from the current Dockerfile.
+const sandboxImage = "agentbox:local"
+
+// RemoveSandboxImage drops the shared sandbox image so the next run rebuilds it
+// from the current config. A missing image is not an error.
+func RemoveSandboxImage() error {
+	ctx := context.Background()
+	cmd := exec.CommandContext(ctx, "docker", "image", "rm", "-f", sandboxImage)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if strings.Contains(msg, "No such image") {
+			return nil
+		}
+		// docker missing entirely leaves stderr empty; surface the exec error.
+		if msg == "" {
+			msg = err.Error()
+		}
+		return fmt.Errorf("remove image %s: %s", sandboxImage, msg)
+	}
+	return nil
+}
+
 // EnsureSharedVolumes creates shared volumes if they don't exist.
 func EnsureSharedVolumes() error {
 	for _, vol := range SharedVolumes {

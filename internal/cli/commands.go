@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -236,12 +237,32 @@ func (a *App) doInit() int {
 	return 0
 }
 
-// ensureSkeletonReady creates skeleton if missing.
+// ensureSkeletonReady creates the skeleton if missing, and refuses to seed a
+// project from a stale one: init must not produce a project the run gate would
+// immediately reject.
 func (a *App) ensureSkeletonReady(paths *config.Paths, manager *skeleton.Manager) int {
 	if !paths.SkeletonExists() {
 		return a.createInitialSkeleton(paths, manager)
 	}
-	return 0
+
+	status, err := skeleton.CheckVersion(paths.SkeletonDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return exitError
+	}
+	switch status {
+	case skeleton.VersionCurrent:
+		return exitOK
+	case skeleton.VersionOutdated:
+		fmt.Fprintln(os.Stderr, "Error: the global skeleton is older than this agentbox.")
+		fmt.Fprintln(os.Stderr, "Run 'agentbox init skeleton --force' to refresh it, then re-run init.")
+		return exitError
+	case skeleton.VersionAhead:
+		fmt.Fprintln(os.Stderr, "Error: the global skeleton is newer than this agentbox.")
+		fmt.Fprintln(os.Stderr, "Update agentbox with 'agentbox self update'.")
+		return exitError
+	}
+	return exitOK
 }
 
 func (a *App) createInitialSkeleton(paths *config.Paths, manager *skeleton.Manager) int {
@@ -547,6 +568,8 @@ func (a *App) ensureProjectReady(cwd string) int {
 			return code
 		}
 		fmt.Println()
+	} else if code := checkConfigVersion(agentboxDir); code != exitOK {
+		return code
 	}
 
 	paths, err := a.Paths()
@@ -575,6 +598,32 @@ func (a *App) ensureProjectReady(cwd string) int {
 	}
 
 	return 0
+}
+
+// checkConfigVersion fails loudly when a project's sandbox config does not match
+// the schema this binary ships. Migration is explicit (CLAUDE.md "Updates are
+// explicit"): the new binary cannot run an old compose, so it refuses and points
+// at 'agentbox upgrade' instead of silently mounting a mismatched sandbox.
+func checkConfigVersion(agentboxDir string) int {
+	status, err := skeleton.CheckVersion(agentboxDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return exitError
+	}
+
+	switch status {
+	case skeleton.VersionCurrent:
+		return exitOK
+	case skeleton.VersionOutdated:
+		fmt.Fprintln(os.Stderr, "Error: this project's sandbox config is older than this agentbox.")
+		fmt.Fprintln(os.Stderr, "Run 'agentbox upgrade' to migrate it.")
+		return exitError
+	case skeleton.VersionAhead:
+		fmt.Fprintln(os.Stderr, "Error: this project's sandbox config is newer than this agentbox.")
+		fmt.Fprintln(os.Stderr, "Update agentbox with 'agentbox self update'.")
+		return exitError
+	}
+	return exitOK
 }
 
 func (a *App) cmdAgentStatus(args []string) int {
@@ -964,6 +1013,225 @@ This command removes the .agentbox/ directory from the current project.
 	fmt.Println("Removed: .agentbox/")
 	fmt.Println("Cleaned successfully")
 	return 0
+}
+
+var upgradeAllowedFlags = []string{"--depth"}
+
+const defaultScanDepth = 1
+
+func (a *App) cmdUpgrade(args []string) int {
+	if hasHelpFlag(args) {
+		fmt.Printf(`%s
+
+Usage:
+  agentbox upgrade [path] [flags]
+
+Flags:
+  --depth <n>                       Directory levels to scan under <path> (default %d)
+
+Regenerates the global skeleton at this agentbox version (keeping your enabled
+presets) and reseeds project configs (.agentbox/, local.yml preserved).
+
+Without a path, only the current project is upgraded and its image is rebuilt.
+With a path, agentbox scans it for projects and reseeds each, then drops the
+shared sandbox image so every project rebuilds on its next 'agentbox run'.
+
+Examples:
+  agentbox upgrade                  Upgrade the current project
+  agentbox upgrade ~/CodeProjects   Upgrade every project found there
+  agentbox upgrade ~/Code --depth 2 Scan two levels deep
+`, CommandDesc("upgrade"), defaultScanDepth)
+		return 0
+	}
+
+	if code := RejectUnknownFlagsWithAllowed(args, upgradeAllowedFlags); code != 0 {
+		return code
+	}
+
+	scanPath, depth, code := parseUpgradeArgs(args)
+	if code != exitOK {
+		return code
+	}
+
+	paths, err := a.Paths()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+	if err := paths.EnsureDirs(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+
+	// upgrade derives presets from the existing skeleton; regenerating from a
+	// missing one would silently drop every project's presets on reseed.
+	if !paths.SkeletonExists() {
+		fmt.Fprintln(os.Stderr, "Error: no skeleton found. Run 'agentbox init skeleton' first.")
+		return exitError
+	}
+
+	manager := skeleton.NewManager(paths)
+	if scanPath == "" {
+		return a.upgradeCurrentProject(manager)
+	}
+	return a.upgradeScan(manager, scanPath, depth)
+}
+
+// parseUpgradeArgs extracts the optional scan path and --depth value.
+func parseUpgradeArgs(args []string) (path string, depth, code int) {
+	depth = defaultScanDepth
+	depthGiven := false
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--depth":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "Error: --depth requires a value")
+				return "", 0, exitError
+			}
+			d, err := strconv.Atoi(args[i+1])
+			if err != nil || d < 1 {
+				fmt.Fprintf(os.Stderr, "Error: invalid --depth %q (want a positive integer)\n", args[i+1])
+				return "", 0, exitError
+			}
+			depth, depthGiven = d, true
+			i++
+		case strings.HasPrefix(args[i], "-"):
+			// already validated by RejectUnknownFlagsWithAllowed
+		case path != "":
+			fmt.Fprintln(os.Stderr, "Error: upgrade takes at most one path")
+			return "", 0, exitError
+		default:
+			path = args[i]
+		}
+	}
+	if depthGiven && path == "" {
+		fmt.Fprintln(os.Stderr, "Error: --depth applies only when scanning a path")
+		return "", 0, exitError
+	}
+	return path, depth, exitOK
+}
+
+// upgradeCurrentProject reseeds the cwd project and rebuilds its image so it is
+// immediately runnable, without disturbing other projects' images.
+func (a *App) upgradeCurrentProject(manager *skeleton.Manager) int {
+	cwd, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+		return 1
+	}
+	if !skeleton.ProjectInitialized(filepath.Join(cwd, ".agentbox")) {
+		fmt.Fprintln(os.Stderr, "Error: current directory is not an initialized agentbox project.")
+		fmt.Fprintln(os.Stderr, "Run 'agentbox init' here, or pass a path: 'agentbox upgrade <path>'.")
+		return exitError
+	}
+
+	if code := regenerateSkeleton(manager); code != exitOK {
+		return code
+	}
+	if _, err := manager.CopyToProject(cwd); err != nil {
+		fmt.Fprintf(os.Stderr, "Error reseeding project: %v\n", err)
+		return 1
+	}
+	fmt.Printf("Reseeded %s\n", cwd)
+
+	fmt.Println("Building image...")
+	if err := buildProjectImage(cwd); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: build failed: %v\n", err)
+		fmt.Println("Run 'agentbox run --build' to retry.")
+		return 0
+	}
+
+	fmt.Println("\nDone. Run 'agentbox run' to start.")
+	return 0
+}
+
+// upgradeScan reseeds every project found under root and drops the shared image
+// so each rebuilds lazily on its next run.
+func (a *App) upgradeScan(manager *skeleton.Manager, root string, depth int) int {
+	if fi, err := os.Stat(root); err != nil || !fi.IsDir() {
+		fmt.Fprintf(os.Stderr, "Error: %s is not a directory\n", root)
+		return exitError
+	}
+
+	if code := regenerateSkeleton(manager); code != exitOK {
+		return code
+	}
+
+	projects := scanProjects(root, depth)
+	if len(projects) == 0 {
+		fmt.Printf("No agentbox projects found under %s (depth %d).\n", root, depth)
+	}
+	for _, dir := range projects {
+		if _, err := manager.CopyToProject(dir); err != nil {
+			fmt.Fprintf(os.Stderr, "  %s: %v\n", dir, err)
+			continue
+		}
+		fmt.Printf("  reseeded %s\n", dir)
+	}
+
+	if err := docker.RemoveSandboxImage(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not drop sandbox image: %v\n", err)
+	}
+
+	fmt.Println("\nDone. Each project rebuilds on its next 'agentbox run'.")
+	return 0
+}
+
+func regenerateSkeleton(manager *skeleton.Manager) int {
+	presets, err := manager.GetEnabledPresets()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error reading skeleton presets: %v\n", err)
+		return exitError
+	}
+	if err := manager.CreateSkeleton(presets); err != nil {
+		fmt.Fprintf(os.Stderr, "Error regenerating skeleton: %v\n", err)
+		return exitError
+	}
+	fmt.Println("Regenerated ~/.agentbox/skeleton/")
+	return exitOK
+}
+
+func buildProjectImage(cwd string) error {
+	if err := docker.EnsureSharedVolumes(); err != nil {
+		return fmt.Errorf("ensure shared volumes: %w", err)
+	}
+	composeFiles, err := docker.DiscoverComposeFiles(cwd)
+	if err != nil {
+		return fmt.Errorf("discover compose files: %w", err)
+	}
+	if err := docker.Build(cwd, composeFiles, false); err != nil {
+		return fmt.Errorf("build image: %w", err)
+	}
+	return nil
+}
+
+// scanProjects walks root up to maxDepth levels deep and returns directories that
+// are initialized agentbox projects. It does not descend into a found project,
+// follow symlinks, or enter hidden directories.
+func scanProjects(root string, maxDepth int) []string {
+	var projects []string
+	var walk func(dir string, depth int)
+	walk = func(dir string, depth int) {
+		if skeleton.ProjectInitialized(filepath.Join(dir, ".agentbox")) {
+			projects = append(projects, dir)
+			return
+		}
+		if depth >= maxDepth {
+			return
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return
+		}
+		for _, e := range entries {
+			if !e.IsDir() || e.Type()&os.ModeSymlink != 0 || strings.HasPrefix(e.Name(), ".") {
+				continue
+			}
+			walk(filepath.Join(dir, e.Name()), depth+1)
+		}
+	}
+	walk(root, 0)
+	return projects
 }
 
 func createMiseTomlIfNotExists(projectDir string) error {

@@ -48,7 +48,7 @@ consistent if every command follows the same rules.
 The global skeleton at `~/.agentbox/skeleton/` is the source of all static sandbox
 configuration. A project's `.agentbox/` directory is a plain copy of it - never a merge
 or an overlay. Files sit flat with no nested directories and carry a version in their
-name (e.g. `core.v1.yml`) so a new version shows up as a new file the user can diff
+name (e.g. `core.v2.yml`) so a new version shows up as a new file the user can diff
 against. Updates are explicit: nothing auto-updates, the user reinitializes when they
 choose.
 
@@ -61,6 +61,53 @@ overwritten on reinit.
 Deviation: configuration that depends on per-launch state is generated live rather than
 copied from the skeleton - see "The agent cannot rewrite its own sandbox" and "Live, not
 baked". The skeleton stays the source for everything static.
+
+### Config schema version and upgrade
+
+Each managed file carries a version in its name (`core.vN.yml`, `go.vN.yml`,
+`Dockerfile.vN.agentbox`). The bump rule is delivery, not pure compatibility:
+**bump a file's version whenever its change must reach the user** - a breaking
+change to the sandbox contract, or a backward-compatible one we still want
+adopted (a security hardening). A purely cosmetic edit keeps the same name and
+no version. The binary embeds exactly one set of versions, so a project's
+`.agentbox/` and the binary are one coupled unit: the binary cannot run an
+older compose, because runtime state it injects (the live project path, the
+git-protection overlay) has no meaning in the old layout.
+
+Detection is per-file: `run` compares every managed file the project has
+against the embedded version. Mandatory files (core, Dockerfile) and any preset
+present are checked; a preset the project lacks is ignored, so a preset bump
+never blocks a project that does not use it. When anything is older, `run`
+refuses to start and points at `agentbox upgrade` - a hard block, not a
+warning, so a mismatched sandbox is never mounted silently. The gate compares
+against the binary, not the skeleton, so a freshly regenerated skeleton never
+masks a stale project.
+
+`upgrade` is the single delivery channel - it reseeds from the current
+templates, so it carries both breaking and non-breaking changes; only the
+gate's force differs. Without a path it upgrades the current project and
+rebuilds its image. With a path it scans that directory (`--depth`, default 1)
+for projects, reseeds each, and drops the shared `agentbox:local` image so
+every project rebuilds on its next run. There is no registry and no
+auto-update: non-breaking changes reach a project only when the user runs
+`upgrade`; breaking ones arrive the same way but the gate makes running it
+unavoidable. `init` applies the same gate to the global skeleton - it refuses
+to seed a project from a stale skeleton and points at `init skeleton --force`,
+rather than mutating global state under the hood.
+
+Two deliberate consequences. Presets are an install-wide choice, not
+per-project (the skeleton holds one set), so `upgrade` aligns every project to
+the current global set - it can add or drop a preset from a project. And the
+shared `agentbox:local` tag is safe only because the image bakes no project
+content; keep image builds project-independent or the shared tag breaks.
+
+Why: the version turns an unavoidable forced migration into an explicit,
+auditable one. Staying on an old schema means pinning the old binary (the two
+move together); deviating from the current schema means `local.yml` overrides,
+which survive upgrades - not freezing a version. For a security tool, keeping
+the weaker old jail runnable would be a misfeature, so the forced step is
+intended; the version only makes it safe and visible. The one irreducible
+discipline is judging whether a change must be delivered - when unsure, bump.
 
 ### The agent cannot rewrite its own sandbox
 

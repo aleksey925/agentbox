@@ -38,7 +38,7 @@ func TestGenerateBashCompletion(t *testing.T) {
 	expectedSubstrings := []string{
 		"__agentbox()",
 		"complete -F __agentbox agentbox",
-		"commands=\"init run ps agent self clean completion help version\"",
+		"commands=\"init run ps agent self upgrade clean completion help version\"",
 	}
 
 	for _, expected := range expectedSubstrings {
@@ -76,6 +76,19 @@ func TestGenerateZshCompletion(t *testing.T) {
 		if !strings.Contains(result, expected) {
 			t.Errorf("zsh completion missing: %s", expected)
 		}
+	}
+}
+
+func TestFormatSubcommandsZsh__escapes_single_quotes(t *testing.T) {
+	// arrange
+	subs := []Subcommand{{Name: "upgrade", Description: "this version's config"}}
+
+	// act
+	result := formatSubcommandsZsh(subs)
+
+	// assert
+	if result != `'upgrade:this version'\''s config'` {
+		t.Errorf("unexpected escaping: %s", result)
 	}
 }
 
