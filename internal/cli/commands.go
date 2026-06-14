@@ -1096,7 +1096,8 @@ func parseUpgradeArgs(args []string) (path string, depth, code int) {
 			depth, depthGiven = d, true
 			i++
 		case strings.HasPrefix(args[i], "-"):
-			// already validated by RejectUnknownFlagsWithAllowed
+			// --depth is consumed above; any other flag is rejected upstream, so a
+			// flag-shaped token reaching here is never a path - skip it.
 		case path != "":
 			fmt.Fprintln(os.Stderr, "Error: upgrade takes at most one path")
 			return "", 0, exitError

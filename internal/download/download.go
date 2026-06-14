@@ -268,11 +268,13 @@ func DownloadAndExtractTarGz(
 
 			if _, err := io.Copy(out, tr); err != nil {
 				out.Close()
+				os.Remove(destPath)
 				return fmt.Errorf("copy to file: %w", err)
 			}
 			out.Close()
 
 			if err := os.Chmod(destPath, 0o755); err != nil {
+				os.Remove(destPath)
 				return fmt.Errorf("chmod: %w", err)
 			}
 			return nil
@@ -384,6 +386,7 @@ func writeTarFile(tr *tar.Reader, hdr *tar.Header, destPath string) error {
 
 	if _, err := io.Copy(out, tr); err != nil {
 		out.Close()
+		os.Remove(destPath)
 		return fmt.Errorf("copy to file: %w", err)
 	}
 	out.Close()
@@ -392,6 +395,7 @@ func writeTarFile(tr *tar.Reader, hdr *tar.Header, destPath string) error {
 	// privileged regardless of what the archive declares.
 	mode := os.FileMode(uint32(hdr.Mode) & 0o777) //nolint:gosec // value bounded by mask
 	if err := os.Chmod(destPath, mode); err != nil {
+		os.Remove(destPath)
 		return fmt.Errorf("chmod: %w", err)
 	}
 	return nil
