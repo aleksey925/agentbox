@@ -68,7 +68,7 @@ func containerProjectPath(hostProjectDir string) string {
 }
 
 // buildRunEnv builds the environment for docker compose invocations, exporting
-// the per-project mount path consumed by ${AGENTBOX_PROJECT_PATH} in core.v1.yml.
+// the per-project mount path consumed by ${AGENTBOX_PROJECT_PATH} in the core compose file.
 func buildRunEnv(projectDir string) []string {
 	env := slices.DeleteFunc(os.Environ(), func(e string) bool {
 		return strings.HasPrefix(e, "AGENTBOX_PROJECT_PATH=")

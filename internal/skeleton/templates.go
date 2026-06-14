@@ -19,7 +19,7 @@ type Template struct {
 	Name    string // base name without version (e.g., "core", "go", "python")
 	Version int    // parsed from filename, 0 if no version, -1 for special files like local.yml
 	Content []byte
-	// original filename as stored in templates/ (e.g., "core.v1.yml")
+	// original filename as stored in templates/ (e.g., "core.vN.yml")
 	Filename string
 }
 

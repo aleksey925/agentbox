@@ -201,7 +201,7 @@ func (m *Manager) CopyToProject(projectDir string) ([]string, error) {
 			continue
 		}
 
-		// skip symlinks: a skeleton entry pointing elsewhere (e.g. core.v1.yml ->
+		// skip symlinks: a skeleton entry pointing elsewhere (e.g. core.vN.yml ->
 		// ~/.ssh/id_rsa) would otherwise copy the target's contents into the project.
 		if e.Type()&os.ModeSymlink != 0 {
 			continue
