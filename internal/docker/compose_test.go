@@ -294,6 +294,38 @@ func TestDiscoverComposeFiles__ignores_non_yml_files(t *testing.T) {
 	}
 }
 
+func TestDiscoverComposeFiles__ignores_unversioned_yml(t *testing.T) {
+	// arrange
+	tmpDir := t.TempDir()
+	agentboxDir := filepath.Join(tmpDir, ".agentbox")
+	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"core.v1.yml", "local.yml"} {
+		if err := os.WriteFile(filepath.Join(agentboxDir, name), []byte(""), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(agentboxDir, "debug.yml"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	files, err := DiscoverComposeFiles(tmpDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := []string{
+		filepath.Join(agentboxDir, "core.v1.yml"),
+		filepath.Join(agentboxDir, "local.yml"),
+	}
+	if !slices.Equal(files, expected) {
+		t.Errorf("files = %v, want %v", files, expected)
+	}
+}
+
 func TestBuildRunArgs(t *testing.T) {
 	// arrange
 	projectDir := "/home/user/myproject"

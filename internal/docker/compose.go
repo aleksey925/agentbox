@@ -197,7 +197,7 @@ func DiscoverComposeFiles(projectDir string) ([]string, error) {
 	hasCore := false
 	for _, e := range entries {
 		name := e.Name()
-		if !strings.HasSuffix(name, ".yml") && !strings.HasSuffix(name, ".yaml") {
+		if !skeleton.IsManagedComposeFile(name) {
 			continue
 		}
 		files = append(files, filepath.Join(agentboxDir, name))

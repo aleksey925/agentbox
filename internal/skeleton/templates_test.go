@@ -37,6 +37,35 @@ func TestParseTemplateName(t *testing.T) {
 	}
 }
 
+func TestIsManagedComposeFile(t *testing.T) {
+	tests := []struct {
+		filename string
+		expected bool
+	}{
+		{"core.v2.yml", true},
+		{"go.v1.yml", true},
+		{"rust.v1.yml", true},
+		{"core.v2.yaml", true},
+		{"local.yml", true},
+		{"debug.yml", false},
+		{"notes.yaml", false},
+		{"Dockerfile.v2.agentbox", false},
+		{"README.md", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.filename, func(t *testing.T) {
+			// act
+			result := IsManagedComposeFile(tt.filename)
+
+			// assert
+			if result != tt.expected {
+				t.Errorf("IsManagedComposeFile(%q) = %v, want %v", tt.filename, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestFormatTemplateFilename(t *testing.T) {
 	tests := []struct {
 		name     string

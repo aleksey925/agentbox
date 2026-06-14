@@ -53,6 +53,17 @@ func ParseTemplateName(filename string) (name string, version int) {
 	return name, version
 }
 
+// IsManagedComposeFile reports whether a .agentbox/ filename is a compose file
+// agentbox feeds to docker compose: a versioned skeleton file (name.vN.yml) or
+// local.yml.
+func IsManagedComposeFile(filename string) bool {
+	if !strings.HasSuffix(filename, ".yml") && !strings.HasSuffix(filename, ".yaml") {
+		return false
+	}
+	_, version := ParseTemplateName(filename)
+	return version != 0
+}
+
 // FormatTemplateFilename creates a filename from name, version, and extension.
 func FormatTemplateFilename(name string, version int, ext string) string {
 	if version <= 0 {
