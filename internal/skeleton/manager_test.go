@@ -2,6 +2,7 @@ package skeleton
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -35,28 +36,24 @@ func TestCreateSkeleton(t *testing.T) {
 		t.Fatalf("CreateSkeleton error: %v", err)
 	}
 
-	// check core.v1.yml exists (flat structure)
-	coreFile := filepath.Join(paths.SkeletonDir, "core.v1.yml")
+	coreFile := filepath.Join(paths.SkeletonDir, "core.v2.yml")
 	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v1.yml not created")
+		t.Error("core.v2.yml not created")
 	}
 
-	// check go.v1.yml exists
-	goFile := filepath.Join(paths.SkeletonDir, "go.v1.yml")
+	goFile := filepath.Join(paths.SkeletonDir, "go.v2.yml")
 	if _, err := os.Stat(goFile); os.IsNotExist(err) {
-		t.Error("go.v1.yml not created")
+		t.Error("go.v2.yml not created")
 	}
 
-	// check python.v1.yml exists
-	pythonFile := filepath.Join(paths.SkeletonDir, "python.v1.yml")
+	pythonFile := filepath.Join(paths.SkeletonDir, "python.v2.yml")
 	if _, err := os.Stat(pythonFile); os.IsNotExist(err) {
-		t.Error("python.v1.yml not created")
+		t.Error("python.v2.yml not created")
 	}
 
-	// check Dockerfile.v1.agentbox exists
-	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v1.agentbox")
+	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v2.agentbox")
 	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
-		t.Error("Dockerfile.v1.agentbox not created")
+		t.Error("Dockerfile.v2.agentbox not created")
 	}
 
 	// check local.yml exists
@@ -79,22 +76,19 @@ func TestCreateSkeleton__no_presets(t *testing.T) {
 		t.Fatalf("CreateSkeleton error: %v", err)
 	}
 
-	// check core.v1.yml exists (always created)
-	coreFile := filepath.Join(paths.SkeletonDir, "core.v1.yml")
+	coreFile := filepath.Join(paths.SkeletonDir, "core.v2.yml")
 	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v1.yml not created")
+		t.Error("core.v2.yml not created")
 	}
 
-	// check local.yml exists
 	localFile := filepath.Join(paths.SkeletonDir, "local.yml")
 	if _, err := os.Stat(localFile); os.IsNotExist(err) {
 		t.Error("local.yml not created")
 	}
 
-	// check Dockerfile exists
-	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v1.agentbox")
+	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v2.agentbox")
 	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
-		t.Error("Dockerfile.v1.agentbox not created")
+		t.Error("Dockerfile.v2.agentbox not created")
 	}
 
 	// check only core + local.yml + Dockerfile (no preset files)
@@ -173,19 +167,16 @@ func TestCopyToProject(t *testing.T) {
 		t.Error(".agentbox dir not created")
 	}
 
-	// check core.v1.yml copied
-	coreFile := filepath.Join(agentboxDir, "core.v1.yml")
+	coreFile := filepath.Join(agentboxDir, "core.v2.yml")
 	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v1.yml not copied")
+		t.Error("core.v2.yml not copied")
 	}
 
-	// check Dockerfile.v1.agentbox copied (with version)
-	dockerFile := filepath.Join(agentboxDir, "Dockerfile.v1.agentbox")
+	dockerFile := filepath.Join(agentboxDir, "Dockerfile.v2.agentbox")
 	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
-		t.Error("Dockerfile.v1.agentbox not copied")
+		t.Error("Dockerfile.v2.agentbox not copied")
 	}
 
-	// check local.yml created
 	localFile := filepath.Join(agentboxDir, "local.yml")
 	if _, err := os.Stat(localFile); os.IsNotExist(err) {
 		t.Error("local.yml not created")
@@ -340,6 +331,72 @@ func TestCopyToProject__skips_system_files(t *testing.T) {
 	}
 }
 
+func TestCopyToProject__skips_symlinks(t *testing.T) {
+	// arrange - a symlink planted in the skeleton must not have its target copied
+	// into the project (e.g. core.v1.yml -> ~/.ssh/id_rsa).
+	paths := createTestPaths(t)
+	manager := NewManager(paths)
+	if err := manager.CreateSkeleton(nil); err != nil {
+		t.Fatal(err)
+	}
+
+	secret := filepath.Join(t.TempDir(), "secret")
+	if err := os.WriteFile(secret, []byte("top secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(paths.SkeletonDir, "leak.yml")); err != nil {
+		t.Fatal(err)
+	}
+
+	projectDir := t.TempDir()
+
+	// act
+	copiedFiles, err := manager.CopyToProject(projectDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("CopyToProject error: %v", err)
+	}
+	if slices.Contains(copiedFiles, "leak.yml") {
+		t.Error("symlink must not be copied")
+	}
+	if _, statErr := os.Lstat(filepath.Join(projectDir, ".agentbox", "leak.yml")); !os.IsNotExist(statErr) {
+		t.Errorf("symlinked entry must not appear in project (lstat err = %v)", statErr)
+	}
+}
+
+func TestCopyToProject__rejects_symlinked_agentbox_dir(t *testing.T) {
+	// arrange - a cloned repo can commit `.agentbox` as a symlink (e.g. -> ..);
+	// following it would let cleanProjectDir delete the target's contents and
+	// land the copy outside the project.
+	paths := createTestPaths(t)
+	manager := NewManager(paths)
+	if err := manager.CreateSkeleton(nil); err != nil {
+		t.Fatal(err)
+	}
+
+	target := t.TempDir()
+	sentinel := filepath.Join(target, "sentinel")
+	if err := os.WriteFile(sentinel, []byte("keep me"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	projectDir := t.TempDir()
+	if err := os.Symlink(target, filepath.Join(projectDir, ".agentbox")); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	_, err := manager.CopyToProject(projectDir)
+
+	// assert
+	if err == nil {
+		t.Fatal("CopyToProject must refuse a symlinked .agentbox")
+	}
+	if _, statErr := os.Stat(sentinel); statErr != nil {
+		t.Errorf("symlink target content must stay untouched: %v", statErr)
+	}
+}
+
 func TestHasRealFiles(t *testing.T) {
 	// arrange
 	dir := t.TempDir()
@@ -394,6 +451,110 @@ func TestHasRealFiles__nonexistent_dir(t *testing.T) {
 
 	// assert
 	if result {
+		t.Error("expected false for nonexistent directory")
+	}
+}
+
+func TestProjectInitialized(t *testing.T) {
+	tests := []struct {
+		name  string
+		files []string
+		want  bool
+	}{
+		{name: "core_and_dockerfile", files: []string{"core.v1.yml", "Dockerfile.v1.agentbox"}, want: true},
+		{name: "core_dockerfile_and_presets", files: []string{"core.v1.yml", "Dockerfile.v1.agentbox", "go.v1.yml", "local.yml"}, want: true},
+		{name: "empty", files: nil, want: false},
+		{name: "local_yml_only", files: []string{"local.yml"}, want: false},
+		{name: "core_without_dockerfile", files: []string{"core.v1.yml", "local.yml"}, want: false},
+		{name: "dockerfile_without_core", files: []string{"Dockerfile.v1.agentbox"}, want: false},
+		{name: "preset_without_core", files: []string{"go.v1.yml", "Dockerfile.v1.agentbox"}, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// arrange
+			dir := t.TempDir()
+			for _, f := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			// act
+			got := ProjectInitialized(dir)
+
+			// assert
+			if got != tt.want {
+				t.Errorf("ProjectInitialized(%v) = %v, want %v", tt.files, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCheckVersion(t *testing.T) {
+	core, err := GetCoreTemplate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	df, err := GetEmbeddedDockerfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	goPreset, err := GetPresetTemplate("go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cv, dv, gv := core.Version, df.Version, goPreset.Version
+
+	tests := []struct {
+		name  string
+		files []string
+		want  VersionStatus
+	}{
+		{name: "current", files: []string{coreName(cv), dockerName(dv), "local.yml"}, want: VersionCurrent},
+		{name: "outdated_core", files: []string{coreName(cv - 1), dockerName(dv)}, want: VersionOutdated},
+		{name: "ahead_core", files: []string{coreName(cv + 1), dockerName(dv)}, want: VersionAhead},
+		{name: "outdated_preset", files: []string{coreName(cv), dockerName(dv), presetName("go", gv-1)}, want: VersionOutdated},
+		{name: "absent_preset_ignored", files: []string{coreName(cv), dockerName(dv)}, want: VersionCurrent},
+		{name: "ahead_preset", files: []string{coreName(cv), dockerName(dv), presetName("go", gv+1)}, want: VersionAhead},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// arrange
+			dir := t.TempDir()
+			for _, f := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			// act
+			got, err := CheckVersion(dir)
+
+			// assert
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("CheckVersion(%v) = %d, want %d", tt.files, got, tt.want)
+			}
+		})
+	}
+}
+
+func coreName(v int) string   { return fmt.Sprintf("core.v%d.yml", v) }
+func dockerName(v int) string { return fmt.Sprintf("Dockerfile.v%d.agentbox", v) }
+func presetName(name string, v int) string {
+	return fmt.Sprintf("%s.v%d.yml", name, v)
+}
+
+func TestProjectInitialized__nonexistent_dir(t *testing.T) {
+	// act
+	got := ProjectInitialized("/nonexistent/path")
+
+	// assert
+	if got {
 		t.Error("expected false for nonexistent directory")
 	}
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/aleksey925/agentbox/internal/download"
 )
 
 type RalphexAgent struct {
@@ -27,7 +29,7 @@ func (r *RalphexAgent) BinaryName() string {
 }
 
 func (r *RalphexAgent) FetchLatestVersion(ctx context.Context) (string, error) {
-	tag, err := FetchLatestGitHubTag(ctx, "umputun", "ralphex")
+	tag, err := download.FetchLatestGitHubTag(ctx, "umputun", "ralphex")
 	if err != nil {
 		return "", fmt.Errorf("fetch github tag: %w", err)
 	}
@@ -46,7 +48,16 @@ func (r *RalphexAgent) goArch() string {
 func (r *RalphexAgent) Download(ctx context.Context, version, destDir string, progress func(downloaded, total int64)) error {
 	// asset format: ralphex_<version>_linux_<amd64|arm64>.tar.gz
 	assetName := fmt.Sprintf("ralphex_%s_linux_%s.tar.gz", version, r.goArch())
-	assetURL := fmt.Sprintf("https://github.com/umputun/ralphex/releases/download/v%s/%s", version, assetName)
+	baseURL := "https://github.com/umputun/ralphex/releases/download/v" + version
 
-	return downloadAndExtractTarGz(ctx, assetURL, destDir, "ralphex", "ralphex", progress)
+	checksumName := fmt.Sprintf("ralphex_%s_checksums.txt", version)
+	checksum, err := download.FetchChecksum(ctx, baseURL+"/"+checksumName, assetName)
+	if err != nil {
+		return fmt.Errorf("fetch checksum: %w", err)
+	}
+
+	if err := download.DownloadAndExtractTarGz(ctx, baseURL+"/"+assetName, destDir, "ralphex", "ralphex", checksum, progress); err != nil {
+		return fmt.Errorf("ralphex: %w", err)
+	}
+	return nil
 }

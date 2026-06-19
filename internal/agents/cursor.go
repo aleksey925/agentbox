@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+
+	"github.com/aleksey925/agentbox/internal/download"
 )
 
 const cursorInstallScriptURL = "https://cursor.com/install"
@@ -38,9 +40,9 @@ func (c *CursorAgent) FetchLatestVersion(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("User-Agent", userAgent)
+	req.Header.Set("User-Agent", download.UserAgent)
 
-	resp, err := httpClient.Do(req)
+	resp, err := download.Client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("fetch install script: %w", err)
 	}
@@ -71,5 +73,8 @@ func (c *CursorAgent) Download(ctx context.Context, version, destDir string, pro
 
 	// cursor-agent is a bash wrapper that resolves sibling files by relative
 	// path, so the whole archive has to be extracted, not just the binary.
-	return downloadAndExtractTarGzAll(ctx, assetURL, destDir, progress)
+	if err := download.DownloadAndExtractTarGzAll(ctx, assetURL, destDir, progress); err != nil {
+		return fmt.Errorf("cursor: %w", err)
+	}
+	return nil
 }

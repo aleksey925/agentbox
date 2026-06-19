@@ -4,4 +4,9 @@ services:
     environment:
       - GOPATH=/home/box/go
     volumes:
-      - ${GOPATH:-~/.go}:/home/box/go
+      - go-cache:/home/box/go
+
+volumes:
+  go-cache:
+    name: agentbox-go-cache
+    external: true

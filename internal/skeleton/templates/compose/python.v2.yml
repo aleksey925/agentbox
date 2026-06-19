@@ -7,4 +7,9 @@ services:
       - POETRY_VIRTUALENVS_CREATE=false
       - VENV_DIR_PATH=/home/box/.venv
     volumes:
-      - ~/.cache/uv:/home/box/.cache/uv
+      - uv-cache:/home/box/.cache/uv
+
+volumes:
+  uv-cache:
+    name: agentbox-uv-cache
+    external: true

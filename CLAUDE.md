@@ -1,289 +1,258 @@
-# Agentbox Development Guide
-
-## CLI Architecture
-
-This project uses a **data-driven CLI** pattern inspired by urfave/cli. The `commandTree()` function in `commands_meta.go` is the **single source of truth** for all commands, subcommands, and flags. Everything else (router, help, completions, tests) derives from it automatically.
-
-### Command Structure
-
-```
-agentbox <command> [subcommand] [flags] [arguments]
-```
-
-### Adding a New Command
-
-1. **Add entry to `commandTree()` in `commands_meta.go`:**
-
-```go
-func commandTree() []Command {
-    return []Command{
-        // ... existing commands ...
-        {
-            Name:        "mycommand",
-            Description: "Short description for help",
-            Handler:     (*App).cmdMyCommand,
-            Flags: []Flag{
-                {"-s, --short", "Short flag description"},
-                {"--long-only", "Long-only flag description"},
-            },
-        },
-    }
-}
-```
-
-2. **Implement handler in `commands.go`:**
-
-```go
-func (a *App) cmdMyCommand(args []string) int {
-    if hasHelpFlag(args) {
-        fmt.Printf(`%s
-
-Usage:
-  agentbox mycommand [flags] <required-arg>
-
-Arguments:
-  required-arg                      Description of required argument
-
-Flags:
-  -s, --short                       Short flag description
-  --long-only                       Long-only flag description
-`, CommandDesc("mycommand"))
-        return 0
-    }
-
-    // Get allowed flags from commandTree (defined once!)
-    flags := CommandFlags()["mycommand"]
-    if code := RejectUnknownFlagsWithAllowed(args, flags); code != 0 {
-        return code
-    }
-
-    // Command logic using lazy-cached resources
-    paths, err := a.Paths()
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-        return 1
-    }
-
-    // ... command logic ...
-    return 0
-}
-```
-
-**That's it!** Router, completions, and help are automatically generated from `commandTree()`.
-
-### Adding Subcommands
-
-```go
-{
-    Name:        "parent",
-    Description: "Parent command description",
-    Handler:     (*App).cmdParentStatus,  // default action, or nil if subcommand required
-    Subcommands: []Command{
-        {Name: "sub1", Description: "First subcommand", Handler: (*App).cmdParentSub1},
-        {Name: "sub2", Description: "Second subcommand", Handler: (*App).cmdParentSub2, Flags: []Flag{
-            {"--flag", "Subcommand-specific flag"},
-        }},
-    },
-},
-```
-
-If `Handler` is `nil`, the command requires a subcommand. Help is auto-generated for parent-only commands.
-
-### Lazy-Cached Resources
-
-Use `App` methods instead of creating resources directly:
-
-```go
-// Instead of:
-paths, err := config.NewPaths()
-manager, err := agents.NewManager(paths)
-
-// Use:
-paths, err := a.Paths()        // cached
-manager, err := a.AgentManager()  // cached
-```
-
-Resources are created once and reused across subcommands.
-
-## Flag Conventions
-
-| Convention            | Example         | Description                           |
-|-----------------------|-----------------|---------------------------------------|
-| Short first           | `-a, --all`     | Short form always before long form    |
-| Single dash for short | `-a`            | Single character flags                |
-| Double dash for long  | `--all`         | Multi-character flags                 |
-| No value flags        | `--verbose`     | Boolean flags don't take values       |
-| Value flags           | `--output file` | Flags with values use space separator |
-
-### Flag Validation
-
-```go
-// Get flags from commandTree - single source of truth
-flags := CommandFlags()["mycommand"]
-if code := RejectUnknownFlagsWithAllowed(args, flags); code != 0 {
-    return code
-}
-```
-
-## Help Format
-
-### Main Help (`agentbox --help`)
-
-Auto-generated from `commandTree()`. Shows all commands with descriptions.
-
-### Command Help (`agentbox <command> --help`)
-
-```
-Command short description
-
-Usage:
-  agentbox command [flags] [arguments]
-
-Arguments:
-  arg-name                          Description (column at position 36)
-
-Flags:
-  -s, --short                       Description (column at position 36)
-
-Examples:
-  agentbox command arg              Description of example
-```
-
-Rules:
-- Description column starts at position 36
-- Short flag first: `-s, --short`
-- Do NOT include `-h, --help` in Flags section
-- Use `<required>` and `[optional]` brackets
-
-## Error Messages
-
-```go
-fmt.Fprintf(os.Stderr, "Unknown flag: %s\n", arg)
-fmt.Fprintf(os.Stderr, "Error: %v\n", err)
-return 1
-```
-
-## Exit Codes
-
-| Code | Meaning                                   |
-|------|-------------------------------------------|
-| 0    | Success                                   |
-| 1    | Error (invalid args, runtime error, etc.) |
-
-## Naming Conventions
-
-- **Commands**: singular nouns (`agent`, `completion`) or verbs (`init`, `run`, `clean`)
-- **Subcommands**: verbs (`update`, `use`)
-- **Flags**: lowercase, hyphen-separated (`--no-cache`, `--build-no-cache`)
-- **Handlers**: `cmd` + command path (`cmdInit`, `cmdAgentUpdate`, `cmdSelfUninstall`)
-
-## Environment Presets Terminology
-
-Sandbox supports multiple development tools (Go, Python, etc.) via **environment presets**.
-Presets mount host caches and configs into the sandbox for better performance.
-
-### Terminology by Context
-
-| Context                | Term                  | Example                                    |
-|------------------------|-----------------------|--------------------------------------------|
-| **Global concept**     | Sandbox configuration | "Update sandbox configuration"             |
-| **Components**         | Environment presets   | "Available presets: Go, Python"            |
-| **UI (user-friendly)** | Development tools     | "Select your development tools"            |
-| **Code (internal)**    | `Preset`              | `type Preset struct`, `SupportedPresets()` |
-
-### Examples
-
-**UI Prompt:**
-```
-Configure sandbox
-Select your development tools — sandbox will mount
-their caches and configs for better performance
-```
-
-**Help text:**
-```
-Update sandbox configuration (change enabled Go, Python presets)
-```
-
-## Skeleton Architecture
-
-Skeleton is the user's global sandbox configuration stored in `~/.agentbox/skeleton/`. It contains Docker Compose files and Dockerfile that define the sandbox environment.
-
-### Directory Structure
-
-```
-~/.agentbox/skeleton/           # global skeleton (user-owned)
-├── core.v1.yml                 # base compose config (always present)
-├── go.v1.yml                   # Go preset (optional)
-├── python.v1.yml               # Python preset (optional)
-├── Dockerfile.v1.agentbox      # sandbox Dockerfile
-└── local.yml                   # user customizations template
-
-project/.agentbox/              # project sandbox (copied from skeleton)
-├── core.v1.yml
-├── go.v1.yml
-├── Dockerfile.v1.agentbox
-└── local.yml                   # project-specific customizations (never overwritten)
-```
-
-### Core Concepts
-
-| Concept             | Description                                                                 |
-|---------------------|-----------------------------------------------------------------------------|
-| **Skeleton**        | Global template at `~/.agentbox/skeleton/`, user fully owns and can edit    |
-| **Presets**         | Environment configs (Go, Python) that mount host caches into sandbox        |
-| **local.yml**       | Project-specific overrides, preserved during reinit                         |
-| **Versioned files** | `*.v1.yml`, `Dockerfile.v1.agentbox` — version in name for tracking changes |
-
-### Design Principles
-
-1. **Single source of truth** — skeleton is the only source, no merging or layering
-2. **Flat structure** — all files at one level, no nested directories
-3. **User ownership** — user can freely edit skeleton files
-4. **Explicit updates** — no auto-updates, user controls when to reinit with `--force`
-5. **Deterministic** — same skeleton always produces same project config
-6. **Safe local.yml** — project's `local.yml` is never overwritten
-
-### Commands
-
-| Command                          | Behavior                                                                                    |
-|----------------------------------|---------------------------------------------------------------------------------------------|
-| `agentbox init`                  | If no skeleton → TUI for preset selection → create skeleton → copy to project               |
-| `agentbox init`                  | If skeleton exists → clean project's `.agentbox/` (except `local.yml`) → copy from skeleton |
-| `agentbox init skeleton`         | Error if skeleton exists (suggests `--force`)                                               |
-| `agentbox init skeleton --force` | TUI with current presets pre-selected → recreate skeleton after confirmation                |
-
-### File Versioning
-
-Files use version suffix (`v1`) to help users track changes:
-- `core.v1.yml` — when we release `core.v2.yml`, user sees a new file appeared
-- User can compare versions and migrate customizations
-- Old versions can be manually removed after migration
-
-## Agent Launch Flags
-
-Flags that agents (harnesses) are launched with are **user configuration, not
-build-time constants**. They live in a global, user-owned file and are resolved
-**live on every launch** by the in-sandbox launcher — so changing them never
-requires an image rebuild, and edits apply to the next launch even inside a
-running sandbox.
-
-Design principles:
-
-1. **No imposed defaults** — out of the box no extra flags are passed to any
-   agent. Cautious users are never surprised by a permissive mode they didn't
-   pick. `SuggestedFlags` is the hook for shipping recommended defaults later.
-2. **Global, not per-project** — one setting for all projects, like agent
-   binaries themselves.
-3. **Live, not baked** — the launcher reads the flags file on each invocation;
-   flags are deliberately kept out of the image to avoid rebuilds.
-4. **Bash-readable format** — a simple line-based format (one agent per line,
-   `*` for all) rather than YAML, because the launcher is plain bash with no
-   YAML parser available.
-
-## Code Style
-
-- All comments in English
-- Use `fmt.Fprintf(os.Stderr, ...)` for errors
-- Use `fmt.Printf(...)` or `fmt.Println(...)` for normal output
-- Group imports: stdlib, then external, then internal
+## What this is
+
+agentbox is a CLI that runs AI coding agents inside an isolated Docker sandbox. It
+targets developers who want an agent to act without approving every step, because
+the container blocks access to anything outside the project. Written in Go.
+
+## Design decisions
+
+### Data-driven CLI
+
+A single declarative command tree is the source of truth for every command, subcommand,
+and flag. The router, help text, shell completions, and flag validation are all derived
+from it: adding a command means adding one node to the tree plus its handler, never wiring
+the router, help, or completions by hand. A node with no default action is how a command
+declares that it requires a subcommand, and a handler rejects unknown flags using the flag
+list the tree already holds.
+
+Why: keeps the CLI surface from drifting. With one definition, help, completions, and
+validation can never disagree with the commands that actually exist.
+
+### Resources go through the App
+
+Shared resources - filesystem paths, the agent manager, and the like - are obtained
+through accessor methods on the App, which build each one once and reuse it across
+commands. Handlers never construct these directly.
+
+Why: a single invocation can pass through several subcommands. Rebuilding the same
+resource each time wastes work and lets two parts of one run disagree about state; one
+cached instance keeps the run internally consistent.
+
+### CLI surface conventions
+
+The CLI is the whole product, so its surface is kept uniform. Flags list the short form
+before the long (`-a, --all`), single dash for single-character flags, double dash for
+multi-character ones, lowercase and hyphen-separated; boolean flags take no value, and a
+flag that takes one receives it space-separated (`--output file`). Commands are singular
+nouns or verbs, subcommands are verbs, and a handler is named `cmd` followed by its
+command path.
+A command exits 0 on success and 1 on any error; error text goes to stderr, normal output
+to stdout. Generated help aligns descriptions at a fixed column, marks required arguments
+with `<>` and optional ones with `[]`, and never lists the help flag itself.
+
+Why: a predictable surface is the point of a CLI, and auto-generated help only stays
+consistent if every command follows the same rules.
+
+### Skeleton is the single configuration source
+
+The global skeleton at `~/.agentbox/skeleton/` is the source of all static sandbox
+configuration. A project's `.agentbox/` directory is a plain copy of it - never a merge
+or an overlay. Files sit flat with no nested directories and carry a version in their
+name (e.g. `core.v2.yml`) so a new version shows up as a new file the user can diff
+against. Updates are explicit: nothing auto-updates, the user reinitializes when they
+choose.
+
+Why: a single, copy-only source makes the same skeleton always produce the same project
+config, and the user fully owns and can freely edit the template.
+
+Deviation: a project's `local.yml` holds project-specific overrides and is never
+overwritten on reinit.
+
+Deviation: configuration that depends on per-launch state is generated live rather than
+copied from the skeleton - see "The agent cannot rewrite its own sandbox" and "Live, not
+baked". The skeleton stays the source for everything static.
+
+### Config schema version and upgrade
+
+Each managed file carries a version in its name (`core.vN.yml`, `go.vN.yml`,
+`Dockerfile.vN.agentbox`). The bump rule is delivery, not pure compatibility:
+**bump a file's version whenever its change must reach the user** - a breaking
+change to the sandbox contract, or a backward-compatible one we still want
+adopted (a security hardening). A purely cosmetic edit keeps the same name and
+no version. The binary embeds exactly one set of versions, so a project's
+`.agentbox/` and the binary are one coupled unit: the binary cannot run an
+older compose, because runtime state it injects (the live project path, the
+git-protection overlay) has no meaning in the old layout.
+
+Detection is per-file: `run` compares every managed file the project has
+against the embedded version. Mandatory files (core, Dockerfile) and any preset
+present are checked; a preset the project lacks is ignored, so a preset bump
+never blocks a project that does not use it. When anything is older, `run`
+refuses to start and points at `agentbox upgrade` - a hard block, not a
+warning, so a mismatched sandbox is never mounted silently. The gate compares
+against the binary, not the skeleton, so a freshly regenerated skeleton never
+masks a stale project.
+
+`upgrade` is the single delivery channel - it reseeds from the current
+templates, so it carries both breaking and non-breaking changes; only the
+gate's force differs. Without a path it upgrades the current project and
+rebuilds its image. With a path it scans that directory (`--depth`, default 1)
+for projects, reseeds each, and drops the shared `agentbox:local` image so
+every project rebuilds on its next run. There is no registry and no
+auto-update: non-breaking changes reach a project only when the user runs
+`upgrade`; breaking ones arrive the same way but the gate makes running it
+unavoidable. `init` applies the same gate to the global skeleton - it refuses
+to seed a project from a stale skeleton and points at `init skeleton --force`,
+rather than mutating global state under the hood.
+
+Two deliberate consequences. Presets are an install-wide choice, not
+per-project (the skeleton holds one set), so `upgrade` aligns every project to
+the current global set - it can add or drop a preset from a project. And the
+shared `agentbox:local` tag is safe only because the image bakes no project
+content; keep image builds project-independent or the shared tag breaks.
+
+Why: the version turns an unavoidable forced migration into an explicit,
+auditable one. Staying on an old schema means pinning the old binary (the two
+move together); deviating from the current schema means `local.yml` overrides,
+which survive upgrades - not freezing a version. For a security tool, keeping
+the weaker old jail runnable would be a misfeature, so the forced step is
+intended; the version only makes it safe and visible. The one irreducible
+discipline is judging whether a change must be delivered - when unsure, bump.
+
+### The agent cannot rewrite its own sandbox
+
+The project is mounted read-write so the agent can edit its code, but the files that define
+the sandbox itself are layered read-only on top of that mount. The project's `.agentbox/`
+(Dockerfile, compose) is never agent-writable.
+
+Why: an agent that could rewrite its own jail - by accident or after being hijacked - would
+weaken the next build and break containment. The read-only layer holds even against
+in-sandbox root, since remounting it needs a capability the container does not carry. The
+user still owns these files and edits them from the host.
+
+The same protection extends to a git project's exec surface - `.git/hooks` and `.git/config`
+(which can point at hooks via `core.hooksPath`, filters, or `fsmonitor`). Writing either
+would run code on the host the next time git touches the repo, so both are mounted
+read-only. config staying read-only also confines the agent to the remotes the user already
+configured. The surface includes git dirs nested inside `.git`: each submodule git dir
+under `.git/modules/` carries its own hooks and config, and each worktree's
+`config.worktree` under `.git/worktrees/` can set `core.hooksPath` - a hook planted there
+runs on the host just like a top-level one. A missing surface entry is created empty at
+launch so it can be mounted; skipped, the agent could create it from inside the sandbox.
+This overlay is generated live per launch rather than copied from the skeleton, because it
+is conditional: it applies only when the project is a git repo, and the real git dir is
+resolved at launch (it can sit outside the project in worktrees and submodules, where it is
+not mounted and so needs no protection). The check fails closed: a `.git` that exists but
+cannot be resolved (git missing, `safe.directory` refusal) aborts the launch instead of
+silently starting an unprotected sandbox.
+
+### Container capabilities
+
+The container is the security boundary, so the agent is free inside it: it runs as a
+non-root user with passwordless sudo, which keeps in-container work convenient (e.g.
+`apt install`). sudo is not a host risk, because root inside is still bounded by the
+container's Linux capability set - sudo can reach that ceiling, never exceed it.
+
+So the lever is the capability set, not sudo. Docker's default set already omits the
+dangerous ones (`SYS_ADMIN`, `NET_ADMIN`, `SYS_MODULE`, ...); on top of that agentbox drops
+`NET_RAW` and `MKNOD`, which a normal dev workflow never needs and only sudo-as-root could
+otherwise use. The cost is small and explicit - no raw sockets, so `ping`/`tcpdump` stop
+working; a project that needs them adds the capability back in its own `local.yml`.
+
+The rest is kept on purpose: `SETUID`/`SETGID`/`CHOWN`/`DAC_OVERRIDE`/`FOWNER`/`FSETID`/
+`SETFCAP` because apt and sudo need them, `SYS_CHROOT` and `NET_BIND_SERVICE` because
+chroot builds and binding privileged ports are occasional but real dev needs. `AUDIT_WRITE`
+is kept too: dropping it only stops the container forging entries in the host audit log
+(negligible on a dev machine) while making sudo print an `unable to send audit message`
+warning on every call. `no-new-privileges` is intentionally not set: it blocks setuid and
+so would break sudo - trimming capabilities is the chosen lever instead.
+
+A generous `pids_limit` is set alongside as a cheap guard against a fork bomb exhausting
+the host's process table - high enough not to bite real parallel builds, and overridable in
+`local.yml`. Memory and CPU caps are deliberately left unset by default, because a fixed
+limit would OOM-kill legitimate heavy builds; a project sets them in its own `local.yml`.
+
+### Live, not baked
+
+Values that vary per user or per project are resolved live on every launch by the
+in-sandbox launcher, never compiled into the image.
+
+Why: the image is shared across all projects. Baking in a per-project value would force
+an image rebuild on every change and make one project's settings leak into others.
+Resolving live means an edit applies to the next launch even inside a running sandbox.
+
+This covers two cases:
+
+- Agent launch flags live in a global, user-owned file read on each launch. No flags are
+  imposed by default, so a cautious user is never surprised by a permissive mode they did
+  not pick. The format is line-based (one agent per line, `*` for any agent) rather than
+  YAML, because the launcher is plain bash with no YAML parser. The per-agent wrapper
+  scripts that read this file are installed in root-owned `/usr/local/bin`, not the user's
+  `~/.local/bin`: Claude Code's self-update points `~/.local/bin/claude` at its own binary
+  and would clobber a wrapper there, silently dropping the flags. `/usr/local/bin` precedes
+  `~/.local/bin` in PATH and the sandbox user cannot write it without sudo, so the wrapper
+  wins and survives a self-update; `DISABLE_AUTOUPDATER=1` stops the update churn on top.
+- The project is mounted at the same absolute path it has on the host, not a fixed
+  location. Agents key per-project state by working directory (e.g. Claude Code stores
+  `--resume` history under a path derived from the cwd), so mirroring the host path gives
+  each project its own history and lines it up with non-sandbox runs of the same agent.
+  The CLI exports this path as `AGENTBOX_PROJECT_PATH`; the compose file requires it
+  (`:?`) rather than falling back to `${PWD}`. A direct `docker compose` run leaves it
+  unset and fails loudly, because such a run also skips the launcher's protections (the
+  read-only git exec-surface overlay, project-readiness checks) and would otherwise mount
+  a weaker sandbox at a guessed path without warning.
+
+### Presets terminology
+
+The same concept is named differently by audience: "sandbox configuration" for the whole,
+"environment presets" for the Go/Python language components, "development tools" in
+user-facing UI, and `Preset` in code.
+
+Why: each audience needs the term that reads clearest to it. Mixing the terms either
+confuses users or muddies the code.
+
+### Preset caches are sandbox-local
+
+A preset's dependency cache (Go module cache, uv cache) is a named Docker volume shared
+across agentbox projects, never a bind mount of the host's real cache - the same scheme the
+mise and opencode caches already use.
+
+Why: the host cache is executable surface. Go does not re-verify already-extracted module
+sources on each build, so a writable bind mount lets an agent poison a cached module that
+the host's `go` later compiles. A sandbox-local volume keeps the cache writable (the agent
+can still add dependencies) and warm across runs, while a poisoned entry can never reach the
+host. The cost is a one-time re-download per volume; a project that deliberately wants the
+host cache mounts it in its own `local.yml`.
+
+### Download integrity
+
+A downloaded agent binary becomes executable inside the sandbox with every secret and
+directory mounted, so it is verified against a vendor-published SHA-256 before install
+whenever one exists for the exact asset we fetch. The archive is streamed to a temp file
+while hashed and is only extracted after the hash matches; a mismatch removes the temp file
+and fails the install. The checksum is fetched over the same channel as the binary, so this
+guards against a corrupted or partially-tampered release, not a full takeover of the host
+that serves both - the same trust model the Claude download already uses. An agent with no
+published checksum streams straight to extraction instead of buffering: buffering an archive
+we cannot verify would add latency without adding any safety.
+
+Coverage is dictated by what each vendor actually publishes for the asset we download, not
+by choice:
+
+- `claude` verifies a SHA-256 from its release manifest.
+- `copilot` and `ralphex` verify against the `SHA256SUMS`-style file in their GitHub
+  release. A missing entry is a hard error, never a silent skip, so a truncated or
+  wrong-version checksums file cannot downgrade to an unverified install.
+- `codex`, `opencode`, `cursor` are unverified: codex publishes only a sigstore bundle for
+  this asset (no plain checksum), opencode checksums only its desktop builds, and cursor
+  publishes nothing and has its version scraped from a live install script. Pinning hashes
+  in-repo is not an option because the version is resolved live ("latest") on each install.
+- `self update` replaces the running binary, so it verifies against the release's
+  goreleaser `checksums.txt` the same way, and validates the target version before it
+  reaches a URL.
+
+Both the buffered download and the decompressed output are bounded by a fixed cap, so a
+gzip bomb or an endless stream can exhaust neither disk nor the host - the extractor fails
+closed once the limit is crossed.
+
+## Project commands
+
+- `make build` - build the binary into `dist/`
+- `make install` - build and install the binary to `~/.local/bin`
+- `make lint` - run formatters and linters via prek
+- `make test` - run the test suite
+- `make race` - run the suite with the race detector
+- `make cover` - run tests and print a coverage report
+- `make deps` - tidy and vendor Go dependencies
+- `make snapshot` - build a local snapshot release with goreleaser
+- `make clean` - remove `dist/` and coverage files

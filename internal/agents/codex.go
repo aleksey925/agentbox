@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+
+	"github.com/aleksey925/agentbox/internal/download"
 )
 
 type CodexAgent struct {
@@ -27,7 +29,7 @@ func (c *CodexAgent) BinaryName() string {
 }
 
 func (c *CodexAgent) FetchLatestVersion(ctx context.Context) (string, error) {
-	tag, err := FetchLatestGitHubTag(ctx, "openai", "codex")
+	tag, err := download.FetchLatestGitHubTag(ctx, "openai", "codex")
 	if err != nil {
 		return "", fmt.Errorf("fetch github tag: %w", err)
 	}
@@ -52,5 +54,9 @@ func (c *CodexAgent) Download(ctx context.Context, version, destDir string, prog
 	assetName := binaryName + ".tar.gz"
 	assetURL := fmt.Sprintf("https://github.com/openai/codex/releases/download/rust-v%s/%s", version, assetName)
 
-	return downloadAndExtractTarGz(ctx, assetURL, destDir, binaryName, "codex", progress)
+	// unverified, see CLAUDE.md "Download integrity"
+	if err := download.DownloadAndExtractTarGz(ctx, assetURL, destDir, binaryName, "codex", "", progress); err != nil {
+		return fmt.Errorf("codex: %w", err)
+	}
+	return nil
 }

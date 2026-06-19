@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/aleksey925/agentbox/internal/skeleton"
@@ -224,6 +225,30 @@ func TestDiscoverComposeFiles__empty_directory__returns_error(t *testing.T) {
 	}
 }
 
+func TestDiscoverComposeFiles__local_yml_only__returns_error(t *testing.T) {
+	// arrange
+	tmpDir := t.TempDir()
+	agentboxDir := filepath.Join(tmpDir, ".agentbox")
+	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(agentboxDir, "local.yml"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	_, err := DiscoverComposeFiles(tmpDir)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error for .agentbox with only local.yml")
+	}
+	expectedMsg := "core compose file missing in .agentbox/. Run 'agentbox init' to fix"
+	if err.Error() != expectedMsg {
+		t.Errorf("error = %q, want %q", err.Error(), expectedMsg)
+	}
+}
+
 func TestDiscoverComposeFiles__no_agentbox_dir__returns_error(t *testing.T) {
 	// arrange
 	tmpDir := t.TempDir()
@@ -266,6 +291,38 @@ func TestDiscoverComposeFiles__ignores_non_yml_files(t *testing.T) {
 	expected := []string{filepath.Join(agentboxDir, "core.v1.yml")}
 	if len(files) != len(expected) {
 		t.Fatalf("len(files) = %d, want %d; got %v", len(files), len(expected), files)
+	}
+}
+
+func TestDiscoverComposeFiles__ignores_unversioned_yml(t *testing.T) {
+	// arrange
+	tmpDir := t.TempDir()
+	agentboxDir := filepath.Join(tmpDir, ".agentbox")
+	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"core.v1.yml", "local.yml"} {
+		if err := os.WriteFile(filepath.Join(agentboxDir, name), []byte(""), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(agentboxDir, "debug.yml"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// act
+	files, err := DiscoverComposeFiles(tmpDir)
+
+	// assert
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	expected := []string{
+		filepath.Join(agentboxDir, "core.v1.yml"),
+		filepath.Join(agentboxDir, "local.yml"),
+	}
+	if !slices.Equal(files, expected) {
+		t.Errorf("files = %v, want %v", files, expected)
 	}
 }
 
@@ -345,29 +402,128 @@ func TestBuildBuildArgs__with_no_cache(t *testing.T) {
 	}
 }
 
-func TestSharedVolumes__match_core_template(t *testing.T) {
-	// arrange
-	coreTemplate, err := skeleton.GetCoreTemplate()
-	if err != nil {
-		t.Fatalf("GetCoreTemplate error: %v", err)
-	}
-	content := string(coreTemplate.Content)
+func TestBuildExecArgs(t *testing.T) {
+	// act
+	args := buildExecArgs("abc123", "/home/user/myproject")
 
-	// extract volume names with "external: true" from YAML
+	// assert
+	expected := []string{"exec", "-it", "-w", "/home/user/myproject", "--", "abc123", "/bin/bash"}
+	if !slices.Equal(args, expected) {
+		t.Errorf("buildExecArgs() = %v, want %v", args, expected)
+	}
+}
+
+func TestBuildExecArgs__no_working_dir(t *testing.T) {
+	// act
+	args := buildExecArgs("abc123", "")
+
+	// assert
+	expected := []string{"exec", "-it", "--", "abc123", "/bin/bash"}
+	if !slices.Equal(args, expected) {
+		t.Errorf("buildExecArgs() = %v, want %v", args, expected)
+	}
+}
+
+func TestBuildExecArgs__dash_prefixed_id_lands_after_terminator(t *testing.T) {
+	// a containerID starting with "-" must never precede "--", or docker would
+	// read it as a flag (e.g. --privileged) instead of the target container.
+	// act
+	args := buildExecArgs("--privileged", "")
+
+	// assert
+	dashDash := slices.Index(args, "--")
+	id := slices.Index(args, "--privileged")
+	if dashDash == -1 || id <= dashDash {
+		t.Errorf("containerID must follow the %q terminator: %v", "--", args)
+	}
+}
+
+func TestContainerProjectPath__mirrors_host_path(t *testing.T) {
+	// arrange
+	hostDir := "/Users/alex/projects/myapp"
+
+	// act
+	got := containerProjectPath(hostDir)
+
+	// assert
+	if got != hostDir {
+		t.Errorf("containerProjectPath(%q) = %q, want %q", hostDir, got, hostDir)
+	}
+}
+
+func TestBuildRunEnv__exports_project_path(t *testing.T) {
+	// arrange
+	projectDir := "/Users/alex/projects/myapp"
+
+	// act
+	env := buildRunEnv(projectDir)
+
+	// assert
+	want := "AGENTBOX_PROJECT_PATH=" + projectDir
+	if !slices.Contains(env, want) {
+		t.Errorf("env does not contain %q", want)
+	}
+}
+
+func TestBuildRunEnv__overrides_existing_project_path(t *testing.T) {
+	// arrange
+	t.Setenv("AGENTBOX_PROJECT_PATH", "/stale/value")
+	projectDir := "/Users/alex/projects/myapp"
+
+	// act
+	env := buildRunEnv(projectDir)
+
+	// assert
+	if !slices.Contains(env, "AGENTBOX_PROJECT_PATH="+projectDir) {
+		t.Errorf("env does not contain AGENTBOX_PROJECT_PATH=%s", projectDir)
+	}
+	if slices.Contains(env, "AGENTBOX_PROJECT_PATH=/stale/value") {
+		t.Error("env still contains the stale AGENTBOX_PROJECT_PATH value")
+	}
+}
+
+func TestBuildRunEnv__preserves_inherited_env(t *testing.T) {
+	// arrange
+	t.Setenv("AGENTBOX_TEST_MARKER", "preserved")
+	projectDir := "/Users/alex/projects/myapp"
+
+	// act
+	env := buildRunEnv(projectDir)
+
+	// assert
+	if !slices.Contains(env, "AGENTBOX_TEST_MARKER=preserved") {
+		t.Error("env does not preserve inherited variables")
+	}
+	projectPathEntries := 0
+	for _, e := range env {
+		if strings.HasPrefix(e, "AGENTBOX_PROJECT_PATH=") {
+			projectPathEntries++
+		}
+	}
+	if projectPathEntries != 1 {
+		t.Errorf("env contains %d AGENTBOX_PROJECT_PATH entries, want 1", projectPathEntries)
+	}
+}
+
+func TestSharedVolumes__match_templates(t *testing.T) {
+	// arrange — gather external volumes declared across core + all preset templates
+	contents := gatherTemplateContents(t)
+
 	// pattern matches: name: volume-name followed by external: true
 	re := regexp.MustCompile(`name:\s*(\S+)\s+external:\s*true`)
-	matches := re.FindAllStringSubmatch(content, -1)
-
-	externalVolumes := make([]string, 0, len(matches))
-	for _, m := range matches {
-		externalVolumes = append(externalVolumes, m[1])
+	var externalVolumes []string
+	for _, content := range contents {
+		for _, m := range re.FindAllStringSubmatch(content, -1) {
+			externalVolumes = append(externalVolumes, m[1])
+		}
 	}
 
 	if len(externalVolumes) == 0 {
-		t.Fatal("no external volumes found in core template")
+		t.Fatal("no external volumes found in templates")
 	}
 
-	// act & assert
+	// act & assert — SharedVolumes and declared external volumes must match exactly,
+	// so every shared volume is created (EnsureSharedVolumes) and none is orphaned.
 	sharedSet := make(map[string]bool)
 	for _, v := range SharedVolumes {
 		sharedSet[v] = true
@@ -375,14 +531,61 @@ func TestSharedVolumes__match_core_template(t *testing.T) {
 
 	for _, vol := range externalVolumes {
 		if !sharedSet[vol] {
-			t.Errorf("external volume %q in core.v1.yml is missing from SharedVolumes", vol)
+			t.Errorf("external volume %q declared in a template is missing from SharedVolumes", vol)
 		}
 	}
 
-	// also check reverse: all SharedVolumes should be in template
 	for _, vol := range SharedVolumes {
 		if !slices.Contains(externalVolumes, vol) {
-			t.Errorf("SharedVolumes contains %q but it's not in core.v1.yml as external", vol)
+			t.Errorf("SharedVolumes contains %q but no template declares it as external", vol)
 		}
 	}
+}
+
+func TestDockerfile_precreates_named_volume_mountpoints(t *testing.T) {
+	// a fresh named volume mounted on a path absent from the image is root-owned,
+	// so the non-root box user could not write it; every named-volume mount target
+	// in a template must be pre-created in the Dockerfile.
+	dockerfile, err := skeleton.GetEmbeddedDockerfile()
+	if err != nil {
+		t.Fatalf("GetEmbeddedDockerfile error: %v", err)
+	}
+	df := string(dockerfile.Content)
+
+	// the mountpoint must be created AS box (after `USER box`), or the volume root
+	// inherits root ownership and the non-root agent can't write it.
+	userBox := strings.Index(df, "USER box")
+	if userBox < 0 {
+		t.Fatal("Dockerfile must drop to the non-root box user")
+	}
+	asBox := df[userBox:]
+
+	// service volume entries that reference a named volume: "- <name>:<target>",
+	// where <name> is a bare identifier (bind mounts start with ~, ., / or $).
+	re := regexp.MustCompile(`(?m)^\s*-\s+([a-z][a-z0-9-]*):(/\S+)`)
+	for _, content := range gatherTemplateContents(t) {
+		for _, m := range re.FindAllStringSubmatch(content, -1) {
+			if target := m[2]; !strings.Contains(asBox, target) {
+				t.Errorf("named volume target %q is not pre-created as box in the Dockerfile (volume would be root-owned)", target)
+			}
+		}
+	}
+}
+
+func gatherTemplateContents(t *testing.T) []string {
+	t.Helper()
+
+	core, err := skeleton.GetCoreTemplate()
+	if err != nil {
+		t.Fatalf("GetCoreTemplate error: %v", err)
+	}
+	contents := []string{string(core.Content)}
+	for _, p := range skeleton.SupportedPresets() {
+		tmpl, err := skeleton.GetPresetTemplate(p.TemplateName)
+		if err != nil {
+			t.Fatalf("GetPresetTemplate(%s) error: %v", p.TemplateName, err)
+		}
+		contents = append(contents, string(tmpl.Content))
+	}
+	return contents
 }

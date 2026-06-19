@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/aleksey925/agentbox/internal/config"
 )
@@ -145,11 +146,33 @@ func cleanProjectDir(dir string) error {
 	return nil
 }
 
+// ensureRealDir rejects a path that exists but is a symlink or a non-directory.
+// A cloned repo can commit `.agentbox -> ..` (or any other target), and
+// cleanProjectDir would then delete the target's contents while the copy lands
+// outside the project.
+func ensureRealDir(path string) error {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("inspect %s: %w", path, err)
+	}
+	if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+		return fmt.Errorf("%s exists but is not a real directory, refusing to use it", path)
+	}
+	return nil
+}
+
 // CopyToProject copies skeleton files to project's .agentbox/ directory.
 // All files except local.yml are removed first, then skeleton is copied.
 // local.yml is only created if it doesn't exist in project.
 func (m *Manager) CopyToProject(projectDir string) ([]string, error) {
 	agentboxDir := filepath.Join(projectDir, ".agentbox")
+
+	if err := ensureRealDir(agentboxDir); err != nil {
+		return nil, err
+	}
 
 	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create .agentbox dir: %w", err)
@@ -178,6 +201,12 @@ func (m *Manager) CopyToProject(projectDir string) ([]string, error) {
 			continue
 		}
 
+		// skip symlinks: a skeleton entry pointing elsewhere (e.g. core.vN.yml ->
+		// ~/.ssh/id_rsa) would otherwise copy the target's contents into the project.
+		if e.Type()&os.ModeSymlink != 0 {
+			continue
+		}
+
 		// skip local.yml if it already exists in project
 		if e.Name() == "local.yml" && localYmlExists {
 			continue
@@ -190,8 +219,18 @@ func (m *Manager) CopyToProject(projectDir string) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read %s: %w", e.Name(), err)
 		}
-		if err := os.WriteFile(dstPath, content, 0o644); err != nil {
+		// O_NOFOLLOW: refuse to write through a symlink planted at the destination,
+		// so a copy can never land outside .agentbox/.
+		out, err := os.OpenFile(dstPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC|syscall.O_NOFOLLOW, 0o644)
+		if err != nil {
+			return nil, fmt.Errorf("create %s: %w", e.Name(), err)
+		}
+		if _, err := out.Write(content); err != nil {
+			out.Close()
 			return nil, fmt.Errorf("write %s: %w", e.Name(), err)
+		}
+		if err := out.Close(); err != nil {
+			return nil, fmt.Errorf("close %s: %w", e.Name(), err)
 		}
 		copiedFiles = append(copiedFiles, e.Name())
 	}
@@ -206,6 +245,123 @@ func (m *Manager) CopyToProject(projectDir string) ([]string, error) {
 	}
 
 	return copiedFiles, nil
+}
+
+// ProjectInitialized reports whether .agentbox/ holds the minimal files a
+// sandbox needs to build and run: a versioned core compose file and the
+// Dockerfile it builds from. Presets and local.yml are optional, so an empty
+// directory or one holding only local.yml counts as uninitialized and should be
+// re-seeded from the skeleton.
+//
+// It gates on presence, not version: an old core.v* still counts as initialized.
+func ProjectInitialized(agentboxDir string) bool {
+	entries, err := os.ReadDir(agentboxDir)
+	if err != nil {
+		return false
+	}
+
+	hasCore, hasDockerfile := false, false
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name, _ := ParseTemplateName(e.Name())
+		switch {
+		case name == "core" && (strings.HasSuffix(e.Name(), ".yml") || strings.HasSuffix(e.Name(), ".yaml")):
+			hasCore = true
+		case name == "Dockerfile":
+			hasDockerfile = true
+		}
+	}
+
+	return hasCore && hasDockerfile
+}
+
+// VersionStatus reports how a flat skeleton-structured directory (a project's
+// .agentbox/ or the global skeleton) compares to the versions this binary ships.
+type VersionStatus int
+
+const (
+	// VersionCurrent means every managed file present matches the embedded version.
+	VersionCurrent VersionStatus = iota
+	// VersionOutdated means some file is older than embedded - run upgrade.
+	VersionOutdated
+	// VersionAhead means some file is newer than embedded - the binary is older.
+	VersionAhead
+)
+
+// managedTemplates returns every embedded versioned template (core, presets,
+// Dockerfile) - the files whose version the gate tracks. local.yml is excluded:
+// it is user-owned and carries no version.
+func managedTemplates() ([]Template, error) {
+	compose, err := GetEmbeddedComposeTemplates()
+	if err != nil {
+		return nil, err
+	}
+	dockerfile, err := GetEmbeddedDockerfile()
+	if err != nil {
+		return nil, err
+	}
+	return append(compose, dockerfile), nil
+}
+
+// diskVersions maps each versioned managed file in dir to its version, taking the
+// highest when duplicates of a name coexist. Unversioned files and local.yml are
+// skipped.
+func diskVersions(dir string) (map[string]int, error) {
+	versions := make(map[string]int)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return versions, nil
+		}
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name, v := ParseTemplateName(e.Name())
+		if v <= 0 {
+			continue
+		}
+		if cur, ok := versions[name]; !ok || v > cur {
+			versions[name] = v
+		}
+	}
+	return versions, nil
+}
+
+// CheckVersion compares each managed file present in dir against the embedded
+// template of the same name. Mandatory files (core, Dockerfile) and any preset
+// present are checked; presets absent from dir are ignored, so a preset bump
+// never flags a project that does not use it. An outdated file wins over an
+// ahead one, since upgrade is the actionable outcome.
+func CheckVersion(dir string) (VersionStatus, error) {
+	templates, err := managedTemplates()
+	if err != nil {
+		return VersionCurrent, err
+	}
+	onDisk, err := diskVersions(dir)
+	if err != nil {
+		return VersionCurrent, err
+	}
+
+	status := VersionCurrent
+	for _, t := range templates {
+		diskV, present := onDisk[t.Name]
+		if !present {
+			continue
+		}
+		switch {
+		case diskV < t.Version:
+			return VersionOutdated, nil
+		case diskV > t.Version:
+			status = VersionAhead
+		}
+	}
+	return status, nil
 }
 
 // HasRealFiles checks if directory contains any non-system files.

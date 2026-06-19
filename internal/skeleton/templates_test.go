@@ -37,6 +37,35 @@ func TestParseTemplateName(t *testing.T) {
 	}
 }
 
+func TestIsManagedComposeFile(t *testing.T) {
+	tests := []struct {
+		filename string
+		expected bool
+	}{
+		{"core.v2.yml", true},
+		{"go.v1.yml", true},
+		{"rust.v1.yml", true},
+		{"core.v2.yaml", true},
+		{"local.yml", true},
+		{"debug.yml", false},
+		{"notes.yaml", false},
+		{"Dockerfile.v2.agentbox", false},
+		{"README.md", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.filename, func(t *testing.T) {
+			// act
+			result := IsManagedComposeFile(tt.filename)
+
+			// assert
+			if result != tt.expected {
+				t.Errorf("IsManagedComposeFile(%q) = %v, want %v", tt.filename, result, tt.expected)
+			}
+		})
+	}
+}
+
 func TestFormatTemplateFilename(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -177,8 +206,57 @@ func TestCoreYml_agent_config_volumes(t *testing.T) {
 		// configDir can be ".claude" or ".config/opencode" (XDG paths)
 		expectedMount := "~/" + configDir + "/:/home/box/" + configDir + "/"
 		if !strings.Contains(coreContent, expectedMount) {
-			t.Errorf("core.v1.yml missing volume mount for %s (expected %q)", configDir, expectedMount)
+			t.Errorf("core template missing volume mount for %s (expected %q)", configDir, expectedMount)
 		}
+	}
+}
+
+func TestCoreYml_agentbox_dir_mounted_readonly(t *testing.T) {
+	// arrange
+	core, err := GetCoreTemplate()
+	if err != nil {
+		t.Fatalf("GetCoreTemplate error: %v", err)
+	}
+
+	// act & assert
+	expectedMount := `- type: bind
+        source: ./.agentbox
+        target: ${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}/.agentbox
+        read_only: true`
+	if !strings.Contains(string(core.Content), expectedMount) {
+		t.Errorf("core template missing read-only .agentbox mount (expected %q)", expectedMount)
+	}
+}
+
+func TestCoreYml_drops_capabilities(t *testing.T) {
+	// arrange
+	core, err := GetCoreTemplate()
+	if err != nil {
+		t.Fatalf("GetCoreTemplate error: %v", err)
+	}
+
+	// act & assert
+	content := string(core.Content)
+	if !strings.Contains(content, "cap_drop:") {
+		t.Error("core template missing cap_drop")
+	}
+	for _, capability := range []string{"NET_RAW", "MKNOD"} {
+		if !strings.Contains(content, "- "+capability) {
+			t.Errorf("core template must drop capability %s", capability)
+		}
+	}
+}
+
+func TestCoreYml_sets_pids_limit(t *testing.T) {
+	// arrange
+	core, err := GetCoreTemplate()
+	if err != nil {
+		t.Fatalf("GetCoreTemplate error: %v", err)
+	}
+
+	// act & assert
+	if !strings.Contains(string(core.Content), "pids_limit:") {
+		t.Error("core template missing pids_limit")
 	}
 }
 
@@ -192,8 +270,8 @@ func TestDockerfile_agent_launchers(t *testing.T) {
 
 	// act & assert
 	for _, name := range agents.AllAgentNames() {
-		// check launcher script exists: > /home/box/.local/bin/{agent}
-		expectedLauncher := "> /home/box/.local/bin/" + name
+		// check launcher script exists: > /usr/local/bin/{agent}
+		expectedLauncher := "> /usr/local/bin/" + name
 		if !strings.Contains(content, expectedLauncher) {
 			t.Errorf("Dockerfile missing launcher script for %s (expected %q)", name, expectedLauncher)
 		}

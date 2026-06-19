@@ -5,7 +5,16 @@ services:
     image: agentbox:local
     build:
       context: .
-      dockerfile: .agentbox/Dockerfile.v1.agentbox
+      dockerfile: .agentbox/Dockerfile.v2.agentbox
+    # mirror the host project path (see CLAUDE.md "Live, not baked")
+    working_dir: ${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
+    environment:
+      - MISE_TRUSTED_CONFIG_PATHS=${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
+    # CLAUDE.md "Container capabilities"
+    cap_drop:
+      - NET_RAW
+      - MKNOD
+    pids_limit: 4096
     volumes:
       # ai agents binaries (read-only mount from host)
       - ~/.agentbox/bin:/opt/agentbox/bin:ro
@@ -27,8 +36,18 @@ services:
       - ~/.config/ralphex/:/home/box/.config/ralphex/
       # git config (for commits inside sandbox)
       - ~/.gitconfig:/home/box/.gitconfig:ro
-      # project files
-      - .:/home/box/app
+      # project files (mounted at the host path, see working_dir above). long
+      # bind syntax: the short form would split on a ":" in the project path
+      - type: bind
+        source: .
+        target: ${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
+      # sandbox config is host-managed; a nested read-only mount overrides the
+      # read-write project mount above so the agent cannot rewrite its own jail
+      # (Dockerfile/compose) and weaken the next build.
+      - type: bind
+        source: ./.agentbox
+        target: ${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}/.agentbox
+        read_only: true
 
 volumes:
   mise-data:

@@ -17,8 +17,16 @@ CLI for running AI agents (Claude Code, GitHub Copilot, OpenAI Codex, Cursor CLI
 
 ## Why use Agentbox?
 
-- **Security** — agents run in a sandbox and cannot access files outside the project, modify system configs, or cause unintended side effects
-- **Convenience** — no need to approve every agent action since it works in an isolated environment
+- **Security** — agents run in an isolated Docker container scoped to your
+  project; the rest of your machine - other files, your host system and its
+  settings - stays out of reach
+- **Peace of mind** — let the agent work freely without reviewing every step,
+  since it can't change your host system or files outside the project
+- **One CLI for every agent** — run Claude Code, Copilot, Codex, Cursor, OpenCode,
+  or Ralphex through the same commands, and pin or update each agent's version
+  without touching your host
+- **Consistent, fast environment** — a reproducible toolchain on every run, with
+  presets that reuse your host's package caches so dependencies aren't re-downloaded
 
 ## Installation
 
@@ -68,6 +76,10 @@ If you installed via Homebrew, update with `brew upgrade agentbox`.
 Otherwise agentbox can update itself. Run `agentbox self update <version>` to update to a specific version,
 or use `agentbox self update <tab>` to choose a version and install it.
 
+After updating the binary, bring your project sandboxes to the new version with `agentbox upgrade`
+(see [Updating Configuration](#updating-configuration)). A project on an outdated config refuses to
+`run` until you do, so nothing starts on a mismatched sandbox.
+
 ## How to Use
 
 ```bash
@@ -99,7 +111,9 @@ cursor --no-color
 Each agent's own flags are documented in its CLI (`<agent> --help`); agentbox just
 forwards whatever you put here.
 
-Your project is mounted at `/home/box/app`.
+Your project is mounted inside the sandbox at the same absolute path it has on the host.
+This keeps each project's agent session history (e.g. `claude --resume`) separate per project,
+and shared with non-sandbox runs of the same agent.
 
 **Git Configuration**
 
@@ -113,15 +127,17 @@ git config --global user.email "your@email.com"
 
 **Other Commands**
 
-| Command                         | Description                                        |
-| ------------------------------- | -------------------------------------------------- |
-| `agentbox run`                  | Start sandbox, or attach if one is already running |
-| `agentbox run --new`            | Force a new container even if one is running       |
-| `agentbox run --container <id>` | Attach to a specific container by name or ID       |
-| `agentbox run --build`          | Rebuild image and start a new container            |
-| `agentbox run --build-no-cache` | Full rebuild without cache                         |
-| `agentbox ps`                   | List running sandboxes                             |
-| `agentbox clean`                | Remove sandbox files from project                  |
+| Command                         | Description                                          |
+| ------------------------------- | ---------------------------------------------------- |
+| `agentbox run`                  | Start sandbox, or attach if one is already running   |
+| `agentbox run --new`            | Force a new container even if one is running         |
+| `agentbox run --container <id>` | Attach to a specific container by name or ID         |
+| `agentbox run --build`          | Rebuild image and start a new container              |
+| `agentbox run --build-no-cache` | Full rebuild without cache                           |
+| `agentbox ps`                   | List running sandboxes                               |
+| `agentbox upgrade`              | Migrate the current project to this version's config |
+| `agentbox upgrade <path>`       | Migrate every project found under a path             |
+| `agentbox clean`                | Remove sandbox files from project                    |
 
 **Managing Agents**
 
@@ -137,9 +153,9 @@ agentbox agent flags                # edit flags agents are launched with
 
 ### Modular Sandbox Configuration
 
-Sandbox configuration is modular — it consists of a core config (`core.v1.yml`) plus environment
-presets (like `go.v1.yml`) you select during `agentbox init`. Presets mount tool caches from your
-host into the sandbox, so dependencies aren't re-downloaded on every run.
+Sandbox configuration is modular — it consists of a core config (`core.v2.yml`) plus environment
+presets (like `go.v2.yml`) you select during `agentbox init`. Presets give the sandbox a warm,
+isolated tool cache, so dependencies aren't re-downloaded on every run.
 
 Available presets: `Go`, `Python`.
 
@@ -149,10 +165,10 @@ Agentbox stores your sandbox configuration in `~/.agentbox/skeleton/`:
 
 ```
 ~/.agentbox/skeleton/           # your global skeleton (you own this)
-├── core.v1.yml                 # base sandbox config
-├── go.v1.yml                   # Go preset (if selected)
-├── python.v1.yml               # Python preset (if selected)
-├── Dockerfile.v1.agentbox      # sandbox Dockerfile
+├── core.v2.yml                 # base sandbox config
+├── go.v2.yml                   # Go preset (if selected)
+├── python.v2.yml               # Python preset (if selected)
+├── Dockerfile.v2.agentbox      # sandbox Dockerfile
 └── local.yml                   # template for project customizations
 ```
 
@@ -164,9 +180,9 @@ Each project gets a `.agentbox/` directory copied from your skeleton:
 
 ```
 project/.agentbox/
-├── core.v1.yml
-├── go.v1.yml
-├── Dockerfile.v1.agentbox
+├── core.v2.yml
+├── go.v2.yml
+├── Dockerfile.v2.agentbox
 └── local.yml                   # project-specific overrides (never overwritten)
 ```
 
@@ -175,13 +191,21 @@ project/.agentbox/
 
 #### Updating Configuration
 
-| Task                                                                           | Command                          |
-| ------------------------------------------------------------------------------ | -------------------------------- |
-| Reinit project from skeleton                                                   | `agentbox init`                  |
-| Update presets, change selected presets, or recreate the skeleton from scratch | `agentbox init skeleton --force` |
+Managed files carry a version in their name (`core.v2.yml`). A new agentbox release bumps it when a
+change must reach you. A project still on the old version refuses to `run` and tells you to upgrade,
+so a sandbox never starts on a config that does not match the binary.
 
-When you run `agentbox init`, files in `<project>/.agentbox/` are replaced with current skeleton
-(except `local.yml` which is preserved).
+| Task                                                         | Command                             |
+| ------------------------------------------------------------ | ----------------------------------- |
+| Migrate the current project to this version                  | `agentbox upgrade`                  |
+| Migrate every project found under a path                     | `agentbox upgrade <path>`           |
+| Scan deeper than one level for projects                      | `agentbox upgrade <path> --depth 2` |
+| Reinit the current project from the skeleton                 | `agentbox init`                     |
+| Change selected presets / recreate the skeleton from scratch | `agentbox init skeleton --force`    |
+
+`upgrade` regenerates the skeleton at the current version (keeping your presets) and reseeds project
+configs; `local.yml` is always preserved. Without a path it also rebuilds the current project's image;
+with a path it drops the shared image so every project rebuilds on its next `run`.
 
 ## Development
 

@@ -2,13 +2,16 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/aleksey925/agentbox/internal/agents"
+	"github.com/aleksey925/agentbox/internal/skeleton"
 )
 
 func captureOutput(f func()) string {
@@ -563,7 +566,7 @@ func TestCliRouterHandlesAllCommands(t *testing.T) {
 func TestAllCommandsRejectUnknownFlags(t *testing.T) {
 	// Commands that should reject unknown flags
 	// Note: help and version are special and handled before flag validation
-	commands := []string{"init", "run", "ps", "clean", "agent", "completion"}
+	commands := []string{"init", "run", "ps", "clean", "upgrade", "agent", "completion"}
 
 	for _, cmd := range commands {
 		t.Run(cmd, func(t *testing.T) {
@@ -727,4 +730,131 @@ func TestSubcommandDesc(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCheckConfigVersion(t *testing.T) {
+	core, err := skeleton.GetCoreTemplate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	df, err := skeleton.GetEmbeddedDockerfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cv, dv := core.Version, df.Version
+
+	tests := []struct {
+		name  string
+		files []string
+		want  int
+	}{
+		{name: "current", files: []string{coreFile(cv), dockerfileName(dv)}, want: exitOK},
+		{name: "older", files: []string{coreFile(cv - 1), dockerfileName(dv)}, want: exitError},
+		{name: "newer", files: []string{coreFile(cv + 1), dockerfileName(dv)}, want: exitError},
+		{name: "empty", files: nil, want: exitOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// arrange
+			dir := t.TempDir()
+			for _, f := range tt.files {
+				if err := os.WriteFile(filepath.Join(dir, f), []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			// act
+			got := checkConfigVersion(dir)
+
+			// assert
+			if got != tt.want {
+				t.Errorf("checkConfigVersion(%v) = %d, want %d", tt.files, got, tt.want)
+			}
+		})
+	}
+}
+
+func coreFile(v int) string       { return fmt.Sprintf("core.v%d.yml", v) }
+func dockerfileName(v int) string { return fmt.Sprintf("Dockerfile.v%d.agentbox", v) }
+
+func TestParseUpgradeArgs(t *testing.T) {
+	tests := []struct {
+		name      string
+		args      []string
+		wantPath  string
+		wantDepth int
+		wantCode  int
+	}{
+		{name: "empty", args: nil, wantPath: "", wantDepth: 1, wantCode: exitOK},
+		{name: "path_only", args: []string{"/x"}, wantPath: "/x", wantDepth: 1, wantCode: exitOK},
+		{name: "depth_then_path", args: []string{"--depth", "2", "/x"}, wantPath: "/x", wantDepth: 2, wantCode: exitOK},
+		{name: "path_then_depth", args: []string{"/x", "--depth", "3"}, wantPath: "/x", wantDepth: 3, wantCode: exitOK},
+		{name: "depth_no_value", args: []string{"--depth"}, wantCode: exitError},
+		{name: "depth_not_int", args: []string{"--depth", "abc"}, wantCode: exitError},
+		{name: "depth_zero", args: []string{"--depth", "0"}, wantCode: exitError},
+		{name: "depth_without_path", args: []string{"--depth", "2"}, wantCode: exitError},
+		{name: "two_paths", args: []string{"/a", "/b"}, wantCode: exitError},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// act
+			path, depth, code := captureStderrValue(func() (string, int, int) {
+				return parseUpgradeArgs(tt.args)
+			})
+
+			// assert
+			if code != tt.wantCode {
+				t.Fatalf("code = %d, want %d", code, tt.wantCode)
+			}
+			if code == exitOK && (path != tt.wantPath || depth != tt.wantDepth) {
+				t.Errorf("parseUpgradeArgs(%v) = (%q, %d), want (%q, %d)", tt.args, path, depth, tt.wantPath, tt.wantDepth)
+			}
+		})
+	}
+}
+
+func TestScanProjects(t *testing.T) {
+	root := t.TempDir()
+	mkProject(t, filepath.Join(root, "direct"))
+	mkProject(t, filepath.Join(root, "org", "nested"))
+
+	// depth 1 finds only the direct child
+	got := scanProjects(root, 1)
+	if len(got) != 1 || got[0] != filepath.Join(root, "direct") {
+		t.Errorf("depth 1 = %v, want [%s]", got, filepath.Join(root, "direct"))
+	}
+
+	// depth 2 also finds the nested one
+	got = scanProjects(root, 2)
+	want := []string{filepath.Join(root, "direct"), filepath.Join(root, "org", "nested")}
+	slices.Sort(got)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("depth 2 = %v, want %v", got, want)
+	}
+}
+
+func mkProject(t *testing.T, dir string) {
+	t.Helper()
+	agentboxDir := filepath.Join(dir, ".agentbox")
+	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{"core.v2.yml", "Dockerfile.v2.agentbox"} {
+		if err := os.WriteFile(filepath.Join(agentboxDir, f), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func captureStderrValue(f func() (string, int, int)) (string, int, int) {
+	old := os.Stderr
+	_, w, _ := os.Pipe()
+	os.Stderr = w
+	defer func() { os.Stderr = old }()
+	p, d, c := f()
+	w.Close()
+	return p, d, c
 }
