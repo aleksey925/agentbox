@@ -20,6 +20,7 @@ import (
 	"github.com/aleksey925/agentbox/internal/config"
 	"github.com/aleksey925/agentbox/internal/docker"
 	"github.com/aleksey925/agentbox/internal/download"
+	"github.com/aleksey925/agentbox/internal/maskdirs"
 	"github.com/aleksey925/agentbox/internal/skeleton"
 	"github.com/charmbracelet/huh"
 )
@@ -214,6 +215,10 @@ func (a *App) doInit() int {
 	fmt.Println("Created .agentbox/ (from skeleton)")
 	for _, name := range copiedFiles {
 		fmt.Printf("  %s\n", name)
+	}
+	if err := ensureMaskDirsFile(cwd); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating masked-dirs file: %v\n", err)
+		return 1
 	}
 	if keptLocalYml {
 		fmt.Println("Warning: kept existing .agentbox/local.yml - it adds mounts and")
@@ -1133,6 +1138,10 @@ func (a *App) upgradeCurrentProject(manager *skeleton.Manager) int {
 		fmt.Fprintf(os.Stderr, "Error reseeding project: %v\n", err)
 		return 1
 	}
+	if err := ensureMaskDirsFile(cwd); err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating masked-dirs file: %v\n", err)
+		return 1
+	}
 	fmt.Printf("Reseeded %s\n", cwd)
 
 	fmt.Println("Building image...")
@@ -1167,6 +1176,10 @@ func (a *App) upgradeScan(manager *skeleton.Manager, root string, depth int) int
 			fmt.Fprintf(os.Stderr, "  %s: %v\n", dir, err)
 			continue
 		}
+		if err := ensureMaskDirsFile(dir); err != nil {
+			fmt.Fprintf(os.Stderr, "  %s: %v\n", dir, err)
+			continue
+		}
 		fmt.Printf("  reseeded %s\n", dir)
 	}
 
@@ -1176,6 +1189,16 @@ func (a *App) upgradeScan(manager *skeleton.Manager, root string, depth int) int
 
 	fmt.Println("\nDone. Each project rebuilds on its next 'agentbox run'.")
 	return 0
+}
+
+// ensureMaskDirsFile seeds the project's masked-dirs file when absent, with the
+// detected host-built directories pre-activated. An existing file is preserved.
+func ensureMaskDirsFile(projectDir string) error {
+	path := filepath.Join(projectDir, ".agentbox", "masked-dirs")
+	if err := maskdirs.EnsureFile(path, maskdirs.DetectMaskDirs(projectDir)); err != nil {
+		return fmt.Errorf("ensure masked-dirs file: %w", err)
+	}
+	return nil
 }
 
 func regenerateSkeleton(manager *skeleton.Manager) int {

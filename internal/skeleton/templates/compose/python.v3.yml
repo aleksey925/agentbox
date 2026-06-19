@@ -5,7 +5,6 @@ services:
       - UV_PROJECT_ENVIRONMENT=/home/box/.venv
       - UV_LINK_MODE=copy
       - POETRY_VIRTUALENVS_CREATE=false
-      - VENV_DIR_PATH=/home/box/.venv
     volumes:
       - uv-cache:/home/box/.cache/uv
 

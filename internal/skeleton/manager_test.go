@@ -36,9 +36,9 @@ func TestCreateSkeleton(t *testing.T) {
 		t.Fatalf("CreateSkeleton error: %v", err)
 	}
 
-	coreFile := filepath.Join(paths.SkeletonDir, "core.v2.yml")
+	coreFile := filepath.Join(paths.SkeletonDir, "core.v3.yml")
 	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v2.yml not created")
+		t.Error("core.v3.yml not created")
 	}
 
 	goFile := filepath.Join(paths.SkeletonDir, "go.v2.yml")
@@ -46,14 +46,14 @@ func TestCreateSkeleton(t *testing.T) {
 		t.Error("go.v2.yml not created")
 	}
 
-	pythonFile := filepath.Join(paths.SkeletonDir, "python.v2.yml")
+	pythonFile := filepath.Join(paths.SkeletonDir, "python.v3.yml")
 	if _, err := os.Stat(pythonFile); os.IsNotExist(err) {
-		t.Error("python.v2.yml not created")
+		t.Error("python.v3.yml not created")
 	}
 
-	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v2.agentbox")
+	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v3.agentbox")
 	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
-		t.Error("Dockerfile.v2.agentbox not created")
+		t.Error("Dockerfile.v3.agentbox not created")
 	}
 
 	// check local.yml exists
@@ -76,9 +76,9 @@ func TestCreateSkeleton__no_presets(t *testing.T) {
 		t.Fatalf("CreateSkeleton error: %v", err)
 	}
 
-	coreFile := filepath.Join(paths.SkeletonDir, "core.v2.yml")
+	coreFile := filepath.Join(paths.SkeletonDir, "core.v3.yml")
 	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v2.yml not created")
+		t.Error("core.v3.yml not created")
 	}
 
 	localFile := filepath.Join(paths.SkeletonDir, "local.yml")
@@ -86,9 +86,9 @@ func TestCreateSkeleton__no_presets(t *testing.T) {
 		t.Error("local.yml not created")
 	}
 
-	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v2.agentbox")
+	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v3.agentbox")
 	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
-		t.Error("Dockerfile.v2.agentbox not created")
+		t.Error("Dockerfile.v3.agentbox not created")
 	}
 
 	// check only core + local.yml + Dockerfile (no preset files)
@@ -167,14 +167,14 @@ func TestCopyToProject(t *testing.T) {
 		t.Error(".agentbox dir not created")
 	}
 
-	coreFile := filepath.Join(agentboxDir, "core.v2.yml")
+	coreFile := filepath.Join(agentboxDir, "core.v3.yml")
 	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v2.yml not copied")
+		t.Error("core.v3.yml not copied")
 	}
 
-	dockerFile := filepath.Join(agentboxDir, "Dockerfile.v2.agentbox")
+	dockerFile := filepath.Join(agentboxDir, "Dockerfile.v3.agentbox")
 	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
-		t.Error("Dockerfile.v2.agentbox not copied")
+		t.Error("Dockerfile.v3.agentbox not copied")
 	}
 
 	localFile := filepath.Join(agentboxDir, "local.yml")

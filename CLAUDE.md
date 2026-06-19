@@ -192,6 +192,53 @@ This covers two cases:
   read-only git exec-surface overlay, project-readiness checks) and would otherwise mount
   a weaker sandbox at a guessed path without warning.
 
+### Masking project sub-directories
+
+The whole project is mounted read-write, but some sub-directories must be
+hidden from the container instead: a host `.venv` or `node_modules` built with
+macOS binaries is guaranteed-incompatible inside the Linux container, and
+mounting it breaks the project. Masking replaces such a directory with its own
+isolated, initially-empty Docker volume. The host directory is never mounted or
+touched - the agent works in its own copy. This is also containment: the agent
+can no longer corrupt the host's `node_modules` and cannot un-mask itself.
+
+The mechanism is the same nested-mount trick as the `.agentbox:ro` and git
+overlays - a named volume mounted at a deeper path wins over the project bind
+mount regardless of compose-file order. The volume is per-project and
+persistent (not tmpfs, not anonymous), so `node_modules` stays warm across
+`run --rm`. Its name is `agentbox-mask-<projhash>-<subhash>` (12 hex chars of
+`sha256` each), so two projects never share a volume and a rerun reuses it; the
+`<projhash>` prefix is what orphan cleanup filters on.
+
+A volume mounted at a path the image lacks is created `root:root`, so the `box`
+user cannot write it. A generic `.bashrc` loop chowns each masked path to
+`box:box` once, only while it is still root-owned (idempotent, non-recursive).
+The paths reach bash through `AGENTBOX_MASK_PATHS` (newline-joined, set in the
+live fragment), the same live channel as `AGENTBOX_PROJECT_PATH` - newline, not
+colon, because project paths may contain spaces or colons. The `.bashrc` loop
+is a no-op when the variable is empty, so projects without masks are
+unaffected.
+
+The list lives in `.agentbox/masked-dirs`, line-based (one path per line, `#`
+comments). Because `.agentbox/` is mounted read-only, the agent cannot edit the
+file and un-mask itself. The file is generated, not a skeleton template (like
+agent-flags and the git overlay): its content depends on per-project detection,
+so it does not belong in the static skeleton. On a fresh seed, init/upgrade
+auto-detect known host-built dirs (`.venv`, `venv`, `.tox`, `node_modules` at
+the root and one level deep, never descending into `node_modules`) and write
+them active, the rest as commented examples. `vendor` is offered only as a
+commented suggestion, never auto-activated: masking it is containment, not
+compatibility - portable Go source the agent tampers with stays in the
+container and never reaches the host `vendor/` (the threat behind "Preset
+caches are sandbox-local") - but an empty `vendor/` breaks a vendored build
+until re-vendored, so enabling it is the user's choice. An existing file is
+preserved on reinit, like `local.yml`. The fragment is appended only in `Run`,
+never `Build`, so the shared image stays project-independent. Cleanup
+self-heals on run: before starting, the desired volume set is diffed against
+the volumes that exist, and orphans (lines the user removed) are dropped -
+best-effort, so a busy or missing volume never blocks the run. The `core` and
+`Dockerfile` templates bump together to v3 to deliver the `.bashrc` loop.
+
 ### Presets terminology
 
 The same concept is named differently by audience: "sandbox configuration" for the whole,
