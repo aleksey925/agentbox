@@ -1,4 +1,4 @@
-# Go environment preset
+# go environment preset
 services:
   agentbox:
     environment:

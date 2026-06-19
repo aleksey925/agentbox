@@ -1,5 +1,5 @@
 # agentbox core configuration
-# This file is managed by agentbox and will be overwritten on updates.
+# this file is managed by agentbox and will be overwritten on updates
 services:
   agentbox:
     image: agentbox:local

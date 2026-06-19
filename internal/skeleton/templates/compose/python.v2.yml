@@ -1,4 +1,4 @@
-# Python environment preset
+# python environment preset
 services:
   agentbox:
     environment:
