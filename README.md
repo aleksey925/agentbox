@@ -188,10 +188,12 @@ project/.agentbox/
 ```
 
 - **`local.yml`** — add project-specific settings here, this file is never overwritten
-- **`masked-dirs`** — list project sub-directories to hide from the sandbox; each
-  is replaced inside the container by its own isolated, empty volume, so a
-  host-built `.venv` or `node_modules` never reaches the Linux container. Never
-  overwritten once created.
+- **`masked-dirs`** — list project sub-directories to hide from the sandbox;
+  each is replaced inside the container by its own isolated, empty volume.
+  Detected `.venv`, `node_modules` and `vendor` are masked by default, so
+  host-built artifacts never reach the Linux container and code the agent
+  fetches (e.g. into `vendor/`) never reaches the host. Never overwritten once
+  created.
 - All `.yml` files are automatically merged when running the sandbox
 
 #### Updating Configuration

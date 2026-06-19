@@ -224,15 +224,17 @@ comments). Because `.agentbox/` is mounted read-only, the agent cannot edit the
 file and un-mask itself. The file is generated, not a skeleton template (like
 agent-flags and the git overlay): its content depends on per-project detection,
 so it does not belong in the static skeleton. On a fresh seed, init/upgrade
-auto-detect known host-built dirs (`.venv`, `venv`, `.tox`, `node_modules` at
-the root and one level deep, never descending into `node_modules`) and write
-them active, the rest as commented examples. `vendor` is offered only as a
-commented suggestion, never auto-activated: masking it is containment, not
-compatibility - portable Go source the agent tampers with stays in the
-container and never reaches the host `vendor/` (the threat behind "Preset
-caches are sandbox-local") - but an empty `vendor/` breaks a vendored build
-until re-vendored, so enabling it is the user's choice. An existing file is
-preserved on reinit, like `local.yml`. The fragment is appended only in `Run`,
+auto-detect candidate dirs (`.venv`, `venv`, `.tox`, `node_modules`, `vendor`)
+at the root and one level deep, never descending into a dir already masked at
+the root, and write the ones found active, the rest as commented examples.
+`.venv`/`node_modules` are masked for compatibility (host-built, broken in the
+Linux container); `vendor` is masked for containment - portable Go source the
+agent tampers with never reaches the host `vendor/` the host later compiles
+(the threat behind "Preset caches are sandbox-local"). `vendor` is on by
+default as a security floor; the cost is that its empty volume needs
+`go mod vendor` in the sandbox, which the user accepts or removes the line. An
+existing file is preserved on reinit, like `local.yml`. The fragment is
+appended only in `Run`,
 never `Build`, so the shared image stays project-independent. Cleanup
 self-heals on run: before starting, the desired volume set is diffed against
 the volumes that exist, and orphans (lines the user removed) are dropped -

@@ -19,40 +19,18 @@ import (
 )
 
 // candidateNames are the directory names auto-detected at the project root and
-// one level deep. They are host-built artifacts (macOS virtualenvs, platform
-// node_modules) that are guaranteed-incompatible inside the Linux container.
-var candidateNames = []string{".venv", "venv", ".tox", "node_modules"}
-
-// maskSuggestion is a directory offered only as a commented hint in a fresh
-// file - never auto-detected or activated. note lines are rendered above it.
-type maskSuggestion struct {
-	name string
-	note []string
-}
-
-// suggestions are masks worth knowing about but wrong to enable by default.
-// vendor/ is portable Go source, so masking it is containment, not
-// compatibility: dependencies the agent fetches stay in the container's volume
-// and never reach the host vendor/ that the host later compiles - the threat
-// behind CLAUDE.md "Preset caches are sandbox-local". Off by default because an
-// empty vendor/ breaks a vendored build until 'go mod vendor'.
-var suggestions = []maskSuggestion{
-	{
-		name: "vendor",
-		note: []string{
-			"Go: keep dependencies the agent fetches inside the container, so a",
-			"tampered one never reaches the host. Empties vendor/, so re-run",
-			"'go mod vendor' in the sandbox after enabling.",
-		},
-	},
-}
+// one level deep, written active when found. .venv/venv/.tox/node_modules mask
+// for compatibility, vendor for containment - see CLAUDE.md "Masking project
+// sub-directories".
+var candidateNames = []string{".venv", "venv", ".tox", "node_modules", "vendor"}
 
 const fileHeader = `# Project sub-directories to hide from the sandbox.
 #
 # Each listed directory is replaced inside the container by its own isolated,
 # empty Docker volume. The host directory is never mounted and never touched -
-# the agent works in its own copy. Useful for host-built artifacts that do not
-# work inside the Linux container (a macOS .venv, a platform node_modules).
+# the agent works in its own copy. This hides host-built artifacts that do not
+# work in the Linux container (a macOS .venv, a platform node_modules) and keeps
+# what the agent fetches (e.g. into vendor/) from reaching the host.
 #
 # Format: one path per line, relative to the project root. A line starting with
 # '#' is a comment (inline '#' is not); blank lines are ignored. Nested paths
@@ -60,11 +38,17 @@ const fileHeader = `# Project sub-directories to hide from the sandbox.
 
 `
 
-// DetectMaskDirs returns the sorted relative paths of host-built directories
+// DetectMaskDirs returns the sorted relative paths of maskable directories
 // found in the project: the candidate names at the root, plus the same names
-// inside direct sub-directories (one level deep). It never descends into a
-// node_modules tree and skips .agentbox and .git.
+// inside direct sub-directories (one level deep). It skips .agentbox and .git,
+// and does not descend into a dir already masked at the root (a candidate name)
+// - its contents live inside that mask, so a nested entry would be redundant.
 func DetectMaskDirs(projectDir string) []string {
+	noDescend := map[string]bool{".agentbox": true, ".git": true}
+	for _, name := range candidateNames {
+		noDescend[name] = true
+	}
+
 	var found []string
 	for _, name := range candidateNames {
 		if dirExists(filepath.Join(projectDir, name)) {
@@ -78,16 +62,12 @@ func DetectMaskDirs(projectDir string) []string {
 		return found
 	}
 	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		sub := e.Name()
-		if sub == ".agentbox" || sub == ".git" || sub == "node_modules" {
+		if !e.IsDir() || noDescend[e.Name()] {
 			continue
 		}
 		for _, name := range candidateNames {
-			if dirExists(filepath.Join(projectDir, sub, name)) {
-				found = append(found, filepath.ToSlash(filepath.Join(sub, name)))
+			if dirExists(filepath.Join(projectDir, e.Name(), name)) {
+				found = append(found, filepath.ToSlash(filepath.Join(e.Name(), name)))
 			}
 		}
 	}
@@ -113,14 +93,6 @@ func DefaultFileContent(detected []string) []byte {
 		if !active[name] {
 			fmt.Fprintf(&b, "# %s\n", name)
 		}
-	}
-
-	for _, s := range suggestions {
-		b.WriteString("\n")
-		for _, line := range s.note {
-			fmt.Fprintf(&b, "# %s\n", line)
-		}
-		fmt.Fprintf(&b, "# %s\n", s.name)
 	}
 
 	return []byte(b.String())
