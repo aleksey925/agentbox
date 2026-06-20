@@ -19,18 +19,18 @@ import (
 )
 
 // candidateNames are the directory names auto-detected at the project root and
-// one level deep, written active when found. .venv/venv/.tox/node_modules mask
-// for compatibility, vendor for containment - see CLAUDE.md "Masking project
+// one level deep, written active when found. They are host-built artifacts that
+// break inside the Linux container. A build artifact a lockfile regenerates
+// (Go's vendor/) is deliberately excluded - see CLAUDE.md "Masking project
 // sub-directories".
-var candidateNames = []string{".venv", "venv", ".tox", "node_modules", "vendor"}
+var candidateNames = []string{".venv", "venv", ".tox", "node_modules"}
 
 const fileHeader = `# Project sub-directories to hide from the sandbox.
 #
 # Each listed directory is replaced inside the container by its own isolated,
 # empty Docker volume. The host directory is never mounted and never touched -
 # the agent works in its own copy. This hides host-built artifacts that do not
-# work in the Linux container (a macOS .venv, a platform node_modules) and keeps
-# what the agent fetches (e.g. into vendor/) from reaching the host.
+# work in the Linux container (a macOS .venv, a platform node_modules).
 #
 # Format: one path per line, relative to the project root. A line starting with
 # '#' is a comment (inline '#' is not); blank lines are ignored. Nested paths

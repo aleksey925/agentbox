@@ -224,22 +224,46 @@ comments). Because `.agentbox/` is mounted read-only, the agent cannot edit the
 file and un-mask itself. The file is generated, not a skeleton template (like
 agent-flags and the git overlay): its content depends on per-project detection,
 so it does not belong in the static skeleton. On a fresh seed, init/upgrade
-auto-detect candidate dirs (`.venv`, `venv`, `.tox`, `node_modules`, `vendor`)
-at the root and one level deep, never descending into a dir already masked at
-the root, and write the ones found active, the rest as commented examples.
-`.venv`/`node_modules` are masked for compatibility (host-built, broken in the
-Linux container); `vendor` is masked for containment - portable Go source the
-agent tampers with never reaches the host `vendor/` the host later compiles
-(the threat behind "Preset caches are sandbox-local"). `vendor` is on by
-default as a security floor; the cost is that its empty volume needs
-`go mod vendor` in the sandbox, which the user accepts or removes the line. An
-existing file is preserved on reinit, like `local.yml`. The fragment is
-appended only in `Run`,
+auto-detect candidate dirs (`.venv`, `venv`, `.tox`, `node_modules`) at the
+root and one level deep, never descending into a dir already masked at the
+root, and write the ones found active, the rest as commented examples. The
+candidates are host-built artifacts that break inside the Linux container, so
+masking them costs nothing - the container needs its own copy anyway.
+
+Masking only fits artifacts the container must rebuild regardless. A directory
+the tooling rebuilds in place by deleting and recreating it - Go's `vendor/`
+via `go mod vendor` - is deliberately not a candidate: masking turns it into a
+mount point, and a mount point cannot be removed. `go mod vendor` fails with
+EBUSY inside the sandbox, and a host-side `go mod vendor` cannot recreate
+`vendor/` while the sandbox holds it as a mount anchor. Masking buys no
+compatibility here either - `vendor/` is portable source that works as-is in
+the container - so it stays unmasked. A user who still wants it masked adds the
+line by hand; nothing stops masking an arbitrary path. An existing file is
+preserved on reinit, like `local.yml`. The fragment is appended only in `Run`,
 never `Build`, so the shared image stays project-independent. Cleanup
 self-heals on run: before starting, the desired volume set is diffed against
 the volumes that exist, and orphans (lines the user removed) are dropped -
 best-effort, so a busy or missing volume never blocks the run. The `core` and
 `Dockerfile` templates bump together to v3 to deliver the `.bashrc` loop.
+
+Limitation on Docker Desktop (macOS). The mask volume is nested inside the
+project bind, which on macOS goes through a live file-sharing layer
+(virtiofs/gRPC-FUSE). Deleting a masked directory on the host while the sandbox
+is running detaches the nested volume: the path reverts to the project bind and
+re-syncs with the host, so containment for that directory is lost until the
+next launch. This is not agent-exploitable - from inside the sandbox the masked
+path is the volume, so the agent deleting it removes volume content, not the
+host directory; only a host-side `rm` during a live session triggers it. It is
+not fixed because the only robust cure is to stop binding the project as one
+mount and bind each top-level entry instead, which would stop new top-level
+files from syncing live - a worse tradeoff than a rare host-side action. The
+between-runs case is fine: Docker recreates the empty mountpoint at launch, so
+the next run re-masks correctly. The contract is therefore: while a sandbox
+runs, never delete the masked directory node - on macOS a host-side delete
+detaches it as above, and inside the sandbox removing the mount point fails
+with EBUSY anyway. To recreate the contents (e.g. rebuild a `.venv`), clear
+them and rebuild in place rather than deleting the directory; to replace the
+node itself, do it between runs.
 
 ### Presets terminology
 

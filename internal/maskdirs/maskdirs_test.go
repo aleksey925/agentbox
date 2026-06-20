@@ -32,31 +32,16 @@ func TestDetectMaskDirs__root_and_one_level_deep(t *testing.T) {
 	}
 }
 
-func TestDetectMaskDirs__detects_vendor(t *testing.T) {
-	// arrange
-	root := t.TempDir()
-	mkdirs(t, root, "vendor", "node_modules")
-
-	// act
-	got := DetectMaskDirs(root)
-
-	// assert
-	want := []string{"node_modules", "vendor"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
-
 func TestDetectMaskDirs__does_not_descend_into_masked_candidate(t *testing.T) {
 	// arrange
 	root := t.TempDir()
-	mkdirs(t, root, "vendor/vendor", "vendor/node_modules")
+	mkdirs(t, root, "node_modules/node_modules", "node_modules/.venv")
 
 	// act
 	got := DetectMaskDirs(root)
 
 	// assert
-	want := []string{"vendor"}
+	want := []string{"node_modules"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v", got, want)
 	}
@@ -112,19 +97,6 @@ func TestDefaultFileContent__without_detected(t *testing.T) {
 		if !strings.Contains(content, "# "+name+"\n") {
 			t.Errorf("candidate %q not written as comment:\n%s", name, content)
 		}
-	}
-}
-
-func TestDefaultFileContent__vendor_active_when_detected(t *testing.T) {
-	// act
-	content := string(DefaultFileContent([]string{"vendor"}))
-
-	// assert
-	if !strings.Contains(content, "\nvendor\n") {
-		t.Errorf("detected vendor not written as active line:\n%s", content)
-	}
-	if strings.Contains(content, "# vendor\n") {
-		t.Errorf("detected vendor should not also be a comment:\n%s", content)
 	}
 }
 
