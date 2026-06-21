@@ -195,75 +195,52 @@ This covers two cases:
 ### Masking project sub-directories
 
 The whole project is mounted read-write, but some sub-directories must be
-hidden from the container instead: a host `.venv` or `node_modules` built with
-macOS binaries is guaranteed-incompatible inside the Linux container, and
-mounting it breaks the project. Masking replaces such a directory with its own
-isolated, initially-empty Docker volume. The host directory is never mounted or
-touched - the agent works in its own copy. This is also containment: the agent
-can no longer corrupt the host's `node_modules` and cannot un-mask itself.
+hidden instead: a host `.venv` or `node_modules` built with macOS binaries is
+incompatible inside the Linux container and breaks the build if mounted.
+Masking replaces such a directory with its own isolated, initially-empty Docker
+volume - the host copy is never touched and the agent works in its own. This is
+also containment: the agent cannot corrupt the host's copy or un-mask itself.
 
-The mechanism is the same nested-mount trick as the `.agentbox:ro` and git
-overlays - a named volume mounted at a deeper path wins over the project bind
-mount regardless of compose-file order. The volume is per-project and
-persistent (not tmpfs, not anonymous), so `node_modules` stays warm across
-`run --rm`. Its name is `agentbox-mask-<projhash>-<subhash>` (12 hex chars of
-`sha256` each), so two projects never share a volume and a rerun reuses it; the
-`<projhash>` prefix is what orphan cleanup filters on.
+The mechanism is the nested-mount trick the `.agentbox:ro` and git overlays
+already use - a volume mounted at a deeper path wins over the project bind
+regardless of compose order. The volume is per-project and persistent (not
+tmpfs, not anonymous), so it stays warm across `run --rm`; its name
+`agentbox-mask-<projhash>-<subhash>` stops two projects sharing one, and the
+`<projhash>` prefix is what orphan cleanup filters on. Mounted on a path the
+image lacks it is created `root:root`, so a generic `.bashrc` loop chowns each
+masked path to `box:box` once while still root-owned. The paths arrive via
+`AGENTBOX_MASK_PATHS` (newline-joined, since a path may contain spaces or
+colons), the same live channel as `AGENTBOX_PROJECT_PATH`; the loop is a no-op
+when empty.
 
-A volume mounted at a path the image lacks is created `root:root`, so the `box`
-user cannot write it. A generic `.bashrc` loop chowns each masked path to
-`box:box` once, only while it is still root-owned (idempotent, non-recursive).
-The paths reach bash through `AGENTBOX_MASK_PATHS` (newline-joined, set in the
-live fragment), the same live channel as `AGENTBOX_PROJECT_PATH` - newline, not
-colon, because project paths may contain spaces or colons. The `.bashrc` loop
-is a no-op when the variable is empty, so projects without masks are
-unaffected.
+The list lives in `.agentbox/masked-dirs` (one path per line, `#` comments),
+read-only like the rest of `.agentbox/` so the agent cannot un-mask itself. It
+is generated, not a skeleton template, because its content depends on
+per-project detection: on a fresh seed init/upgrade auto-detect candidates
+(`.venv`, `venv`, `.tox`, `node_modules`) at the root and one level deep, write
+the active ones and the rest as commented examples, and preserve an existing
+file on reinit. The fragment is appended only in `Run`, never `Build`, so the
+shared image stays project-independent, and cleanup self-heals: each run drops
+volumes whose lines the user removed, best-effort.
 
-The list lives in `.agentbox/masked-dirs`, line-based (one path per line, `#`
-comments). Because `.agentbox/` is mounted read-only, the agent cannot edit the
-file and un-mask itself. The file is generated, not a skeleton template (like
-agent-flags and the git overlay): its content depends on per-project detection,
-so it does not belong in the static skeleton. On a fresh seed, init/upgrade
-auto-detect candidate dirs (`.venv`, `venv`, `.tox`, `node_modules`) at the
-root and one level deep, never descending into a dir already masked at the
-root, and write the ones found active, the rest as commented examples. The
-candidates are host-built artifacts that break inside the Linux container, so
-masking them costs nothing - the container needs its own copy anyway.
+Masking fits only host-built artifacts the container rebuilds anyway. A
+directory the tooling rebuilds in place by deleting and recreating it - Go's
+`vendor/` via `go mod vendor` - is deliberately excluded: masking turns it into
+a mount point that cannot be removed (`go mod vendor` then fails with EBUSY),
+and buys no compatibility since `vendor/` is portable source. It stays
+unmasked; a user who wants it masked adds the line by hand.
 
-Masking only fits artifacts the container must rebuild regardless. A directory
-the tooling rebuilds in place by deleting and recreating it - Go's `vendor/`
-via `go mod vendor` - is deliberately not a candidate: masking turns it into a
-mount point, and a mount point cannot be removed. `go mod vendor` fails with
-EBUSY inside the sandbox, and a host-side `go mod vendor` cannot recreate
-`vendor/` while the sandbox holds it as a mount anchor. Masking buys no
-compatibility here either - `vendor/` is portable source that works as-is in
-the container - so it stays unmasked. A user who still wants it masked adds the
-line by hand; nothing stops masking an arbitrary path. An existing file is
-preserved on reinit, like `local.yml`. The fragment is appended only in `Run`,
-never `Build`, so the shared image stays project-independent. Cleanup
-self-heals on run: before starting, the desired volume set is diffed against
-the volumes that exist, and orphans (lines the user removed) are dropped -
-best-effort, so a busy or missing volume never blocks the run. The `core` and
-`Dockerfile` templates bump together to v3 to deliver the `.bashrc` loop.
-
-Limitation on Docker Desktop (macOS). The mask volume is nested inside the
-project bind, which on macOS goes through a live file-sharing layer
-(virtiofs/gRPC-FUSE). Deleting a masked directory on the host while the sandbox
-is running detaches the nested volume: the path reverts to the project bind and
-re-syncs with the host, so containment for that directory is lost until the
-next launch. This is not agent-exploitable - from inside the sandbox the masked
-path is the volume, so the agent deleting it removes volume content, not the
-host directory; only a host-side `rm` during a live session triggers it. It is
-not fixed because the only robust cure is to stop binding the project as one
-mount and bind each top-level entry instead, which would stop new top-level
-files from syncing live - a worse tradeoff than a rare host-side action. The
-between-runs case is fine: Docker recreates the empty mountpoint at launch, so
-the next run re-masks correctly. The contract is therefore: while a sandbox
-runs, never delete the masked directory node - on macOS a host-side delete
-detaches it as above, and inside the sandbox removing the mount point fails
-with EBUSY anyway. To recreate the contents (e.g. rebuild a `.venv`), clear
-them and rebuild in place rather than deleting the directory; to replace the
-node itself, do it between runs.
+Limitation on Docker Desktop (macOS): the mask volume nests inside the project
+bind, which goes through a live file-sharing layer. Deleting a masked directory
+on the host *while the sandbox runs* detaches the volume - the path reverts to
+the project bind and containment is lost until the next launch. It is not
+agent-exploitable (inside the sandbox the masked path is the volume, so
+deleting it removes volume content, not the host directory); only a host-side
+`rm` during a live session triggers it. The only robust fix - binding each
+top-level entry separately - would stop new top-level files from syncing live,
+a worse tradeoff. The contract: while a sandbox runs, never delete a masked
+directory node (inside the sandbox it fails with EBUSY anyway); to rebuild
+contents, clear them in place rather than deleting the node.
 
 ### Presets terminology
 
