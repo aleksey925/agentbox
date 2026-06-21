@@ -45,7 +45,8 @@ RUN mkdir -p /etc/apt/keyrings && \
            /var/log/alternatives.log \
            /tmp/* && \
     echo 'eval "$(mise activate bash)"' >> /home/box/.bashrc && \
-    echo 'mise ls --missing --quiet 2>/dev/null | grep -q . && mise install' >> /home/box/.bashrc
+    echo 'mise ls --missing --quiet 2>/dev/null | grep -q . && mise install' >> /home/box/.bashrc && \
+    echo 'while IFS= read -r p; do [ -n "$p" ] && [ "$(stat -c %U "$p" 2>/dev/null)" = root ] && sudo chown box:box "$p"; done <<< "$AGENTBOX_MASK_PATHS"' >> /home/box/.bashrc
 
 ENV DISABLE_AUTOUPDATER=1
 

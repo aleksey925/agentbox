@@ -192,6 +192,56 @@ This covers two cases:
   read-only git exec-surface overlay, project-readiness checks) and would otherwise mount
   a weaker sandbox at a guessed path without warning.
 
+### Masking project sub-directories
+
+The whole project is mounted read-write, but some sub-directories must be
+hidden instead: a host `.venv` or `node_modules` built with macOS binaries is
+incompatible inside the Linux container and breaks the build if mounted.
+Masking replaces such a directory with its own isolated, initially-empty Docker
+volume - the host copy is never touched and the agent works in its own. This is
+also containment: the agent cannot corrupt the host's copy or un-mask itself.
+
+The mechanism is the nested-mount trick the `.agentbox:ro` and git overlays
+already use - a volume mounted at a deeper path wins over the project bind
+regardless of compose order. The volume is per-project and persistent (not
+tmpfs, not anonymous), so it stays warm across `run --rm`; its name
+`agentbox-mask-<projhash>-<subhash>` stops two projects sharing one, and the
+`<projhash>` prefix is what orphan cleanup filters on. Mounted on a path the
+image lacks it is created `root:root`, so a generic `.bashrc` loop chowns each
+masked path to `box:box` once while still root-owned. The paths arrive via
+`AGENTBOX_MASK_PATHS` (newline-joined, since a path may contain spaces or
+colons), the same live channel as `AGENTBOX_PROJECT_PATH`; the loop is a no-op
+when empty.
+
+The list lives in `.agentbox/masked-dirs` (one path per line, `#` comments),
+read-only like the rest of `.agentbox/` so the agent cannot un-mask itself. It
+is generated, not a skeleton template, because its content depends on
+per-project detection: on a fresh seed init/upgrade auto-detect candidates
+(`.venv`, `venv`, `.tox`, `node_modules`) at the root and one level deep, write
+the active ones and the rest as commented examples, and preserve an existing
+file on reinit. The fragment is appended only in `Run`, never `Build`, so the
+shared image stays project-independent, and cleanup self-heals: each run drops
+volumes whose lines the user removed, best-effort.
+
+Masking fits only host-built artifacts the container rebuilds anyway. A
+directory the tooling rebuilds in place by deleting and recreating it - Go's
+`vendor/` via `go mod vendor` - is deliberately excluded: masking turns it into
+a mount point that cannot be removed (`go mod vendor` then fails with EBUSY),
+and buys no compatibility since `vendor/` is portable source. It stays
+unmasked; a user who wants it masked adds the line by hand.
+
+Limitation on Docker Desktop (macOS): the mask volume nests inside the project
+bind, which goes through a live file-sharing layer. Deleting a masked directory
+on the host *while the sandbox runs* detaches the volume - the path reverts to
+the project bind and containment is lost until the next launch. It is not
+agent-exploitable (inside the sandbox the masked path is the volume, so
+deleting it removes volume content, not the host directory); only a host-side
+`rm` during a live session triggers it. The only robust fix - binding each
+top-level entry separately - would stop new top-level files from syncing live,
+a worse tradeoff. The contract: while a sandbox runs, never delete a masked
+directory node (inside the sandbox it fails with EBUSY anyway); to rebuild
+contents, clear them in place rather than deleting the node.
+
 ### Presets terminology
 
 The same concept is named differently by audience: "sandbox configuration" for the whole,

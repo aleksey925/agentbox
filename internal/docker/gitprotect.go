@@ -217,18 +217,9 @@ func writeGitProtectionFragment(projectDir string) (path string, cleanup func(),
 		return "", noop, nil
 	}
 
-	f, err := os.CreateTemp("", "agentbox-gitprotect-*.yml")
+	name, err := writeComposeFragment("agentbox-gitprotect", renderGitProtectionCompose(paths))
 	if err != nil {
-		return "", noop, fmt.Errorf("create git protection fragment: %w", err)
+		return "", noop, err
 	}
-	if _, err := f.WriteString(renderGitProtectionCompose(paths)); err != nil {
-		f.Close()
-		os.Remove(f.Name())
-		return "", noop, fmt.Errorf("write git protection fragment: %w", err)
-	}
-	if err := f.Close(); err != nil {
-		os.Remove(f.Name())
-		return "", noop, fmt.Errorf("close git protection fragment: %w", err)
-	}
-	return f.Name(), func() { os.Remove(f.Name()) }, nil
+	return name, func() { os.Remove(name) }, nil
 }

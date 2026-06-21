@@ -1,11 +1,11 @@
 # agentbox core configuration
-# This file is managed by agentbox and will be overwritten on updates.
+# this file is managed by agentbox and will be overwritten on updates
 services:
   agentbox:
     image: agentbox:local
     build:
       context: .
-      dockerfile: .agentbox/Dockerfile.v2.agentbox
+      dockerfile: .agentbox/Dockerfile.v3.agentbox
     # mirror the host project path (see CLAUDE.md "Live, not baked")
     working_dir: ${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
     environment:

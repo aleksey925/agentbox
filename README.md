@@ -153,7 +153,7 @@ agentbox agent flags                # edit flags agents are launched with
 
 ### Modular Sandbox Configuration
 
-Sandbox configuration is modular — it consists of a core config (`core.v2.yml`) plus environment
+Sandbox configuration is modular — it consists of a core config (`core.v3.yml`) plus environment
 presets (like `go.v2.yml`) you select during `agentbox init`. Presets give the sandbox a warm,
 isolated tool cache, so dependencies aren't re-downloaded on every run.
 
@@ -165,10 +165,10 @@ Agentbox stores your sandbox configuration in `~/.agentbox/skeleton/`:
 
 ```
 ~/.agentbox/skeleton/           # your global skeleton (you own this)
-├── core.v2.yml                 # base sandbox config
+├── core.v3.yml                 # base sandbox config
 ├── go.v2.yml                   # Go preset (if selected)
-├── python.v2.yml               # Python preset (if selected)
-├── Dockerfile.v2.agentbox      # sandbox Dockerfile
+├── python.v3.yml               # Python preset (if selected)
+├── Dockerfile.v3.agentbox      # sandbox Dockerfile
 └── local.yml                   # template for project customizations
 ```
 
@@ -180,18 +180,41 @@ Each project gets a `.agentbox/` directory copied from your skeleton:
 
 ```
 project/.agentbox/
-├── core.v2.yml
+├── core.v3.yml
 ├── go.v2.yml
-├── Dockerfile.v2.agentbox
+├── Dockerfile.v3.agentbox
+├── masked-dirs                 # project sub-dirs hidden from the sandbox (never overwritten)
 └── local.yml                   # project-specific overrides (never overwritten)
 ```
 
 - **`local.yml`** — add project-specific settings here, this file is never overwritten
+- **`masked-dirs`** — list project sub-directories to hide from the sandbox;
+  each is replaced inside the container by its own isolated, empty volume.
+  Detected `.venv` and `node_modules` are masked by default, so host-built
+  artifacts (macOS binaries) never reach the Linux container and the container
+  builds its own copy. Never overwritten once created.
+  - **Masking does not fit every directory.** It suits host-built artifacts the
+    container must rebuild anyway (a macOS `.venv`, a platform `node_modules`).
+    It does not suit a directory your tooling rebuilds in place by deleting and
+    recreating it - Go's `vendor/`, for example. Masking turns the directory
+    into a mount point, and a mount point cannot be removed: inside the sandbox
+    `go mod vendor` fails with "device or resource busy", and on the host it
+    cannot recreate `vendor/` while a sandbox holds it as a mount anchor. So
+    `vendor/` is not masked by default; mask only host-built artifacts the
+    container cannot reuse, not directories your tooling regenerates.
+  - **Recreate in place, never delete the directory itself.** A masked
+    directory is a mount point. While a sandbox is running, do not remove the
+    directory node - inside the sandbox it fails with "device or resource
+    busy", and from the host (Docker Desktop) it detaches the volume and
+    re-exposes the host path until you restart. To rebuild what is inside - for
+    example to recreate a `.venv` - clear its contents and rebuild in place
+    instead of deleting and recreating the folder. To replace the directory
+    node itself, stop the sandbox first and do it between runs.
 - All `.yml` files are automatically merged when running the sandbox
 
 #### Updating Configuration
 
-Managed files carry a version in their name (`core.v2.yml`). A new agentbox release bumps it when a
+Managed files carry a version in their name (`core.v3.yml`). A new agentbox release bumps it when a
 change must reach you. A project still on the old version refuses to `run` and tells you to upgrade,
 so a sandbox never starts on a config that does not match the binary.
 

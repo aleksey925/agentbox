@@ -123,8 +123,17 @@ func (m *Manager) GetEnabledPresets() ([]string, error) {
 	return presets, nil
 }
 
-// cleanProjectDir removes all files from project's .agentbox/ except those
-// preserved across reinit (local.yml, .gitignore).
+// preservedFiles are the user-owned files in a project's .agentbox/ that a
+// reinit must keep: local.yml (project overrides), .gitignore, and masked-dirs
+// (per-developer mask list). Everything else is reseeded from the skeleton.
+var preservedFiles = map[string]bool{
+	"local.yml":   true,
+	".gitignore":  true,
+	"masked-dirs": true,
+}
+
+// cleanProjectDir removes all files from project's .agentbox/ except the
+// user-owned ones preserved across reinit (see preservedFiles).
 func cleanProjectDir(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -135,7 +144,7 @@ func cleanProjectDir(dir string) error {
 	}
 
 	for _, e := range entries {
-		if e.Name() == "local.yml" || e.Name() == ".gitignore" {
+		if preservedFiles[e.Name()] {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())

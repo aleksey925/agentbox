@@ -61,6 +61,25 @@ func EnsureSharedVolumes() error {
 	return nil
 }
 
+// writeComposeFragment writes a live compose overlay to a temp file named with
+// the given prefix, returning its path and a cleanup that removes it.
+func writeComposeFragment(prefix, content string) (path string, err error) {
+	f, err := os.CreateTemp("", prefix+"-*.yml")
+	if err != nil {
+		return "", fmt.Errorf("create %s fragment: %w", prefix, err)
+	}
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", fmt.Errorf("write %s fragment: %w", prefix, err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", fmt.Errorf("close %s fragment: %w", prefix, err)
+	}
+	return f.Name(), nil
+}
+
 // containerProjectPath returns the in-container path a project is mounted at.
 // mirror scheme (see CLAUDE.md "Live, not baked"): identical to the host path.
 func containerProjectPath(hostProjectDir string) string {
@@ -97,6 +116,29 @@ func Run(projectDir string, composeFiles []string) error {
 	defer cleanup()
 	if fragment != "" {
 		composeFiles = append(composeFiles, fragment)
+	}
+
+	maskEntries, err := maskedEntries(projectDir)
+	if err != nil {
+		return fmt.Errorf("prepare mask: %w", err)
+	}
+	maskFragment, maskCleanup, err := writeMaskFragment(maskEntries)
+	if err != nil {
+		return fmt.Errorf("prepare mask: %w", err)
+	}
+	defer maskCleanup()
+	if maskFragment != "" {
+		composeFiles = append(composeFiles, maskFragment)
+	}
+
+	// prune runs on every launch, including when nothing is masked: emptying the
+	// file leaves keep empty, so every volume of this project is dropped.
+	keep := make([]string, len(maskEntries))
+	for i, e := range maskEntries {
+		keep[i] = e.volume
+	}
+	if pruneErr := pruneOrphanMaskVolumes(projectDir, keep); pruneErr != nil {
+		fmt.Fprintf(os.Stderr, "Warning: prune mask volumes: %v\n", pruneErr)
 	}
 
 	args := buildRunArgs(projectDir, composeFiles)
