@@ -13,7 +13,7 @@ import (
 
 const cursorInstallScriptURL = "https://cursor.com/install"
 
-var cursorVersionRegex = regexp.MustCompile(`\d{4}\.\d{2}\.\d{2}-[0-9a-f]+`)
+var cursorVersionRegex = regexp.MustCompile(`downloads\.cursor\.com/lab/([^/]+)/`)
 
 type CursorAgent struct {
 	arch string
@@ -57,12 +57,12 @@ func (c *CursorAgent) FetchLatestVersion(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("read install script: %w", err)
 	}
 
-	version := cursorVersionRegex.FindString(string(body))
-	if version == "" {
+	match := cursorVersionRegex.FindStringSubmatch(string(body))
+	if match == nil {
 		return "", errors.New("version not found in install script")
 	}
 
-	return version, nil
+	return match[1], nil
 }
 
 func (c *CursorAgent) Download(ctx context.Context, version, destDir string, progress func(downloaded, total int64)) error {
