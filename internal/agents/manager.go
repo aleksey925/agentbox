@@ -41,6 +41,10 @@ func NewManager(paths *config.Paths) (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
+	pi, err := NewPiAgent()
+	if err != nil {
+		return nil, err
+	}
 	ralphex, err := NewRalphexAgent()
 	if err != nil {
 		return nil, err
@@ -54,6 +58,7 @@ func NewManager(paths *config.Paths) (*Manager, error) {
 			"codex":    codex,
 			"cursor":   cursor,
 			"opencode": opencode,
+			"pi":       pi,
 			"ralphex":  ralphex,
 		},
 	}, nil
@@ -71,6 +76,7 @@ func (m *Manager) AllAgents() []Agent {
 		m.agents["codex"],
 		m.agents["cursor"],
 		m.agents["opencode"],
+		m.agents["pi"],
 		m.agents["ralphex"],
 	}
 }

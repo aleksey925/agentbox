@@ -5,7 +5,7 @@ services:
     image: agentbox:local
     build:
       context: .
-      dockerfile: .agentbox/Dockerfile.v3.agentbox
+      dockerfile: .agentbox/Dockerfile.v4.agentbox
     # mirror the host project path (see CLAUDE.md "Live, not baked")
     working_dir: ${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
     environment:
@@ -33,6 +33,7 @@ services:
       - ~/.local/share/opencode/:/home/box/.local/share/opencode/
       - ~/.local/state/opencode/:/home/box/.local/state/opencode/
       - opencode-cache:/home/box/.cache/opencode
+      - ~/.pi/:/home/box/.pi/
       - ~/.config/ralphex/:/home/box/.config/ralphex/
       # git config (for commits inside sandbox)
       - ~/.gitconfig:/home/box/.gitconfig:ro

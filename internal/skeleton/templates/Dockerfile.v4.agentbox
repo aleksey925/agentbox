@@ -13,12 +13,14 @@ RUN apt-get update -y && \
                     git \
                     mc \
                     ripgrep \
+                    fd-find \
                     gpg \
                     gnupg \
                     lsb-release \
                     ca-certificates \
                     jq \
                     sudo \
+    && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && rm -rf /var/lib/apt/lists/* \
               /var/cache/apt/* \
               /var/log/apt/* \
@@ -77,6 +79,8 @@ RUN L=/usr/local/bin/agentbox-launch && \
         > /usr/local/bin/cursor && \
     printf '#!/bin/bash\nexec /usr/local/bin/agentbox-launch opencode opencode "$@"\n' \
         > /usr/local/bin/opencode && \
+    printf '#!/bin/bash\nexec /usr/local/bin/agentbox-launch pi pi "$@"\n' \
+        > /usr/local/bin/pi && \
     printf '#!/bin/bash\nexec /usr/local/bin/agentbox-launch ralphex ralphex "$@"\n' \
         > /usr/local/bin/ralphex && \
     chmod +x /usr/local/bin/claude \
@@ -84,6 +88,7 @@ RUN L=/usr/local/bin/agentbox-launch && \
              /usr/local/bin/codex \
              /usr/local/bin/cursor \
              /usr/local/bin/opencode \
+             /usr/local/bin/pi \
              /usr/local/bin/ralphex
 
 USER box

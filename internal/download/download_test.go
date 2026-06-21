@@ -230,7 +230,7 @@ func TestDownloadAndExtractTarGzAll(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, nil)
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", nil)
 
 	// assert
 	if err != nil {
@@ -263,6 +263,59 @@ func TestDownloadAndExtractTarGzAll(t *testing.T) {
 	}
 }
 
+func TestDownloadAndExtractTarGzAll__checksum_match(t *testing.T) {
+	// arrange
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/main", content: []byte("hi"), mode: 0o755},
+	})
+	sum := sha256.Sum256(tarGzData)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, hex.EncodeToString(sum[:]), nil)
+
+	// assert
+	if err != nil {
+		t.Fatalf("DownloadAndExtractTarGzAll() error = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(destDir, "main")); statErr != nil {
+		t.Errorf("expected extracted file, stat err = %v", statErr)
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__checksum_mismatch(t *testing.T) {
+	// arrange
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/main", content: []byte("hi"), mode: 0o755},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "deadbeef", nil)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected checksum mismatch error")
+	}
+	if _, statErr := os.Stat(filepath.Join(destDir, "main")); !os.IsNotExist(statErr) {
+		t.Errorf("archive must not be extracted on checksum mismatch (stat err = %v)", statErr)
+	}
+}
+
 func TestDownloadAndExtractTarGzAll__rejects_escaping_symlink(t *testing.T) {
 	// arrange
 	tarGzData := createMultiFileTarGz(t, []tarFile{
@@ -278,7 +331,7 @@ func TestDownloadAndExtractTarGzAll__rejects_escaping_symlink(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, nil)
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", nil)
 
 	// assert
 	if err == nil {
@@ -305,7 +358,7 @@ func TestDownloadAndExtractTarGzAll__rejects_absolute_symlink(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, nil)
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", nil)
 
 	// assert
 	if err == nil {
@@ -332,7 +385,7 @@ func TestDownloadAndExtractTarGzAll__allows_internal_symlink(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, nil)
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", nil)
 
 	// assert
 	if err != nil {
@@ -364,7 +417,7 @@ func TestDownloadAndExtractTarGzAll__rejects_hardlink(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, nil)
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", nil)
 
 	// assert
 	if err == nil {
@@ -387,7 +440,7 @@ func TestDownloadAndExtractTarGzAll__strips_setuid(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	if err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, nil); err != nil {
+	if err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", nil); err != nil {
 		t.Fatalf("DownloadAndExtractTarGzAll() error = %v", err)
 	}
 

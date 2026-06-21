@@ -122,6 +122,23 @@ func TestOpenCodeAgent_Name(t *testing.T) {
 	}
 }
 
+func TestPiAgent_Name(t *testing.T) {
+	// arrange
+	agent, err := NewPiAgent()
+	if err != nil {
+		t.Fatalf("NewPiAgent() error = %v", err)
+	}
+
+	// act & assert
+	if agent.Name() != "pi" {
+		t.Errorf("Name() = %s, want pi", agent.Name())
+	}
+
+	if agent.BinaryName() != "pi" {
+		t.Errorf("BinaryName() = %s, want pi", agent.BinaryName())
+	}
+}
+
 func TestRalphexAgent_Name(t *testing.T) {
 	// arrange
 	agent, err := NewRalphexAgent()
@@ -239,7 +256,7 @@ func TestManager_AllAgents(t *testing.T) {
 	agents := manager.AllAgents()
 
 	// assert
-	expectedNames := []string{"claude", "copilot", "codex", "cursor", "opencode", "ralphex"}
+	expectedNames := []string{"claude", "copilot", "codex", "cursor", "opencode", "pi", "ralphex"}
 	if len(agents) != len(expectedNames) {
 		t.Fatalf("AllAgents() returned %d agents, want %d", len(agents), len(expectedNames))
 	}
