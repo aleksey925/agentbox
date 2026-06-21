@@ -842,7 +842,7 @@ func mkProject(t *testing.T, dir string) {
 	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{"core.v3.yml", "Dockerfile.v3.agentbox"} {
+	for _, f := range []string{"core.v4.yml", "Dockerfile.v4.agentbox"} {
 		if err := os.WriteFile(filepath.Join(agentboxDir, f), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}

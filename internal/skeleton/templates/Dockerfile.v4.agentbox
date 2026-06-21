@@ -13,12 +13,14 @@ RUN apt-get update -y && \
                     git \
                     mc \
                     ripgrep \
+                    fd-find \
                     gpg \
                     gnupg \
                     lsb-release \
                     ca-certificates \
                     jq \
                     sudo \
+    && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && rm -rf /var/lib/apt/lists/* \
               /var/cache/apt/* \
               /var/log/apt/* \

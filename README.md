@@ -153,7 +153,7 @@ agentbox agent flags                # edit flags agents are launched with
 
 ### Modular Sandbox Configuration
 
-Sandbox configuration is modular — it consists of a core config (`core.v3.yml`) plus environment
+Sandbox configuration is modular — it consists of a core config (`core.v4.yml`) plus environment
 presets (like `go.v2.yml`) you select during `agentbox init`. Presets give the sandbox a warm,
 isolated tool cache, so dependencies aren't re-downloaded on every run.
 
@@ -165,10 +165,10 @@ Agentbox stores your sandbox configuration in `~/.agentbox/skeleton/`:
 
 ```
 ~/.agentbox/skeleton/           # your global skeleton (you own this)
-├── core.v3.yml                 # base sandbox config
+├── core.v4.yml                 # base sandbox config
 ├── go.v2.yml                   # Go preset (if selected)
 ├── python.v3.yml               # Python preset (if selected)
-├── Dockerfile.v3.agentbox      # sandbox Dockerfile
+├── Dockerfile.v4.agentbox      # sandbox Dockerfile
 └── local.yml                   # template for project customizations
 ```
 
@@ -180,9 +180,9 @@ Each project gets a `.agentbox/` directory copied from your skeleton:
 
 ```
 project/.agentbox/
-├── core.v3.yml
+├── core.v4.yml
 ├── go.v2.yml
-├── Dockerfile.v3.agentbox
+├── Dockerfile.v4.agentbox
 ├── masked-dirs                 # project sub-dirs hidden from the sandbox (never overwritten)
 └── local.yml                   # project-specific overrides (never overwritten)
 ```
@@ -214,7 +214,7 @@ project/.agentbox/
 
 #### Updating Configuration
 
-Managed files carry a version in their name (`core.v3.yml`). A new agentbox release bumps it when a
+Managed files carry a version in their name (`core.v4.yml`). A new agentbox release bumps it when a
 change must reach you. A project still on the old version refuses to `run` and tells you to upgrade,
 so a sandbox never starts on a config that does not match the binary.
 
