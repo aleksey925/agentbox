@@ -33,6 +33,7 @@ services:
       - ~/.local/share/opencode/:/home/box/.local/share/opencode/
       - ~/.local/state/opencode/:/home/box/.local/state/opencode/
       - opencode-cache:/home/box/.cache/opencode
+      - ~/.pi/:/home/box/.pi/
       - ~/.config/ralphex/:/home/box/.config/ralphex/
       # git config (for commits inside sandbox)
       - ~/.gitconfig:/home/box/.gitconfig:ro

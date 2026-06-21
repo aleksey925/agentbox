@@ -37,7 +37,7 @@ func DetectArch() (string, error) {
 }
 
 func AllAgentNames() []string {
-	return []string{"claude", "copilot", "codex", "cursor", "opencode", "ralphex"}
+	return []string{"claude", "copilot", "codex", "cursor", "opencode", "pi", "ralphex"}
 }
 
 // agentConfigDirs maps agent name to its config directories (relative to $HOME).
@@ -48,6 +48,7 @@ var agentConfigDirs = map[string][]string{
 	"codex":    {".codex"},
 	"cursor":   {".cursor"},
 	"opencode": {".config/opencode", ".local/share/opencode", ".local/state/opencode"},
+	"pi":       {".pi"},
 	"ralphex":  {".config/ralphex"},
 }
 
@@ -73,6 +74,7 @@ func SuggestedFlags() map[string]string {
 		"codex":    "",
 		"cursor":   "",
 		"opencode": "",
+		"pi":       "",
 		"ralphex":  "",
 	}
 }
@@ -85,6 +87,7 @@ func AgentDescriptions() map[string]string {
 		"codex":    "OpenAI Codex",
 		"cursor":   "Cursor CLI",
 		"opencode": "Open Source AI Coding Agent",
+		"pi":       "Pi Coding Agent by earendil-works",
 		"ralphex":  "Autonomous plan execution tool by umputun",
 	}
 }

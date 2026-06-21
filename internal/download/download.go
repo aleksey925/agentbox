@@ -286,19 +286,19 @@ func DownloadAndExtractTarGz(
 
 // DownloadAndExtractTarGzAll extracts the whole archive into destDir while
 // dropping the leading path component (mirrors `tar --strip-components=1`),
-// which is how vendor archives like cursor's `dist-package/...` are shaped.
-// It takes no checksum: archives extracted this way are unverified (see
-// CLAUDE.md "Download integrity").
+// which is how vendor archives like cursor's `dist-package/...` or pi's `pi/...`
+// are shaped. expectedSHA256 verifies the archive before extraction (empty =
+// unverified, see CLAUDE.md "Download integrity").
 func DownloadAndExtractTarGzAll(
 	ctx context.Context,
-	assetURL, destDir string,
+	assetURL, destDir, expectedSHA256 string,
 	progress func(downloaded, total int64),
 ) error {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return fmt.Errorf("create dest dir: %w", err)
 	}
 
-	archive, cleanup, err := downloadArchive(ctx, assetURL, "", progress)
+	archive, cleanup, err := downloadArchive(ctx, assetURL, expectedSHA256, progress)
 	if err != nil {
 		return err
 	}

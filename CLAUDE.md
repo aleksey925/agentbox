@@ -280,9 +280,11 @@ Coverage is dictated by what each vendor actually publishes for the asset we dow
 by choice:
 
 - `claude` verifies a SHA-256 from its release manifest.
-- `copilot` and `ralphex` verify against the `SHA256SUMS`-style file in their GitHub
-  release. A missing entry is a hard error, never a silent skip, so a truncated or
-  wrong-version checksums file cannot downgrade to an unverified install.
+- `copilot`, `ralphex`, and `pi` verify against the `SHA256SUMS`-style file in their
+  GitHub release. A missing entry is a hard error, never a silent skip, so a truncated
+  or wrong-version checksums file cannot downgrade to an unverified install. `pi` is the
+  one verified agent extracted whole-archive (its binary loads sibling files by relative
+  path, like `cursor`), so the checksum guards the entire tree, not just one binary.
 - `codex`, `opencode`, `cursor` are unverified: codex publishes only a sigstore bundle for
   this asset (no plain checksum), opencode checksums only its desktop builds, and cursor
   publishes nothing and has its version scraped from a live install script. Pinning hashes
