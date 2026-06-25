@@ -105,7 +105,10 @@ RUN mkdir -p /home/box/.config \
              /home/box/go \
              /home/box/.cache/uv
 
-ENV PATH="${PATH}:/home/box/.local/bin"
+# mise shims on PATH so non-interactive agent shells (`bash -c`, which skip
+# ~/.bashrc and its `mise activate`) still resolve mise-managed binaries. this
+# is `mise activate bash --shims` baked in - the official headless/CI path.
+ENV PATH="/home/box/.local/share/mise/shims:${PATH}:/home/box/.local/bin"
 
 WORKDIR /home/box
 
