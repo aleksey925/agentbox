@@ -93,8 +93,12 @@ RUN L=/usr/local/bin/agentbox-launch && \
 
 USER box
 
-# pre-create directories so volumes inherit correct ownership
-RUN mkdir -p /home/box/.local/share/mise \
+# pre-create directories so volumes inherit correct ownership. ~/.config is
+# created here so it stays box-owned: Docker would otherwise create it as root
+# when mounting the nested ~/.config/opencode and ~/.config/ralphex binds, and
+# then `mise use -g` could not write ~/.config/mise.
+RUN mkdir -p /home/box/.config \
+             /home/box/.local/share/mise \
              /home/box/.local/state/mise \
              /home/box/.cache/mise \
              /home/box/.cache/opencode \
