@@ -36,31 +36,10 @@ func TestCreateSkeleton(t *testing.T) {
 		t.Fatalf("CreateSkeleton error: %v", err)
 	}
 
-	coreFile := filepath.Join(paths.SkeletonDir, "core.v4.yml")
-	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v4.yml not created")
+	for _, name := range []string{"core", "go", "python", "Dockerfile"} {
+		assertFileExists(t, paths.SkeletonDir, managedFilename(t, name))
 	}
-
-	goFile := filepath.Join(paths.SkeletonDir, "go.v2.yml")
-	if _, err := os.Stat(goFile); os.IsNotExist(err) {
-		t.Error("go.v2.yml not created")
-	}
-
-	pythonFile := filepath.Join(paths.SkeletonDir, "python.v3.yml")
-	if _, err := os.Stat(pythonFile); os.IsNotExist(err) {
-		t.Error("python.v3.yml not created")
-	}
-
-	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v4.agentbox")
-	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
-		t.Error("Dockerfile.v4.agentbox not created")
-	}
-
-	// check local.yml exists
-	localFile := filepath.Join(paths.SkeletonDir, "local.yml")
-	if _, err := os.Stat(localFile); os.IsNotExist(err) {
-		t.Error("local.yml not created")
-	}
+	assertFileExists(t, paths.SkeletonDir, "local.yml")
 }
 
 func TestCreateSkeleton__no_presets(t *testing.T) {
@@ -76,20 +55,9 @@ func TestCreateSkeleton__no_presets(t *testing.T) {
 		t.Fatalf("CreateSkeleton error: %v", err)
 	}
 
-	coreFile := filepath.Join(paths.SkeletonDir, "core.v4.yml")
-	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v4.yml not created")
-	}
-
-	localFile := filepath.Join(paths.SkeletonDir, "local.yml")
-	if _, err := os.Stat(localFile); os.IsNotExist(err) {
-		t.Error("local.yml not created")
-	}
-
-	dockerFile := filepath.Join(paths.SkeletonDir, "Dockerfile.v4.agentbox")
-	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
-		t.Error("Dockerfile.v4.agentbox not created")
-	}
+	assertFileExists(t, paths.SkeletonDir, managedFilename(t, "core"))
+	assertFileExists(t, paths.SkeletonDir, managedFilename(t, "Dockerfile"))
+	assertFileExists(t, paths.SkeletonDir, "local.yml")
 
 	// check only core + local.yml + Dockerfile (no preset files)
 	entries, _ := os.ReadDir(paths.SkeletonDir)
@@ -167,20 +135,9 @@ func TestCopyToProject(t *testing.T) {
 		t.Error(".agentbox dir not created")
 	}
 
-	coreFile := filepath.Join(agentboxDir, "core.v4.yml")
-	if _, err := os.Stat(coreFile); os.IsNotExist(err) {
-		t.Error("core.v4.yml not copied")
-	}
-
-	dockerFile := filepath.Join(agentboxDir, "Dockerfile.v4.agentbox")
-	if _, err := os.Stat(dockerFile); os.IsNotExist(err) {
-		t.Error("Dockerfile.v4.agentbox not copied")
-	}
-
-	localFile := filepath.Join(agentboxDir, "local.yml")
-	if _, err := os.Stat(localFile); os.IsNotExist(err) {
-		t.Error("local.yml not created")
-	}
+	assertFileExists(t, agentboxDir, managedFilename(t, "core"))
+	assertFileExists(t, agentboxDir, managedFilename(t, "Dockerfile"))
+	assertFileExists(t, agentboxDir, "local.yml")
 
 	// check .gitignore created with `*` so .agentbox/ stays out of git
 	gitignore, readErr := os.ReadFile(filepath.Join(agentboxDir, ".gitignore"))
@@ -547,6 +504,32 @@ func coreName(v int) string   { return fmt.Sprintf("core.v%d.yml", v) }
 func dockerName(v int) string { return fmt.Sprintf("Dockerfile.v%d.agentbox", v) }
 func presetName(name string, v int) string {
 	return fmt.Sprintf("%s.v%d.yml", name, v)
+}
+
+// managedFilename returns the on-disk filename for a managed template, read from
+// the embedded source so a version bump needs no test edit. name is a compose
+// template name ("core", "go", "python") or "Dockerfile".
+func managedFilename(t *testing.T, name string) string {
+	t.Helper()
+	if name == "Dockerfile" {
+		df, err := GetEmbeddedDockerfile()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return df.Filename
+	}
+	tmpl, err := GetPresetTemplate(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tmpl.Filename
+}
+
+func assertFileExists(t *testing.T, dir, name string) {
+	t.Helper()
+	if _, err := os.Stat(filepath.Join(dir, name)); os.IsNotExist(err) {
+		t.Errorf("%s missing in %s", name, dir)
+	}
 }
 
 func TestProjectInitialized__nonexistent_dir(t *testing.T) {

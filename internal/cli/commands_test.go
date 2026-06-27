@@ -842,7 +842,15 @@ func mkProject(t *testing.T, dir string) {
 	if err := os.MkdirAll(agentboxDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, f := range []string{"core.v4.yml", "Dockerfile.v4.agentbox"} {
+	core, err := skeleton.GetCoreTemplate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	df, err := skeleton.GetEmbeddedDockerfile()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{core.Filename, df.Filename} {
 		if err := os.WriteFile(filepath.Join(agentboxDir, f), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
