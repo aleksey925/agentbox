@@ -1,7 +1,13 @@
 package agents
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/aleksey925/agentbox/internal/config"
@@ -68,23 +74,6 @@ func TestCopilotAgent_Name(t *testing.T) {
 
 	if agent.BinaryName() != "copilot" {
 		t.Errorf("BinaryName() = %s, want copilot", agent.BinaryName())
-	}
-}
-
-func TestCodexAgent_Name(t *testing.T) {
-	// arrange
-	agent, err := NewCodexAgent()
-	if err != nil {
-		t.Fatalf("NewCodexAgent() error = %v", err)
-	}
-
-	// act & assert
-	if agent.Name() != "codex" {
-		t.Errorf("Name() = %s, want codex", agent.Name())
-	}
-
-	if agent.BinaryName() != "codex" {
-		t.Errorf("BinaryName() = %s, want codex", agent.BinaryName())
 	}
 }
 
@@ -171,21 +160,6 @@ func TestRalphexAgent_goArch(t *testing.T) {
 	}
 }
 
-func TestCodexAgent_rustArch(t *testing.T) {
-	// arrange
-	agent := &CodexAgent{arch: "arm64"}
-
-	// act & assert
-	if agent.rustArch() != "aarch64" {
-		t.Errorf("rustArch() = %s, want aarch64", agent.rustArch())
-	}
-
-	agent.arch = "x64"
-	if agent.rustArch() != "x86_64" {
-		t.Errorf("rustArch() = %s, want x86_64", agent.rustArch())
-	}
-}
-
 func TestNewManager(t *testing.T) {
 	// arrange
 	paths := &config.Paths{BinDir: "/tmp/test"}
@@ -242,6 +216,155 @@ func TestManager_SwitchVersion__rejects_unsafe_version(t *testing.T) {
 	// assert
 	if err == nil || !strings.Contains(err.Error(), "invalid version") {
 		t.Fatalf("SwitchVersion must reject a path-traversing version, got %v", err)
+	}
+}
+
+func TestManager_hasCurrentInstall(t *testing.T) {
+	// arrange
+	manager := newTestManager(t)
+	plain := manager.agents["claude"]
+	installDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(installDir, "claude"), []byte("x"), 0o755); err != nil {
+		t.Fatalf("write binary: %v", err)
+	}
+	preFixCodexDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(preFixCodexDir, "codex"), []byte("x"), 0o755); err != nil {
+		t.Fatalf("write pre-fix codex binary: %v", err)
+	}
+
+	// act & assert
+	if !manager.hasCurrentInstall(plain, installDir) {
+		t.Error("an existing directory must count as installed for a single-binary agent")
+	}
+	if manager.hasCurrentInstall(plain, filepath.Join(installDir, "absent")) {
+		t.Error("a missing directory must not count as installed")
+	}
+	if manager.hasCurrentInstall(manager.agents["codex"], preFixCodexDir) {
+		t.Error("a directory rejected by the agent must not count as installed")
+	}
+	if _, statErr := os.Stat(preFixCodexDir); statErr != nil {
+		t.Errorf("the predicate must leave a rejected directory in place (stat err = %v)", statErr)
+	}
+}
+
+func TestManager_HasCurrentLayout(t *testing.T) {
+	// arrange
+	selected := newTestManager(t)
+	seedAgentVersion(t, selected, "claude", "1.0.0", "claude")
+	writeCurrentVersion(t, selected, "claude", "1.0.0")
+	seedAgentVersion(t, selected, "codex", "1.0.0", "codex")
+	writeCurrentVersion(t, selected, "codex", "1.0.0")
+
+	unselected := newTestManager(t)
+	seedAgentVersion(t, unselected, "codex", "1.0.0", "codex")
+
+	// act & assert
+	if !selected.HasCurrentLayout("claude") {
+		t.Error("a single-binary agent has no layout to reject")
+	}
+	if selected.HasCurrentLayout("codex") {
+		t.Error("a selected codex install without the helper must be reported as stale")
+	}
+	if !unselected.HasCurrentLayout("codex") {
+		t.Error("an agent with no version selected must not be reported as stale")
+	}
+	if !selected.HasCurrentLayout("unknown") {
+		t.Error("an unknown agent must not be reported as stale")
+	}
+}
+
+func TestDedupeNames(t *testing.T) {
+	// act
+	names := dedupeNames([]string{"codex", "claude", "codex", "pi", "claude"})
+
+	// assert
+	if want := []string{"codex", "claude", "pi"}; !slices.Equal(names, want) {
+		t.Errorf("dedupeNames() = %v, want %v", names, want)
+	}
+}
+
+func TestManager_Update__repeated_name_installs_once_into_an_empty_dir(t *testing.T) {
+	// arrange
+	manager := newTestManager(t)
+	agent := &fakeAgent{version: "1.0.0", leftover: "leftover"}
+	manager.agents[agent.Name()] = agent
+	seedAgentVersion(t, manager, agent.Name(), agent.version, agent.leftover)
+
+	// act
+	results, err := manager.Update([]string{agent.Name(), agent.Name()})
+
+	// assert
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	want := []DownloadResult{{Agent: agent.Name(), Version: agent.version}}
+	if !slices.Equal(results, want) {
+		t.Errorf("Update() = %v, want %v", results, want)
+	}
+	if downloads := agent.downloads.Load(); downloads != 1 {
+		t.Errorf("Download called %d times, want 1", downloads)
+	}
+	if agent.leftoverSeen.Load() {
+		t.Error("the install dir must be cleared before Download runs")
+	}
+}
+
+// fakeAgent installs without a network and reports what Update did to its
+// version directory before calling it.
+type fakeAgent struct {
+	version      string
+	leftover     string
+	downloads    atomic.Int64
+	leftoverSeen atomic.Bool
+}
+
+func (f *fakeAgent) Name() string       { return "fake" }
+func (f *fakeAgent) BinaryName() string { return "fake" }
+
+func (f *fakeAgent) FetchLatestVersion(context.Context) (string, error) { return f.version, nil }
+
+func (f *fakeAgent) IsInstalled(string) bool { return false }
+
+func (f *fakeAgent) Download(_ context.Context, _, destDir string, _ func(downloaded, total int64)) error {
+	f.downloads.Add(1)
+	if _, err := os.Stat(filepath.Join(destDir, f.leftover)); err == nil {
+		f.leftoverSeen.Store(true)
+	}
+	if err := os.MkdirAll(destDir, 0o755); err != nil {
+		return fmt.Errorf("create dest dir: %w", err)
+	}
+	return nil
+}
+
+func newTestManager(t *testing.T) *Manager {
+	t.Helper()
+
+	manager, err := NewManager(&config.Paths{BinDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	return manager
+}
+
+func seedAgentVersion(t *testing.T, manager *Manager, name, version string, files ...string) {
+	t.Helper()
+
+	versionDir := manager.paths.AgentVersionDir(name, version)
+	if err := os.MkdirAll(versionDir, 0o755); err != nil {
+		t.Fatalf("create version dir: %v", err)
+	}
+	for _, file := range files {
+		if err := os.WriteFile(filepath.Join(versionDir, file), []byte("x"), 0o755); err != nil {
+			t.Fatalf("write %s: %v", file, err)
+		}
+	}
+}
+
+func writeCurrentVersion(t *testing.T, manager *Manager, name, version string) {
+	t.Helper()
+
+	if err := os.WriteFile(manager.paths.AgentCurrentFile(name), []byte(version+"\n"), 0o644); err != nil {
+		t.Fatalf("write current: %v", err)
 	}
 }
 

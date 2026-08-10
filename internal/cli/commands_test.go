@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/aleksey925/agentbox/internal/agents"
+	"github.com/aleksey925/agentbox/internal/config"
 	"github.com/aleksey925/agentbox/internal/skeleton"
 )
 
@@ -854,6 +855,126 @@ func mkProject(t *testing.T, dir string) {
 		if err := os.WriteFile(filepath.Join(agentboxDir, f), []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+const codexTestVersion = "1.0.0"
+
+func TestCmdAgentUse__warns_about_a_stale_install(t *testing.T) {
+	// arrange
+	app := appWithCodexInstall(t, "codex")
+
+	// act
+	var code int
+	stderr := captureStderr(func() {
+		captureOutput(func() { code = app.cmdAgentUse([]string{"codex", codexTestVersion}) })
+	})
+
+	// assert
+	if code != exitOK {
+		t.Errorf("cmdAgentUse() = %d, want %d - a stale layout is advice, not a refusal", code, exitOK)
+	}
+	current, err := os.ReadFile(app.paths.AgentCurrentFile("codex"))
+	if err != nil {
+		t.Fatalf("read current: %v", err)
+	}
+	if strings.TrimSpace(string(current)) != codexTestVersion {
+		t.Errorf("current = %q, want %s", current, codexTestVersion)
+	}
+	if !strings.Contains(stderr, "agentbox agent update codex") {
+		t.Errorf("stderr must name the remedy, got:\n%s", stderr)
+	}
+}
+
+func TestCmdAgentUse__silent_on_a_current_install(t *testing.T) {
+	// arrange
+	app := appWithCodexInstall(t, "codex", "codex-code-mode-host")
+
+	// act
+	stderr := captureStderr(func() {
+		captureOutput(func() { app.cmdAgentUse([]string{"codex", codexTestVersion}) })
+	})
+
+	// assert
+	if stderr != "" {
+		t.Errorf("stderr must be empty, got:\n%s", stderr)
+	}
+}
+
+func TestCmdRun__warns_about_a_stale_install_when_attaching(t *testing.T) {
+	// arrange
+	app := appWithCodexInstall(t, "codex")
+	selectCodexVersion(t, app)
+
+	// act
+	stderr := captureStderr(func() {
+		captureOutput(func() { app.cmdRun([]string{"--container", "agentbox-absent"}) })
+	})
+
+	// assert
+	if !strings.Contains(stderr, "agentbox agent update codex") {
+		t.Errorf("stderr must name the remedy, got:\n%s", stderr)
+	}
+}
+
+func TestCmdRun__silent_on_a_current_install(t *testing.T) {
+	// arrange
+	app := appWithCodexInstall(t, "codex", "codex-code-mode-host")
+	selectCodexVersion(t, app)
+
+	// act
+	stderr := captureStderr(func() {
+		captureOutput(func() { app.cmdRun([]string{"--container", "agentbox-absent"}) })
+	})
+
+	// assert
+	if strings.Contains(stderr, "agentbox agent update") {
+		t.Errorf("stderr must carry no layout warning, got:\n%s", stderr)
+	}
+}
+
+func TestEnsureAgentsInstalled__says_nothing_about_a_stale_install(t *testing.T) {
+	// arrange
+	app := appWithCodexInstall(t, "codex")
+	selectCodexVersion(t, app)
+
+	// act
+	var code int
+	var stderr string
+	stdout := captureOutput(func() {
+		stderr = captureStderr(func() { code = app.ensureAgentsInstalled(app.paths) })
+	})
+
+	// assert
+	if code != exitOK {
+		t.Errorf("ensureAgentsInstalled() = %d, want %d", code, exitOK)
+	}
+	if stdout != "" || stderr != "" {
+		t.Errorf("output must be empty, got stdout:\n%s\nstderr:\n%s", stdout, stderr)
+	}
+}
+
+func appWithCodexInstall(t *testing.T, files ...string) *App {
+	t.Helper()
+
+	paths := &config.Paths{BinDir: t.TempDir()}
+	versionDir := paths.AgentVersionDir("codex", codexTestVersion)
+	if err := os.MkdirAll(versionDir, 0o755); err != nil {
+		t.Fatalf("create version dir: %v", err)
+	}
+	for _, file := range files {
+		if err := os.WriteFile(filepath.Join(versionDir, file), []byte("x"), 0o755); err != nil {
+			t.Fatalf("write %s: %v", file, err)
+		}
+	}
+	return &App{paths: paths}
+}
+
+func selectCodexVersion(t *testing.T, app *App) {
+	t.Helper()
+
+	if err := os.WriteFile(app.paths.AgentCurrentFile("codex"), []byte(codexTestVersion+"\n"), 0o644); err != nil {
+		t.Fatalf("write current: %v", err)
 	}
 }
 

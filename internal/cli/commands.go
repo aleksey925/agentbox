@@ -84,7 +84,11 @@ Use "agentbox init skeleton --help" for more information.
 		return code
 	}
 
-	return toShellExit(a.doInit())
+	code := a.doInit()
+	if code == exitOK {
+		a.warnStaleLayouts(agents.AllAgentNames())
+	}
+	return toShellExit(code)
 }
 
 func (a *App) cmdInitSkeleton(args []string) int {
@@ -473,6 +477,10 @@ otherwise it starts a new one.
 		return code
 	}
 
+	// above every exit below, so attaching to a container that is already up warns
+	// too - the install path further down is only reached when a new one starts
+	a.warnStaleLayouts(agents.AllAgentNames())
+
 	opts := a.parseRunFlags(args)
 
 	cwd, err := os.Getwd()
@@ -822,6 +830,7 @@ Examples:
 	}
 
 	fmt.Printf("%s switched to %s\n", agentName, version)
+	a.warnStaleLayouts([]string{agentName})
 	return 0
 }
 
@@ -1269,6 +1278,24 @@ func createMiseTomlIfNotExists(projectDir string) error {
 		return fmt.Errorf("write mise.toml: %w", err)
 	}
 	return nil
+}
+
+// warnStaleLayouts is advisory: it reads `current` and stats a couple of files,
+// changes nothing, and never changes an exit code - so a manager it cannot build
+// is a skipped warning, not a refused launch.
+func (a *App) warnStaleLayouts(names []string) {
+	manager, err := a.AgentManager()
+	if err != nil {
+		return
+	}
+	for _, name := range names {
+		if manager.HasCurrentLayout(name) {
+			continue
+		}
+		fmt.Fprintf(os.Stderr,
+			"Warning: the installed %s is missing files this agentbox expects and may fail to start.\n", name)
+		fmt.Fprintf(os.Stderr, "Run 'agentbox agent update %s' to reinstall it.\n", name)
+	}
 }
 
 func (a *App) ensureAgentsInstalled(paths *config.Paths) int {

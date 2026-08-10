@@ -149,7 +149,7 @@ func (m *Manager) Install(name string, onProgress func(agent string, downloaded,
 
 	destDir := m.paths.AgentVersionDir(name, version)
 
-	if _, err := os.Stat(destDir); err == nil {
+	if m.hasCurrentInstall(agent, destDir) {
 		if err := m.switchVersion(name, version); err != nil {
 			return err
 		}
@@ -160,6 +160,10 @@ func (m *Manager) Install(name string, onProgress func(agent string, downloaded,
 		if onProgress != nil {
 			onProgress(name, downloaded, total)
 		}
+	}
+
+	if err := os.RemoveAll(destDir); err != nil {
+		return fmt.Errorf("clear install dir: %w", err)
 	}
 
 	if err := agent.Download(ctx, version, destDir, progress); err != nil {
@@ -187,6 +191,9 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 	if len(names) == 0 {
 		names = AllAgentNames()
 	}
+	// one goroutine per version directory is the invariant this loop rests on, so
+	// a name repeated on the command line must not fan out into two installs
+	names = dedupeNames(names)
 
 	// phase 1: fetch all versions in parallel
 	infos := make([]agentVersionInfo, len(names))
@@ -261,7 +268,7 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 		destDir := m.paths.AgentVersionDir(info.name, info.latestVersion)
 
 		// already installed
-		if _, err := os.Stat(destDir); err == nil {
+		if m.hasCurrentInstall(info.agent, destDir) {
 			if err := m.switchVersion(info.name, info.latestVersion); err != nil {
 				results[i] = DownloadResult{
 					Agent: info.name,
@@ -319,6 +326,15 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 				}
 			}
 
+			if err := os.RemoveAll(destDir); err != nil {
+				bar.Abort(true)
+				results[idx] = DownloadResult{
+					Agent: info.name,
+					Error: fmt.Errorf("clear install dir: %w", err),
+				}
+				return
+			}
+
 			if err := info.agent.Download(ctx, info.latestVersion, destDir, progress); err != nil {
 				bar.Abort(true)
 				os.RemoveAll(destDir)
@@ -350,6 +366,47 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 	p.Wait()
 
 	return results, nil
+}
+
+// hasCurrentInstall reports whether destDir holds an install in the layout this
+// binary produces, so the download can be skipped. It only inspects - clearing a
+// rejected directory is the caller's job, right before it re-seeds it.
+func (m *Manager) hasCurrentInstall(agent Agent, destDir string) bool {
+	if _, err := os.Stat(destDir); err != nil {
+		return false
+	}
+	if verifier, ok := agent.(installVerifier); ok {
+		return verifier.IsInstalled(destDir)
+	}
+	return true
+}
+
+// HasCurrentLayout reports whether the version a user's `current` file selects
+// is still an install this binary can hand over. An unknown agent and an agent
+// with nothing selected report true - there is nothing to warn about.
+func (m *Manager) HasCurrentLayout(name string) bool {
+	agent, ok := m.agents[name]
+	if !ok {
+		return true
+	}
+	_, current, err := m.ListVersions(name)
+	if err != nil || current == "" {
+		return true
+	}
+	return m.hasCurrentInstall(agent, m.paths.AgentVersionDir(name, current))
+}
+
+func dedupeNames(names []string) []string {
+	seen := make(map[string]struct{}, len(names))
+	unique := make([]string, 0, len(names))
+	for _, name := range names {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		unique = append(unique, name)
+	}
+	return unique
 }
 
 func (m *Manager) SwitchVersion(name, version string) error {

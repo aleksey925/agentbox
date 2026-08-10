@@ -284,14 +284,16 @@ func DownloadAndExtractTarGz(
 	return fmt.Errorf("binary '%s' not found in archive", binaryInArchive)
 }
 
-// DownloadAndExtractTarGzAll extracts the whole archive into destDir while
-// dropping the leading path component (mirrors `tar --strip-components=1`),
-// which is how vendor archives like cursor's `dist-package/...` or pi's `pi/...`
-// are shaped. expectedSHA256 verifies the archive before extraction (empty =
-// unverified, see CLAUDE.md "Download integrity").
+// DownloadAndExtractTarGzAll extracts the whole archive into destDir, dropping
+// stripComponents leading path components (mirrors `tar --strip-components=N`).
+// Vendor archives wrapped in a top-level directory - cursor's `dist-package/...`,
+// pi's `pi/...` - need 1; codex's package archive is already flat and needs 0.
+// expectedSHA256 verifies the archive before extraction (empty = unverified,
+// see CLAUDE.md "Download integrity").
 func DownloadAndExtractTarGzAll(
 	ctx context.Context,
 	assetURL, destDir, expectedSHA256 string,
+	stripComponents int,
 	progress func(downloaded, total int64),
 ) error {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
@@ -323,7 +325,7 @@ func DownloadAndExtractTarGzAll(
 			return fmt.Errorf("read tar header: %w", err)
 		}
 
-		if err := extractTarEntry(tr, hdr, destDir, cleanDestDir); err != nil {
+		if err := extractTarEntry(tr, hdr, destDir, cleanDestDir, stripComponents); err != nil {
 			return err
 		}
 	}
@@ -331,8 +333,8 @@ func DownloadAndExtractTarGzAll(
 	return nil
 }
 
-func extractTarEntry(tr *tar.Reader, hdr *tar.Header, destDir, cleanDestDir string) error {
-	stripped := stripPathComponents(hdr.Name, 1)
+func extractTarEntry(tr *tar.Reader, hdr *tar.Header, destDir, cleanDestDir string, stripComponents int) error {
+	stripped := stripPathComponents(hdr.Name, stripComponents)
 	if stripped == "" {
 		return nil
 	}
