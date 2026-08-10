@@ -299,6 +299,31 @@ Both the buffered download and the decompressed output are bounded by a fixed ca
 gzip bomb or an endless stream can exhaust neither disk nor the host - the extractor fails
 closed once the limit is crossed.
 
+Extraction is confined the same way. Every write goes through an `os.Root` opened on the
+destination, so a path that resolves outside it is refused by the kernel-level check rather
+than by a name comparison. Checking the entry name alone is not enough: the name is cleaned
+lexically, and an archive can decouple it from where the entry lands - a symlink entry
+pointing at the destination itself makes a later entry nested "under" it look contained
+while the write follows the link outside. Symlink entries are still rejected up front when
+their target is absolute or climbs out of the archive root, because `os.Root` guards
+traversal, not the link text an archive asks to store.
+
+That up-front check is lexical, so it cannot be the last word on a symlink: `x/up -> ..`
+followed by `leak -> x/up/../evil` cleans to a path inside the destination while really
+pointing at its parent, and the entry that decides it can come after the link. So once the
+entry loop ends, every symlink the archive created is probed again through the `os.Root` -
+the target text uncleaned, so the root resolves `..` against the real parent the way the
+kernel will - and one that lands outside is removed and fails the extraction. Only a target
+that resolves nowhere is left alone: it cannot escape, and archives legitimately name a
+target they never ship. A link that escapes is worth failing on even when nothing is written
+through it, because it stays in the installed tree for anything that later follows it.
+
+The second pass runs however the loop ends, a failing entry included - the entry that fails
+can be the one right after the escaping link, and returning early would leave that link on
+disk. The first error is the one returned, so the caller reads why extraction failed rather
+than a verification error standing in for it. Containment is therefore the extractor's own
+guarantee, not something a caller earns by deleting the destination on error.
+
 ### Agent install layout
 
 The in-sandbox launcher execs one fixed path per agent, `<agent>/<version>/<binary>`, so
@@ -314,8 +339,19 @@ The dropped parts cost nothing: the image's apt `ripgrep` is the `rg` codex used
 and the bundled `zsh` is unused. The bundle is still the download source only because it
 is the one codex asset with a published checksum.
 
-An existing version directory normally skips the download, but an agent may reject one
-written by an older layout, and the caller then drops that directory and re-seeds it.
+Only regular files are promoted - anything else in `bin/` fails the install. Promotion
+moves an entry one directory up, and that rebases every relative symlink under it: a
+target the extractor cleared as inside the version directory (see "Download integrity")
+resolves one level higher once promoted, and two such links chained together climb
+arbitrarily far. Checking the shape is enough because the version directory is defined as
+the bundle's binaries and nothing else. The cost is that a bundle which ever ships a
+symlink or a subdirectory in `bin/` stops installing until agentbox learns the new shape -
+the right direction to fail for a path that ends in an exec.
+
+An existing version directory normally skips the download: for most agents the directory
+existing is the whole check, and an agent that needs more opts in by implementing the
+layout check itself. codex does - it rejects a directory written by an older layout - and
+the caller then drops that directory and re-seeds it.
 
 Why: a bare binary that fails closed on a missing sibling is a broken install that still
 looks complete. A completed version directory is reused as-is rather than re-downloaded
@@ -323,10 +359,19 @@ into; a rejected one is cleared before the re-seed, never extracted over, or the
 would end up a mix of two layouts. The re-seed is non-atomic, so without the
 reject-and-reseed step a layout fix would reach a user only once the vendor happened to
 publish a new version. A stale install is reported with the command that repairs it
-wherever agentbox meets one - `agent use`, `init`, and every `run`, including the ones
-that attach to a container already up - rather than repaired behind the user's back,
-because an unannounced ~110 MB download inside `agentbox run` costs a session while an
-ignored warning costs a line of stderr.
+wherever agentbox meets one - `agent use`, `agent`, `init`, and every `run`,
+including the ones that attach to a container already up - rather than repaired behind the
+user's back, because an unannounced ~110 MB download inside `agentbox run` costs a session
+while an ignored warning costs a line of stderr. The same warning covers any agent whose
+selected version directory is simply gone, and any agent whose directory holds anything at
+all with no version selected - either way the launcher has nothing to exec, and reinstalling
+is the same remedy. Only a directory that is absent or empty stays silent, deliberately: a
+never-installed agent and an install that failed before it wrote anything are the same
+state, so warning would fire for every agent the user chose not to install. That is also
+exactly the test that decides whether a first run installs everything, so a directory
+counted as installed can never be silently skipped here. The warning says the remedy
+plainly - `agent update` installs the latest version, so a user sitting on a deliberately
+pinned older one knows the advice costs them the pin.
 
 ## Project commands
 

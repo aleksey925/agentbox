@@ -74,6 +74,7 @@ linters:
       exclude-functions:
         - (io.Closer).Close
         - (*os.File).Close
+        - (*os.Root).Close
         - (*compress/gzip.Reader).Close
         - os.Remove
         - os.RemoveAll

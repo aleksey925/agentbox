@@ -905,6 +905,7 @@ func TestCmdRun__warns_about_a_stale_install_when_attaching(t *testing.T) {
 	// arrange
 	app := appWithCodexInstall(t, "codex")
 	selectCodexVersion(t, app)
+	blockDocker(t)
 
 	// act
 	stderr := captureStderr(func() {
@@ -921,6 +922,7 @@ func TestCmdRun__silent_on_a_current_install(t *testing.T) {
 	// arrange
 	app := appWithCodexInstall(t, "codex", "codex-code-mode-host")
 	selectCodexVersion(t, app)
+	blockDocker(t)
 
 	// act
 	stderr := captureStderr(func() {
@@ -933,16 +935,146 @@ func TestCmdRun__silent_on_a_current_install(t *testing.T) {
 	}
 }
 
+func TestCmdInit__warns_about_a_stale_install(t *testing.T) {
+	// arrange
+	app := appWithCodexInstall(t, "codex")
+	selectCodexVersion(t, app)
+	seedSkeleton(t, app)
+	t.Setenv("HOME", app.paths.HomeDir)
+	t.Chdir(t.TempDir())
+
+	// act
+	var code int
+	stderr := captureStderr(func() {
+		captureOutput(func() { code = app.cmdInit(nil) })
+	})
+
+	// assert
+	if code != exitOK {
+		t.Fatalf("cmdInit() = %d, want %d, stderr:\n%s", code, exitOK, stderr)
+	}
+	if !strings.Contains(stderr, "agentbox agent update codex") {
+		t.Errorf("stderr must name the remedy, got:\n%s", stderr)
+	}
+}
+
+func TestCmdInit__says_nothing_when_init_fails(t *testing.T) {
+	// arrange
+	// a project whose .agentbox is a plain file fails the copy, and the layout
+	// advice must not compete with the error init already printed
+	app := appWithCodexInstall(t, "codex")
+	selectCodexVersion(t, app)
+	seedSkeleton(t, app)
+	t.Setenv("HOME", app.paths.HomeDir)
+	project := t.TempDir()
+	if err := os.WriteFile(filepath.Join(project, ".agentbox"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write .agentbox file: %v", err)
+	}
+	t.Chdir(project)
+
+	// act
+	var code int
+	stderr := captureStderr(func() {
+		captureOutput(func() { code = app.cmdInit(nil) })
+	})
+
+	// assert
+	if code != exitError {
+		t.Fatalf("cmdInit() = %d, want %d", code, exitError)
+	}
+	if strings.Contains(stderr, "agentbox agent update") {
+		t.Errorf("stderr must carry no layout warning, got:\n%s", stderr)
+	}
+}
+
+func TestWarnStaleLayouts__warns_when_nothing_is_selected(t *testing.T) {
+	// arrange
+	app := appWithCodexInstall(t, "codex", "codex-code-mode-host")
+
+	// act
+	stderr := captureStderr(func() { app.warnStaleLayouts([]string{"codex"}) })
+
+	// assert
+	if !strings.Contains(stderr, "agentbox agent update codex") {
+		t.Errorf("stderr must name the remedy, got:\n%s", stderr)
+	}
+}
+
+func TestWarnStaleLayouts__silent_when_the_agent_was_never_installed(t *testing.T) {
+	// arrange
+	app := appWithCodexInstall(t)
+	if err := os.RemoveAll(app.paths.AgentDir("codex")); err != nil {
+		t.Fatalf("clear agent dir: %v", err)
+	}
+
+	// act
+	stderr := captureStderr(func() { app.warnStaleLayouts([]string{"codex"}) })
+
+	// assert
+	if stderr != "" {
+		t.Errorf("stderr must be empty, got:\n%s", stderr)
+	}
+}
+
+func TestWarnStaleLayouts__silent_when_the_manager_cannot_be_built(t *testing.T) {
+	// arrange
+	t.Setenv("HOME", "")
+	app := &App{}
+
+	// act
+	stderr := captureStderr(func() { app.warnStaleLayouts([]string{"codex"}) })
+
+	// assert
+	if stderr != "" {
+		t.Errorf("stderr must be empty, got:\n%s", stderr)
+	}
+}
+
+func TestCmdInit__says_nothing_when_the_user_aborts(t *testing.T) {
+	// arrange
+	app := appWithCodexInstall(t, "codex")
+	selectCodexVersion(t, app)
+	seedSkeleton(t, app)
+	t.Setenv("HOME", app.paths.HomeDir)
+	project := t.TempDir()
+	if _, err := skeleton.NewManager(app.paths).CopyToProject(project); err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+	t.Chdir(project)
+	denyConfirm(t)
+
+	// act
+	var code int
+	stderr := captureStderr(func() {
+		captureOutput(func() { code = app.cmdInit(nil) })
+	})
+
+	// assert
+	if code != exitOK {
+		t.Fatalf("cmdInit() = %d, want %d", code, exitOK)
+	}
+	if strings.Contains(stderr, "agentbox agent update") {
+		t.Errorf("stderr must carry no layout warning, got:\n%s", stderr)
+	}
+}
+
 func TestEnsureAgentsInstalled__says_nothing_about_a_stale_install(t *testing.T) {
 	// arrange
 	app := appWithCodexInstall(t, "codex")
 	selectCodexVersion(t, app)
+	manager, err := app.AgentManager()
+	if err != nil {
+		t.Fatalf("AgentManager() error = %v", err)
+	}
+	if !manager.HasInstalledAgents() {
+		t.Fatal("the fixture must look installed, or the call downloads every agent for real")
+	}
 
 	// act
 	var code int
 	var stderr string
 	stdout := captureOutput(func() {
-		stderr = captureStderr(func() { code = app.ensureAgentsInstalled(app.paths) })
+		stderr = captureStderr(func() { code = app.ensureAgentsInstalled() })
 	})
 
 	// assert
@@ -957,7 +1089,14 @@ func TestEnsureAgentsInstalled__says_nothing_about_a_stale_install(t *testing.T)
 func appWithCodexInstall(t *testing.T, files ...string) *App {
 	t.Helper()
 
-	paths := &config.Paths{BinDir: t.TempDir()}
+	home := t.TempDir()
+	agentboxDir := filepath.Join(home, ".agentbox")
+	paths := &config.Paths{
+		HomeDir:     home,
+		AgentboxDir: agentboxDir,
+		BinDir:      filepath.Join(agentboxDir, "bin"),
+		SkeletonDir: filepath.Join(agentboxDir, "skeleton"),
+	}
 	versionDir := paths.AgentVersionDir("codex", codexTestVersion)
 	if err := os.MkdirAll(versionDir, 0o755); err != nil {
 		t.Fatalf("create version dir: %v", err)
@@ -968,6 +1107,44 @@ func appWithCodexInstall(t *testing.T, files ...string) *App {
 		}
 	}
 	return &App{paths: paths}
+}
+
+// blockDocker keeps a test that reaches the attach path from shelling out to a
+// real docker: without it the case passes only where docker is absent, and
+// `docker exec -it` would inherit the test process's stdin.
+func blockDocker(t *testing.T) {
+	t.Helper()
+
+	t.Setenv("PATH", t.TempDir())
+}
+
+// denyConfirm leaves stdin at EOF, which confirmAction reads as "no" rather than
+// auto-confirming.
+func denyConfirm(t *testing.T) {
+	t.Helper()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdin pipe: %v", err)
+	}
+	w.Close()
+	old := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = old
+		r.Close()
+	})
+}
+
+func seedSkeleton(t *testing.T, app *App) {
+	t.Helper()
+
+	if err := app.paths.EnsureDirs(); err != nil {
+		t.Fatalf("create agentbox dirs: %v", err)
+	}
+	if err := skeleton.NewManager(app.paths).CreateSkeleton(nil); err != nil {
+		t.Fatalf("create skeleton: %v", err)
+	}
 }
 
 func selectCodexVersion(t *testing.T, app *App) {

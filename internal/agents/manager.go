@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -82,13 +83,15 @@ func (m *Manager) AllAgents() []Agent {
 }
 
 func (m *Manager) HasInstalledAgents() bool {
-	for _, name := range AllAgentNames() {
-		agentDir := m.paths.AgentDir(name)
-		if entries, err := os.ReadDir(agentDir); err == nil && len(entries) > 0 {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(AllAgentNames(), m.hasAgentFiles)
+}
+
+// hasAgentFiles reports whether the agent dir holds anything at all. Both the
+// automatic bulk install and the staleness warning key on it, so a directory that
+// suppresses the install can never also suppress the warning.
+func (m *Manager) hasAgentFiles(name string) bool {
+	entries, err := os.ReadDir(m.paths.AgentDir(name))
+	return err == nil && len(entries) > 0
 }
 
 type AgentStatus struct {
@@ -130,52 +133,6 @@ func (m *Manager) GetStatus() []AgentStatus {
 
 	wg.Wait()
 	return results
-}
-
-func (m *Manager) Install(name string, onProgress func(agent string, downloaded, total int64)) error {
-	ctx := context.Background()
-	agent, ok := m.agents[name]
-	if !ok {
-		return fmt.Errorf("unknown agent: %s", name)
-	}
-
-	version, err := agent.FetchLatestVersion(ctx)
-	if err != nil {
-		return fmt.Errorf("fetch latest version: %w", err)
-	}
-	if err := config.ValidateVersion(version); err != nil {
-		return fmt.Errorf("validate version: %w", err)
-	}
-
-	destDir := m.paths.AgentVersionDir(name, version)
-
-	if m.hasCurrentInstall(agent, destDir) {
-		if err := m.switchVersion(name, version); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	progress := func(downloaded, total int64) {
-		if onProgress != nil {
-			onProgress(name, downloaded, total)
-		}
-	}
-
-	if err := os.RemoveAll(destDir); err != nil {
-		return fmt.Errorf("clear install dir: %w", err)
-	}
-
-	if err := agent.Download(ctx, version, destDir, progress); err != nil {
-		os.RemoveAll(destDir)
-		return fmt.Errorf("download: %w", err)
-	}
-
-	if err := m.switchVersion(name, version); err != nil {
-		return err
-	}
-
-	return nil
 }
 
 type agentVersionInfo struct {
@@ -381,32 +338,28 @@ func (m *Manager) hasCurrentInstall(agent Agent, destDir string) bool {
 	return true
 }
 
-// HasCurrentLayout reports whether the version a user's `current` file selects
-// is still an install this binary can hand over. An unknown agent and an agent
-// with nothing selected report true - there is nothing to warn about.
+// HasCurrentLayout reports whether the agent's install is one this binary can
+// hand over: a selected version whose directory holds the layout this binary
+// installs. An unknown agent, an agent dir that cannot be read and an agent with
+// nothing on disk report true - an agent the user never installed is not worth a
+// warning, and an install that failed before it wrote anything leaves the same
+// empty state. An agent dir holding anything at all while nothing is selected does
+// report false: the launcher execs the version `current` names, so both a version
+// directory nothing selects and a `current` that is empty or unreadable leave it
+// with an empty path.
 func (m *Manager) HasCurrentLayout(name string) bool {
 	agent, ok := m.agents[name]
 	if !ok {
 		return true
 	}
 	_, current, err := m.ListVersions(name)
-	if err != nil || current == "" {
+	if err != nil {
 		return true
 	}
-	return m.hasCurrentInstall(agent, m.paths.AgentVersionDir(name, current))
-}
-
-func dedupeNames(names []string) []string {
-	seen := make(map[string]struct{}, len(names))
-	unique := make([]string, 0, len(names))
-	for _, name := range names {
-		if _, ok := seen[name]; ok {
-			continue
-		}
-		seen[name] = struct{}{}
-		unique = append(unique, name)
+	if current == "" {
+		return !m.hasAgentFiles(name)
 	}
-	return unique
+	return m.hasCurrentInstall(agent, m.paths.AgentVersionDir(name, current))
 }
 
 func (m *Manager) SwitchVersion(name, version string) error {
@@ -515,6 +468,19 @@ func (m *Manager) ListVersions(name string) ([]string, string, error) {
 	})
 
 	return versions, current, nil
+}
+
+func dedupeNames(names []string) []string {
+	seen := make(map[string]struct{}, len(names))
+	unique := make([]string, 0, len(names))
+	for _, name := range names {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		unique = append(unique, name)
+	}
+	return unique
 }
 
 func compareVersions(a, b string) int {

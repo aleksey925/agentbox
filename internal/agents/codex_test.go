@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -57,10 +58,11 @@ func TestCodexAgent_Download(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Download() error = %v", err)
 	}
-	if got := listNames(t, destDir); !slices.Equal(got, []string{"codex", "codex-code-mode-host"}) {
-		t.Errorf("install listing = %v, want [codex codex-code-mode-host]", got)
+	want := []string{agent.BinaryName(), codexCodeModeHost}
+	if got := listNames(t, destDir); !slices.Equal(got, want) {
+		t.Errorf("install listing = %v, want %v", got, want)
 	}
-	for _, name := range []string{"codex", "codex-code-mode-host"} {
+	for _, name := range want {
 		path := filepath.Join(destDir, name)
 		info, statErr := os.Lstat(path)
 		if statErr != nil {
@@ -91,7 +93,7 @@ func TestCodexAgent_Download__promotes_unknown_helper(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Download() error = %v", err)
 	}
-	want := []string{"codex", "codex-code-mode-host", "codex-zz-helper"}
+	want := []string{agent.BinaryName(), codexCodeModeHost, "codex-zz-helper"}
 	if got := listNames(t, destDir); !slices.Equal(got, want) {
 		t.Errorf("install listing = %v, want %v", got, want)
 	}
@@ -115,8 +117,9 @@ func TestCodexAgent_Download__replaces_pre_fix_layout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Download() error = %v", err)
 	}
-	if got := listNames(t, destDir); !slices.Equal(got, []string{"codex", "codex-code-mode-host"}) {
-		t.Errorf("install listing = %v, want [codex codex-code-mode-host]", got)
+	want := []string{agent.BinaryName(), codexCodeModeHost}
+	if got := listNames(t, destDir); !slices.Equal(got, want) {
+		t.Errorf("install listing = %v, want %v", got, want)
 	}
 	content, err := os.ReadFile(filepath.Join(destDir, agent.BinaryName()))
 	if err != nil {
@@ -166,6 +169,45 @@ func TestCodexAgent_Download__missing_code_mode_host(t *testing.T) {
 	}
 }
 
+func TestCodexAgent_Download__non_executable_entrypoint(t *testing.T) {
+	// arrange
+	// the extractor takes the mode from the archive, so a release that ships
+	// bin/codex without an execute bit must be rejected, not installed
+	agent := newCodexAgent(t)
+	destDir := serveCodexBundle(t, agent, []codexPackageEntry{
+		codexDirEntry("bin"),
+		{name: "bin/codex", mode: 0o644, content: "bin/codex"},
+		codexFileEntry("bin/codex-code-mode-host"),
+	})
+
+	// act
+	err := agent.Download(context.Background(), "1.2.3", destDir, nil)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error when the archive's entrypoint is not executable")
+	}
+}
+
+func TestCodexAgent_Download__archive_checksum_mismatch(t *testing.T) {
+	// arrange
+	agent := newCodexAgent(t)
+	archive := createCodexPackage(t, codexBundleEntries())
+	serveCodexRelease(t, agent, "1.2.3", archive, fmt.Sprintf("%s  %s\n", strings.Repeat("0", 64), codexAssetName(agent)))
+	destDir := filepath.Join(t.TempDir(), "1.2.3")
+
+	// act
+	err := agent.Download(context.Background(), "1.2.3", destDir, nil)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error when the archive does not match its published checksum")
+	}
+	if got := listNames(t, destDir); len(got) != 0 {
+		t.Errorf("install listing = %v, want an empty directory", got)
+	}
+}
+
 func TestCodexAgent_Download__no_bin_dir(t *testing.T) {
 	// arrange
 	agent := newCodexAgent(t)
@@ -180,6 +222,37 @@ func TestCodexAgent_Download__no_bin_dir(t *testing.T) {
 	}
 	if got := listNames(t, destDir); len(got) != 0 {
 		t.Errorf("install listing = %v, want an empty directory", got)
+	}
+}
+
+func TestCodexAgent_Download__rejects_a_non_regular_bin_entry(t *testing.T) {
+	// both entries are contained where the archive puts them and only escape
+	// destDir once promotion rebases them one level up
+	cases := map[string][]codexPackageEntry{
+		"symlink": {codexLinkEntry(codexBundleBinDir+"/rg", "../codex-path/rg")},
+		"directory": {
+			codexDirEntry(codexBundleBinDir + "/helpers"),
+			codexFileEntry(codexBundleBinDir + "/helpers/rg"),
+		},
+	}
+
+	for name, extra := range cases {
+		t.Run(name, func(t *testing.T) {
+			// arrange
+			agent := newCodexAgent(t)
+			destDir := serveCodexBundle(t, agent, append(codexBundleEntries(), extra...))
+
+			// act
+			err := agent.Download(context.Background(), "1.2.3", destDir, nil)
+
+			// assert
+			if err == nil {
+				t.Fatalf("expected error when %s holds a %s", codexBundleBinDir, name)
+			}
+			if got := listNames(t, destDir); !slices.Equal(got, []string{codexBundleBinDir}) {
+				t.Errorf("install listing = %v, want nothing promoted out of %s", got, codexBundleBinDir)
+			}
+		})
 	}
 }
 
@@ -205,13 +278,17 @@ func TestCodexAgent_Download__checksum_entry_missing(t *testing.T) {
 func TestCodexAgent_IsInstalled(t *testing.T) {
 	// arrange
 	agent := newCodexAgent(t)
-	complete := codexLayout(t, map[string]os.FileMode{"codex": 0o755, "codex-code-mode-host": 0o755})
-	entrypointOnly := codexLayout(t, map[string]os.FileMode{"codex": 0o755})
-	helperOnly := codexLayout(t, map[string]os.FileMode{"codex-code-mode-host": 0o755})
-	notExecutable := codexLayout(t, map[string]os.FileMode{"codex": 0o644, "codex-code-mode-host": 0o755})
-	entrypointDir := codexLayout(t, map[string]os.FileMode{"codex-code-mode-host": 0o755})
+	complete := codexLayout(t, map[string]os.FileMode{agent.BinaryName(): 0o755, codexCodeModeHost: 0o755})
+	entrypointOnly := codexLayout(t, map[string]os.FileMode{agent.BinaryName(): 0o755})
+	helperOnly := codexLayout(t, map[string]os.FileMode{codexCodeModeHost: 0o755})
+	notExecutable := codexLayout(t, map[string]os.FileMode{agent.BinaryName(): 0o644, codexCodeModeHost: 0o755})
+	entrypointDir := codexLayout(t, map[string]os.FileMode{codexCodeModeHost: 0o755})
 	if err := os.Mkdir(filepath.Join(entrypointDir, agent.BinaryName()), 0o755); err != nil {
 		t.Fatalf("create entrypoint dir: %v", err)
+	}
+	entrypointLink := codexLayout(t, map[string]os.FileMode{codexCodeModeHost: 0o755})
+	if err := os.Symlink(codexCodeModeHost, filepath.Join(entrypointLink, agent.BinaryName())); err != nil {
+		t.Fatalf("create entrypoint symlink: %v", err)
 	}
 
 	// act & assert
@@ -230,8 +307,35 @@ func TestCodexAgent_IsInstalled(t *testing.T) {
 	if agent.IsInstalled(entrypointDir) {
 		t.Error("an entrypoint that is a directory must not count as installed")
 	}
+	if agent.IsInstalled(entrypointLink) {
+		t.Error("an entrypoint that is a symlink must not count as installed")
+	}
 	if agent.IsInstalled(filepath.Join(t.TempDir(), "absent")) {
 		t.Error("a missing directory must not count as installed")
+	}
+}
+
+func TestCodexAgent_flattenPackage__rejects_a_bundle_without_the_entrypoint(t *testing.T) {
+	// arrange
+	agent := newCodexAgent(t)
+	destDir := t.TempDir()
+	binDir := filepath.Join(destDir, codexBundleBinDir)
+	if err := os.Mkdir(binDir, 0o755); err != nil {
+		t.Fatalf("create bin dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(binDir, codexCodeModeHost), []byte("x"), 0o755); err != nil {
+		t.Fatalf("write helper: %v", err)
+	}
+
+	// act
+	err := agent.flattenPackage(destDir)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error when bin/ holds no entrypoint")
+	}
+	if !strings.Contains(err.Error(), "promote "+agent.BinaryName()) {
+		t.Errorf("error = %v, want it to name the entrypoint promotion", err)
 	}
 }
 
@@ -313,6 +417,7 @@ type codexPackageEntry struct {
 	isDir   bool
 	mode    int64
 	content string
+	link    string
 }
 
 func codexFileEntry(name string) codexPackageEntry {
@@ -321,6 +426,10 @@ func codexFileEntry(name string) codexPackageEntry {
 
 func codexDirEntry(name string) codexPackageEntry {
 	return codexPackageEntry{name: name, isDir: true, mode: 0o755}
+}
+
+func codexLinkEntry(name, target string) codexPackageEntry {
+	return codexPackageEntry{name: name, mode: 0o777, link: target}
 }
 
 // codexBundleEntries mirrors the real rust-v0.147.0 package asset, directory
@@ -360,10 +469,15 @@ func createCodexPackage(t *testing.T, entries []codexPackageEntry) []byte {
 			header.Size = 0
 			header.Typeflag = tar.TypeDir
 		}
+		if entry.link != "" {
+			header.Size = 0
+			header.Typeflag = tar.TypeSymlink
+			header.Linkname = entry.link
+		}
 		if err := tw.WriteHeader(header); err != nil {
 			t.Fatalf("write tar header: %v", err)
 		}
-		if entry.isDir {
+		if entry.isDir || entry.link != "" {
 			continue
 		}
 		if _, err := tw.Write([]byte(entry.content)); err != nil {

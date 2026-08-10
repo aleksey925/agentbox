@@ -93,7 +93,7 @@ func (c *CodexAgent) Download(ctx context.Context, version, destDir string, prog
 		return fmt.Errorf("codex: %w", err)
 	}
 
-	if err := flattenPackage(destDir, c.BinaryName()); err != nil {
+	if err := c.flattenPackage(destDir); err != nil {
 		return fmt.Errorf("codex: %w", err)
 	}
 
@@ -103,13 +103,14 @@ func (c *CodexAgent) Download(ctx context.Context, version, destDir string, prog
 	return nil
 }
 
-// flattenPackage promotes everything under bin/ to destDir and drops the rest of
-// the bundle, so <version>/codex is the file the launcher execs and the helpers
-// sit next to it - see CLAUDE.md "Agent install layout".
-func flattenPackage(destDir, entrypoint string) error {
-	roots, readErr := os.ReadDir(destDir)
-	if readErr != nil {
-		return fmt.Errorf("read package root: %w", readErr)
+// flattenPackage promotes bin/'s files to destDir and drops the rest of the
+// bundle, so <version>/codex is the file the launcher execs and the helpers sit
+// next to it. A bin/ entry that is not a regular file fails the install - see
+// CLAUDE.md "Agent install layout".
+func (c *CodexAgent) flattenPackage(destDir string) error {
+	roots, err := os.ReadDir(destDir)
+	if err != nil {
+		return fmt.Errorf("read package root: %w", err)
 	}
 	// the extras go before the promotion, so a bundle that ever ships bin/<name>
 	// colliding with a root <name> cannot have its promoted file deleted after
@@ -117,28 +118,42 @@ func flattenPackage(destDir, entrypoint string) error {
 		if entry.Name() == codexBundleBinDir {
 			continue
 		}
-		if err := os.RemoveAll(filepath.Join(destDir, entry.Name())); err != nil {
+		if err = os.RemoveAll(filepath.Join(destDir, entry.Name())); err != nil {
 			return fmt.Errorf("drop %s: %w", entry.Name(), err)
 		}
 	}
 
 	binDir := filepath.Join(destDir, codexBundleBinDir)
-	payload, readErr := os.ReadDir(binDir)
-	if readErr != nil {
-		return fmt.Errorf("read package %s: %w", codexBundleBinDir, readErr)
+	payload, err := os.ReadDir(binDir)
+	if err != nil {
+		return fmt.Errorf("read package %s: %w", codexBundleBinDir, err)
+	}
+	// promotion moves an entry one directory up, which rebases every relative
+	// symlink under it: a target the extractor cleared as inside destDir then
+	// resolves outside it
+	for _, entry := range payload {
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("package %s/%s is not a regular file", codexBundleBinDir, entry.Name())
+		}
+	}
+	promote := func(name string) error {
+		if err := os.Rename(filepath.Join(binDir, name), filepath.Join(destDir, name)); err != nil {
+			return fmt.Errorf("promote %s: %w", name, err)
+		}
+		return nil
 	}
 	for _, entry := range payload {
-		if entry.Name() == entrypoint {
+		if entry.Name() == c.BinaryName() {
 			continue
 		}
-		if err := promoteEntry(binDir, destDir, entry.Name()); err != nil {
+		if err := promote(entry.Name()); err != nil {
 			return err
 		}
 	}
 	// the entrypoint goes last, after every helper: IsInstalled reads it as the
 	// mark of a finished install, so an interrupted flatten must never leave it at
 	// the root ahead of something else
-	if err := promoteEntry(binDir, destDir, entrypoint); err != nil {
+	if err := promote(c.BinaryName()); err != nil {
 		return err
 	}
 
@@ -146,13 +161,6 @@ func flattenPackage(destDir, entrypoint string) error {
 	// not promoted, and silently deleting it would ship a half-installed codex
 	if err := os.Remove(binDir); err != nil {
 		return fmt.Errorf("drop %s: %w", codexBundleBinDir, err)
-	}
-	return nil
-}
-
-func promoteEntry(binDir, destDir, name string) error {
-	if err := os.Rename(filepath.Join(binDir, name), filepath.Join(destDir, name)); err != nil {
-		return fmt.Errorf("promote %s: %w", name, err)
 	}
 	return nil
 }

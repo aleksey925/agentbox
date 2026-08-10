@@ -199,7 +199,7 @@ func (a *App) doInit() int {
 		fmt.Println("Warning: .agentbox/ already exists and will be overwritten (except local.yml)")
 		if !a.confirmAction("Continue?") {
 			fmt.Println("Aborted")
-			return 0
+			return exitCanceled
 		}
 	}
 
@@ -231,7 +231,7 @@ func (a *App) doInit() int {
 
 	a.createMiseToml(cwd)
 
-	if code := a.ensureAgentsInstalled(paths); code != 0 {
+	if code := a.ensureAgentsInstalled(); code != exitOK {
 		return code
 	}
 
@@ -577,7 +577,7 @@ func (a *App) ensureProjectReady(cwd string) int {
 	agentboxDir := filepath.Join(cwd, ".agentbox")
 	if !skeleton.ProjectInitialized(agentboxDir) {
 		fmt.Println("Warning: not initialized or incomplete, running init first...")
-		if code := a.doInit(); code != 0 {
+		if code := a.doInit(); code != exitOK {
 			return code
 		}
 		fmt.Println()
@@ -601,7 +601,7 @@ func (a *App) ensureProjectReady(cwd string) int {
 		return 1
 	}
 
-	if code := a.ensureAgentsInstalled(paths); code != 0 {
+	if code := a.ensureAgentsInstalled(); code != exitOK {
 		return code
 	}
 
@@ -676,10 +676,14 @@ Use "agentbox agent <command> --help" for more information about a command.
 		return 1
 	}
 
-	return a.showAgentStatus(manager)
+	a.showAgentStatus(manager)
+	// the table compares versions, so an install this binary rejects still renders
+	// as "up to date" - the warning is what tells them apart
+	a.warnStaleLayouts(agents.AllAgentNames())
+	return exitOK
 }
 
-func (a *App) showAgentStatus(manager *agents.Manager) int {
+func (a *App) showAgentStatus(manager *agents.Manager) {
 	fmt.Println("\nFetching agent versions...")
 	statuses := manager.GetStatus()
 
@@ -714,7 +718,6 @@ func (a *App) showAgentStatus(manager *agents.Manager) int {
 	fmt.Println()
 	table.Render()
 	fmt.Println()
-	return 0
 }
 
 func (a *App) cmdAgentUpdate(args []string) int {
@@ -1293,13 +1296,14 @@ func (a *App) warnStaleLayouts(names []string) {
 			continue
 		}
 		fmt.Fprintf(os.Stderr,
-			"Warning: the installed %s is missing files this agentbox expects and may fail to start.\n", name)
-		fmt.Fprintf(os.Stderr, "Run 'agentbox agent update %s' to reinstall it.\n", name)
+			"Warning: the %s install is incomplete and may fail to start.\n", name)
+		fmt.Fprintf(os.Stderr,
+			"Run 'agentbox agent update %s' to reinstall it - that installs the latest version.\n", name)
 	}
 }
 
-func (a *App) ensureAgentsInstalled(paths *config.Paths) int {
-	manager, err := agents.NewManager(paths)
+func (a *App) ensureAgentsInstalled() int {
+	manager, err := a.AgentManager()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
