@@ -72,8 +72,9 @@ func (c *CursorAgent) Download(ctx context.Context, version, destDir string, pro
 	)
 
 	// cursor-agent is a bash wrapper that resolves sibling files by relative
-	// path, so the whole archive has to be extracted, not just the binary.
-	if err := download.DownloadAndExtractTarGzAll(ctx, assetURL, destDir, "", progress); err != nil {
+	// path, so the whole archive has to be extracted, not just the binary. its
+	// entries sit under a dist-package/ wrapper, so one component is stripped.
+	if err := download.DownloadAndExtractTarGzAll(ctx, assetURL, destDir, "", 1, progress); err != nil {
 		return fmt.Errorf("cursor: %w", err)
 	}
 	return nil

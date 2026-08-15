@@ -146,10 +146,17 @@ Agent binaries are managed separately from the sandbox:
 ```bash
 agentbox agent                      # show installed vs latest versions
 agentbox agent update               # update all agents
-agentbox agent update claude        # update specific agent
+agentbox agent update claude        # update specific agent to the latest version
 agentbox agent use claude 2.0.67    # switch to specific version
 agentbox agent flags                # edit flags agents are launched with
 ```
+
+`agent update` always installs the latest version, and re-downloads a version already on
+disk when the files there are not the ones this agentbox expects - today only codex is
+checked that closely, because its layout changed. When an agent's install is incomplete, or
+no version of it is selected, `agentbox run`, `agentbox init`, `agentbox agent`
+and `agentbox agent use` print a warning naming that command. Nothing is re-downloaded
+behind your back, so a version you pinned with `agent use` stays until you say otherwise.
 
 ### Modular Sandbox Configuration
 

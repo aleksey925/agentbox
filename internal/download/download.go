@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -284,14 +285,16 @@ func DownloadAndExtractTarGz(
 	return fmt.Errorf("binary '%s' not found in archive", binaryInArchive)
 }
 
-// DownloadAndExtractTarGzAll extracts the whole archive into destDir while
-// dropping the leading path component (mirrors `tar --strip-components=1`),
-// which is how vendor archives like cursor's `dist-package/...` or pi's `pi/...`
-// are shaped. expectedSHA256 verifies the archive before extraction (empty =
-// unverified, see CLAUDE.md "Download integrity").
+// DownloadAndExtractTarGzAll extracts the whole archive into destDir, dropping
+// stripComponents leading path components (mirrors `tar --strip-components=N`).
+// Vendor archives wrapped in a top-level directory - cursor's `dist-package/...`,
+// pi's `pi/...` - need 1; codex's package archive is already flat and needs 0.
+// expectedSHA256 verifies the archive before extraction (empty = unverified,
+// see CLAUDE.md "Download integrity").
 func DownloadAndExtractTarGzAll(
 	ctx context.Context,
 	assetURL, destDir, expectedSHA256 string,
+	stripComponents int,
 	progress func(downloaded, total int64),
 ) error {
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
@@ -310,45 +313,89 @@ func DownloadAndExtractTarGzAll(
 	}
 	defer gzr.Close()
 
+	// every write goes through os.Root, which resolves each path against destDir
+	// and refuses to traverse a symlink that leaves it. The name checks in
+	// extractTarEntry are lexical, so they only prove where an entry is *named* -
+	// an earlier entry can decouple that from where it *lands*: `x/up -> ..`
+	// resolves to destDir, which makes a later `x/up/esc/passwd` look contained
+	// while os.Create would follow the link and write outside destDir.
+	root, err := os.OpenRoot(destDir)
+	if err != nil {
+		return fmt.Errorf("open dest dir: %w", err)
+	}
+	defer root.Close()
+
 	// cap total decompressed bytes against a gzip bomb (see DownloadAndExtractTarGz).
 	tr := tar.NewReader(io.LimitReader(gzr, MaxArtifactBytes+1))
-	cleanDestDir := filepath.Clean(destDir) + string(os.PathSeparator)
+	extractor := &tarExtractor{
+		root:            root,
+		destDir:         destDir,
+		cleanDestDir:    filepath.Clean(destDir) + string(os.PathSeparator),
+		stripComponents: stripComponents,
+	}
 
+	err = extractor.extractAll(tr)
+	// not `if err != nil { return err }` first: a failing entry can come after an
+	// escaping symlink was already written, and skipping the second pass would
+	// leave that link inside destDir. The first error wins so the caller still
+	// reads why extraction failed.
+	if escaping := extractor.verifySymlinks(); err == nil {
+		err = escaping
+	}
+	return err
+}
+
+type tarExtractor struct {
+	root            *os.Root
+	destDir         string
+	cleanDestDir    string
+	stripComponents int
+	symlinks        []extractedSymlink
+}
+
+type extractedSymlink struct {
+	path   string // root-relative location of the link
+	target string // link text, exactly as the archive asked to store it
+}
+
+func (e *tarExtractor) extractAll(tr *tar.Reader) error {
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
-			break
+			return nil
 		}
 		if err != nil {
 			return fmt.Errorf("read tar header: %w", err)
 		}
 
-		if err := extractTarEntry(tr, hdr, destDir, cleanDestDir); err != nil {
+		if err := e.extractTarEntry(tr, hdr); err != nil {
 			return err
 		}
 	}
-
-	return nil
 }
 
-func extractTarEntry(tr *tar.Reader, hdr *tar.Header, destDir, cleanDestDir string) error {
-	stripped := stripPathComponents(hdr.Name, 1)
+func (e *tarExtractor) extractTarEntry(tr *tar.Reader, hdr *tar.Header) error {
+	stripped := stripPathComponents(hdr.Name, e.stripComponents)
 	if stripped == "" {
 		return nil
 	}
 
-	destPath := filepath.Join(destDir, stripped)
-	if !strings.HasPrefix(destPath, cleanDestDir) && filepath.Clean(destPath) != filepath.Clean(destDir) {
+	destPath := filepath.Join(e.destDir, stripped)
+	if !strings.HasPrefix(destPath, e.cleanDestDir) && filepath.Clean(destPath) != filepath.Clean(e.destDir) {
+		return fmt.Errorf("invalid file path in archive: %s", hdr.Name)
+	}
+	rootPath, err := filepath.Rel(e.destDir, destPath)
+	if err != nil {
 		return fmt.Errorf("invalid file path in archive: %s", hdr.Name)
 	}
 
 	switch hdr.Typeflag {
 	case tar.TypeDir:
-		if err := os.MkdirAll(destPath, 0o755); err != nil {
+		if err := e.root.MkdirAll(rootPath, 0o755); err != nil {
 			return fmt.Errorf("create dir: %w", err)
 		}
 	case tar.TypeReg:
-		return writeTarFile(tr, hdr, destPath)
+		return e.writeTarFile(tr, hdr, rootPath)
 	case tar.TypeSymlink:
 		// absolute targets resolve outside destDir at runtime; filepath.Join
 		// would swallow the leading "/" and make the relative-path check below
@@ -357,15 +404,21 @@ func extractTarEntry(tr *tar.Reader, hdr *tar.Header, destDir, cleanDestDir stri
 			return fmt.Errorf("symlink has absolute target: %s -> %s", hdr.Name, hdr.Linkname)
 		}
 		resolvedTarget := filepath.Join(filepath.Dir(destPath), hdr.Linkname) //nolint:gosec // checked next line
-		if !strings.HasPrefix(resolvedTarget, cleanDestDir) && filepath.Clean(resolvedTarget) != filepath.Clean(destDir) {
+		if !strings.HasPrefix(resolvedTarget, e.cleanDestDir) && filepath.Clean(resolvedTarget) != filepath.Clean(e.destDir) {
 			return fmt.Errorf("symlink target escapes archive root: %s -> %s", hdr.Name, hdr.Linkname)
 		}
-		if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+		if err := e.root.MkdirAll(filepath.Dir(rootPath), 0o755); err != nil {
 			return fmt.Errorf("create parent dir: %w", err)
 		}
-		if err := os.Symlink(hdr.Linkname, destPath); err != nil {
+		if err := e.root.Symlink(hdr.Linkname, rootPath); err != nil {
 			return fmt.Errorf("create symlink: %w", err)
 		}
+		e.symlinks = append(e.symlinks, extractedSymlink{path: rootPath, target: hdr.Linkname})
+	case tar.TypeXGlobalHeader:
+		// archive/tar hands a pax global header to the caller, unlike the per-file
+		// 'x' and GNU long-name/long-link headers it consumes itself. It carries
+		// archive-wide metadata and no filesystem entry, so there is nothing to write.
+		return nil
 	default:
 		// hard links, device nodes, fifos — fail loudly so partial extraction
 		// doesn't silently produce a broken install if upstream archive changes.
@@ -374,19 +427,43 @@ func extractTarEntry(tr *tar.Reader, hdr *tar.Header, destDir, cleanDestDir stri
 	return nil
 }
 
-func writeTarFile(tr *tar.Reader, hdr *tar.Header, destPath string) error {
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+// verifySymlinks re-checks every symlink the archive created, once extraction
+// has ended, and removes the ones that resolve outside destDir (see
+// CLAUDE.md "Download integrity"). The probe keeps the target text uncleaned,
+// because cleaning is what hides the escape: os.Root resolves ".." against the
+// real parent, filepath.Clean against the name. A target that does not exist is
+// left alone - it resolves nowhere.
+func (e *tarExtractor) verifySymlinks() error {
+	var escaping error
+
+	for _, link := range e.symlinks {
+		probe := filepath.Dir(link.path) + string(os.PathSeparator) + link.target //nolint:gocritic // filepath.Join cleans the target, which is what hides the escape
+		if _, err := e.root.Lstat(probe); err == nil || errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+
+		_ = e.root.Remove(link.path)
+		if escaping == nil {
+			escaping = fmt.Errorf("symlink target escapes archive root: %s -> %s", link.path, link.target)
+		}
+	}
+
+	return escaping
+}
+
+func (e *tarExtractor) writeTarFile(tr *tar.Reader, hdr *tar.Header, rootPath string) error {
+	if err := e.root.MkdirAll(filepath.Dir(rootPath), 0o755); err != nil {
 		return fmt.Errorf("create parent dir: %w", err)
 	}
 
-	out, err := os.Create(destPath)
+	out, err := e.root.Create(rootPath)
 	if err != nil {
 		return fmt.Errorf("create file: %w", err)
 	}
 
 	if _, err := io.Copy(out, tr); err != nil {
 		out.Close()
-		os.Remove(destPath)
+		_ = e.root.Remove(rootPath)
 		return fmt.Errorf("copy to file: %w", err)
 	}
 	out.Close()
@@ -394,8 +471,8 @@ func writeTarFile(tr *tar.Reader, hdr *tar.Header, destPath string) error {
 	// mask drops setuid/setgid/sticky bits — extracted files should never be
 	// privileged regardless of what the archive declares.
 	mode := os.FileMode(uint32(hdr.Mode) & 0o777) //nolint:gosec // value bounded by mask
-	if err := os.Chmod(destPath, mode); err != nil {
-		os.Remove(destPath)
+	if err := e.root.Chmod(rootPath, mode); err != nil {
+		_ = e.root.Remove(rootPath)
 		return fmt.Errorf("chmod: %w", err)
 	}
 	return nil

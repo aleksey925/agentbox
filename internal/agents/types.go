@@ -19,6 +19,14 @@ type Agent interface {
 	BinaryName() string
 }
 
+// installVerifier lets an agent reject a version directory that exists but was
+// written by an older layout - an upstream package that gained files the
+// previous release did not ship. Agents that install a single binary don't need
+// it: for them the directory existing is proof enough.
+type installVerifier interface {
+	IsInstalled(destDir string) bool
+}
+
 type DownloadResult struct {
 	Agent   string
 	Version string

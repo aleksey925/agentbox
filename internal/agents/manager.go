@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -82,13 +83,15 @@ func (m *Manager) AllAgents() []Agent {
 }
 
 func (m *Manager) HasInstalledAgents() bool {
-	for _, name := range AllAgentNames() {
-		agentDir := m.paths.AgentDir(name)
-		if entries, err := os.ReadDir(agentDir); err == nil && len(entries) > 0 {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(AllAgentNames(), m.hasAgentFiles)
+}
+
+// hasAgentFiles reports whether the agent dir holds anything at all. Both the
+// automatic bulk install and the staleness warning key on it, so a directory that
+// suppresses the install can never also suppress the warning.
+func (m *Manager) hasAgentFiles(name string) bool {
+	entries, err := os.ReadDir(m.paths.AgentDir(name))
+	return err == nil && len(entries) > 0
 }
 
 type AgentStatus struct {
@@ -132,48 +135,6 @@ func (m *Manager) GetStatus() []AgentStatus {
 	return results
 }
 
-func (m *Manager) Install(name string, onProgress func(agent string, downloaded, total int64)) error {
-	ctx := context.Background()
-	agent, ok := m.agents[name]
-	if !ok {
-		return fmt.Errorf("unknown agent: %s", name)
-	}
-
-	version, err := agent.FetchLatestVersion(ctx)
-	if err != nil {
-		return fmt.Errorf("fetch latest version: %w", err)
-	}
-	if err := config.ValidateVersion(version); err != nil {
-		return fmt.Errorf("validate version: %w", err)
-	}
-
-	destDir := m.paths.AgentVersionDir(name, version)
-
-	if _, err := os.Stat(destDir); err == nil {
-		if err := m.switchVersion(name, version); err != nil {
-			return err
-		}
-		return nil
-	}
-
-	progress := func(downloaded, total int64) {
-		if onProgress != nil {
-			onProgress(name, downloaded, total)
-		}
-	}
-
-	if err := agent.Download(ctx, version, destDir, progress); err != nil {
-		os.RemoveAll(destDir)
-		return fmt.Errorf("download: %w", err)
-	}
-
-	if err := m.switchVersion(name, version); err != nil {
-		return err
-	}
-
-	return nil
-}
-
 type agentVersionInfo struct {
 	name           string
 	agent          Agent
@@ -187,6 +148,9 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 	if len(names) == 0 {
 		names = AllAgentNames()
 	}
+	// one goroutine per version directory is the invariant this loop rests on, so
+	// a name repeated on the command line must not fan out into two installs
+	names = dedupeNames(names)
 
 	// phase 1: fetch all versions in parallel
 	infos := make([]agentVersionInfo, len(names))
@@ -261,7 +225,7 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 		destDir := m.paths.AgentVersionDir(info.name, info.latestVersion)
 
 		// already installed
-		if _, err := os.Stat(destDir); err == nil {
+		if m.hasCurrentInstall(info.agent, destDir) {
 			if err := m.switchVersion(info.name, info.latestVersion); err != nil {
 				results[i] = DownloadResult{
 					Agent: info.name,
@@ -319,6 +283,15 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 				}
 			}
 
+			if err := os.RemoveAll(destDir); err != nil {
+				bar.Abort(true)
+				results[idx] = DownloadResult{
+					Agent: info.name,
+					Error: fmt.Errorf("clear install dir: %w", err),
+				}
+				return
+			}
+
 			if err := info.agent.Download(ctx, info.latestVersion, destDir, progress); err != nil {
 				bar.Abort(true)
 				os.RemoveAll(destDir)
@@ -350,6 +323,43 @@ func (m *Manager) Update(names []string) ([]DownloadResult, error) {
 	p.Wait()
 
 	return results, nil
+}
+
+// hasCurrentInstall reports whether destDir holds an install in the layout this
+// binary produces, so the download can be skipped. It only inspects - clearing a
+// rejected directory is the caller's job, right before it re-seeds it.
+func (m *Manager) hasCurrentInstall(agent Agent, destDir string) bool {
+	if _, err := os.Stat(destDir); err != nil {
+		return false
+	}
+	if verifier, ok := agent.(installVerifier); ok {
+		return verifier.IsInstalled(destDir)
+	}
+	return true
+}
+
+// HasCurrentLayout reports whether the agent's install is one this binary can
+// hand over: a selected version whose directory holds the layout this binary
+// installs. An unknown agent, an agent dir that cannot be read and an agent with
+// nothing on disk report true - an agent the user never installed is not worth a
+// warning, and an install that failed before it wrote anything leaves the same
+// empty state. An agent dir holding anything at all while nothing is selected does
+// report false: the launcher execs the version `current` names, so both a version
+// directory nothing selects and a `current` that is empty or unreadable leave it
+// with an empty path.
+func (m *Manager) HasCurrentLayout(name string) bool {
+	agent, ok := m.agents[name]
+	if !ok {
+		return true
+	}
+	_, current, err := m.ListVersions(name)
+	if err != nil {
+		return true
+	}
+	if current == "" {
+		return !m.hasAgentFiles(name)
+	}
+	return m.hasCurrentInstall(agent, m.paths.AgentVersionDir(name, current))
 }
 
 func (m *Manager) SwitchVersion(name, version string) error {
@@ -458,6 +468,19 @@ func (m *Manager) ListVersions(name string) ([]string, string, error) {
 	})
 
 	return versions, current, nil
+}
+
+func dedupeNames(names []string) []string {
+	seen := make(map[string]struct{}, len(names))
+	unique := make([]string, 0, len(names))
+	for _, name := range names {
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		unique = append(unique, name)
+	}
+	return unique
 }
 
 func compareVersions(a, b string) int {

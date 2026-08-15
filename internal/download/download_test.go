@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -230,7 +231,7 @@ func TestDownloadAndExtractTarGzAll(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", nil)
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 1, nil)
 
 	// assert
 	if err != nil {
@@ -263,6 +264,63 @@ func TestDownloadAndExtractTarGzAll(t *testing.T) {
 	}
 }
 
+func TestDownloadAndExtractTarGzAll__keeps_layout_without_stripping(t *testing.T) {
+	// arrange
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "bin/", isDir: true},
+		{name: "bin/main", content: []byte("hi"), mode: 0o755},
+		{name: "resources/lib", content: []byte("x"), mode: 0o644},
+		{name: "meta.json", content: []byte("{}"), mode: 0o644},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 0, nil)
+
+	// assert
+	if err != nil {
+		t.Fatalf("DownloadAndExtractTarGzAll() error = %v", err)
+	}
+	for _, rel := range []string{"bin/main", "resources/lib", "meta.json"} {
+		if _, statErr := os.Stat(filepath.Join(destDir, rel)); statErr != nil {
+			t.Errorf("expected %s to be extracted, stat err = %v", rel, statErr)
+		}
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__rejects_escaping_path(t *testing.T) {
+	// arrange
+	// codex extracts with no stripping, so an entry name reaches the destination
+	// path verbatim and the containment check is all that keeps it inside destDir
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "../evil", content: []byte("x"), mode: 0o644},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := filepath.Join(t.TempDir(), "install")
+
+	// act
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 0, nil)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error for an entry escaping the archive root")
+	}
+	if _, statErr := os.Lstat(filepath.Join(filepath.Dir(destDir), "evil")); !os.IsNotExist(statErr) {
+		t.Errorf("escaping entry should not have been written (lstat err = %v)", statErr)
+	}
+}
+
 func TestDownloadAndExtractTarGzAll__checksum_match(t *testing.T) {
 	// arrange
 	tarGzData := createMultiFileTarGz(t, []tarFile{
@@ -279,7 +337,7 @@ func TestDownloadAndExtractTarGzAll__checksum_match(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, hex.EncodeToString(sum[:]), nil)
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, hex.EncodeToString(sum[:]), 1, nil)
 
 	// assert
 	if err != nil {
@@ -305,7 +363,7 @@ func TestDownloadAndExtractTarGzAll__checksum_mismatch(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "deadbeef", nil)
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "deadbeef", 1, nil)
 
 	// assert
 	if err == nil {
@@ -331,7 +389,7 @@ func TestDownloadAndExtractTarGzAll__rejects_escaping_symlink(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", nil)
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 1, nil)
 
 	// assert
 	if err == nil {
@@ -358,7 +416,7 @@ func TestDownloadAndExtractTarGzAll__rejects_absolute_symlink(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", nil)
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 1, nil)
 
 	// assert
 	if err == nil {
@@ -366,6 +424,163 @@ func TestDownloadAndExtractTarGzAll__rejects_absolute_symlink(t *testing.T) {
 	}
 	if _, statErr := os.Lstat(filepath.Join(destDir, "leak")); !os.IsNotExist(statErr) {
 		t.Errorf("absolute symlink should not have been created (lstat err = %v)", statErr)
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__rejects_write_through_a_symlinked_parent(t *testing.T) {
+	// arrange — every entry passes the lexical checks on its own: `x/up -> ..`
+	// resolves to destDir, and `x/up/esc -> ..` resolves to destDir/x. But
+	// `x/up` really *is* destDir, so `esc` lands as destDir/esc pointing at
+	// destDir's parent, and the file below it is written outside.
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/x/", isDir: true},
+		{name: "pkg/x/up", rawType: tar.TypeSymlink, linkname: ".."},
+		{name: "pkg/x/up/esc", rawType: tar.TypeSymlink, linkname: ".."},
+		{name: "pkg/x/up/esc/leaked", content: []byte("owned"), mode: 0o644},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := filepath.Join(t.TempDir(), "install")
+
+	// act
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 1, nil)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error for an entry written through a symlinked parent")
+	}
+	if _, statErr := os.Lstat(filepath.Join(filepath.Dir(destDir), "leaked")); !os.IsNotExist(statErr) {
+		t.Errorf("entry must not be written outside destDir (lstat err = %v)", statErr)
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__rejects_a_file_overwriting_an_escaping_symlink(t *testing.T) {
+	// arrange — `leak -> x/up/../evil` cleans to destDir/x/evil lexically, so the
+	// target check passes, but `x/up` is a link to destDir, so it really points at
+	// destDir's parent. The regular entry of the same name is then written through it.
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/x/", isDir: true},
+		{name: "pkg/x/up", rawType: tar.TypeSymlink, linkname: ".."},
+		{name: "pkg/leak", rawType: tar.TypeSymlink, linkname: "x/up/../evil"},
+		{name: "pkg/leak", content: []byte("owned"), mode: 0o644},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := filepath.Join(t.TempDir(), "install")
+
+	// act
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 1, nil)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error for a file written through an escaping symlink")
+	}
+	if _, statErr := os.Lstat(filepath.Join(filepath.Dir(destDir), "evil")); !os.IsNotExist(statErr) {
+		t.Errorf("entry must not be written outside destDir (lstat err = %v)", statErr)
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__rejects_a_symlink_escaping_through_a_symlinked_parent(t *testing.T) {
+	// arrange — `leak -> x/up/../evil` cleans to destDir/x/evil, so the lexical
+	// target check passes, but `x/up` is a link to destDir, so the stored link
+	// really resolves to destDir's parent. Nothing writes through it here: the
+	// escaping link itself must not survive extraction.
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/x/", isDir: true},
+		{name: "pkg/x/up", rawType: tar.TypeSymlink, linkname: ".."},
+		{name: "pkg/leak", rawType: tar.TypeSymlink, linkname: "x/up/../evil"},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := filepath.Join(t.TempDir(), "install")
+
+	// act
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 1, nil)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error for a symlink resolving outside destDir")
+	}
+	if _, statErr := os.Lstat(filepath.Join(destDir, "leak")); !os.IsNotExist(statErr) {
+		t.Errorf("escaping symlink should not have been left behind (lstat err = %v)", statErr)
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__rejects_a_symlinked_parent_shipped_after_the_link(t *testing.T) {
+	// arrange — same escape with the entries swapped: when `leak` is created
+	// `x/up` does not exist yet, so the link is still dangling and only the
+	// finished tree shows where it points.
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/leak", rawType: tar.TypeSymlink, linkname: "x/up/../evil"},
+		{name: "pkg/x/", isDir: true},
+		{name: "pkg/x/up", rawType: tar.TypeSymlink, linkname: ".."},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := filepath.Join(t.TempDir(), "install")
+
+	// act
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 1, nil)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error for a symlink resolving outside destDir")
+	}
+	if _, statErr := os.Lstat(filepath.Join(destDir, "leak")); !os.IsNotExist(statErr) {
+		t.Errorf("escaping symlink should not have been left behind (lstat err = %v)", statErr)
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__removes_an_escaping_symlink_when_a_later_entry_fails(t *testing.T) {
+	// arrange — the same escape, followed by an entry the extractor rejects, so
+	// the tar loop aborts before the tree is complete.
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/x/", isDir: true},
+		{name: "pkg/x/up", rawType: tar.TypeSymlink, linkname: ".."},
+		{name: "pkg/leak", rawType: tar.TypeSymlink, linkname: "x/up/../evil"},
+		{name: "pkg/fifo", rawType: tar.TypeFifo},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := filepath.Join(t.TempDir(), "install")
+
+	// act
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 1, nil)
+
+	// assert
+	if err == nil {
+		t.Fatal("expected error for the unsupported entry")
+	}
+	if !strings.Contains(err.Error(), "unsupported tar entry type") {
+		t.Errorf("error must report the entry that failed, got %v", err)
+	}
+	if _, statErr := os.Lstat(filepath.Join(destDir, "leak")); !os.IsNotExist(statErr) {
+		t.Errorf("escaping symlink should not have been left behind (lstat err = %v)", statErr)
 	}
 }
 
@@ -385,7 +600,7 @@ func TestDownloadAndExtractTarGzAll__allows_internal_symlink(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", nil)
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 1, nil)
 
 	// assert
 	if err != nil {
@@ -397,6 +612,70 @@ func TestDownloadAndExtractTarGzAll__allows_internal_symlink(t *testing.T) {
 	}
 	if target != "real" {
 		t.Errorf("symlink target = %q, want %q", target, "real")
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__allows_a_symlink_climbing_to_a_sibling_directory(t *testing.T) {
+	// arrange — the `bin/x -> ../lib/x` shape vendor bundles use, with the target
+	// shipped after the link so it is dangling at creation time.
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/bin/", isDir: true},
+		{name: "pkg/bin/tool", rawType: tar.TypeSymlink, linkname: "../lib/tool"},
+		{name: "pkg/lib/", isDir: true},
+		{name: "pkg/lib/tool", content: []byte("hi"), mode: 0o755},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 1, nil)
+
+	// assert
+	if err != nil {
+		t.Fatalf("DownloadAndExtractTarGzAll() error = %v", err)
+	}
+	content, err := os.ReadFile(filepath.Join(destDir, "bin", "tool"))
+	if err != nil {
+		t.Fatalf("read through symlink: %v", err)
+	}
+	if string(content) != "hi" {
+		t.Errorf("content through symlink = %q, want %q", content, "hi")
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__allows_a_symlink_to_a_target_the_archive_never_ships(t *testing.T) {
+	// arrange
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pkg/", isDir: true},
+		{name: "pkg/link", rawType: tar.TypeSymlink, linkname: "never-shipped"},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 1, nil)
+
+	// assert
+	if err != nil {
+		t.Fatalf("DownloadAndExtractTarGzAll() error = %v", err)
+	}
+	target, err := os.Readlink(filepath.Join(destDir, "link"))
+	if err != nil {
+		t.Fatalf("readlink: %v", err)
+	}
+	if target != "never-shipped" {
+		t.Errorf("symlink target = %q, want %q", target, "never-shipped")
 	}
 }
 
@@ -417,11 +696,41 @@ func TestDownloadAndExtractTarGzAll__rejects_hardlink(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", nil)
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 1, nil)
 
 	// assert
 	if err == nil {
 		t.Fatal("expected error for hard link entry")
+	}
+}
+
+func TestDownloadAndExtractTarGzAll__skips_a_pax_global_header(t *testing.T) {
+	// arrange — a global header is a single-component name, so stripping hides it;
+	// codex extracts with no stripping and the entry reaches the extractor.
+	tarGzData := createMultiFileTarGz(t, []tarFile{
+		{name: "pax_global_header", rawType: tar.TypeXGlobalHeader},
+		{name: "bin/codex", content: []byte("hi"), mode: 0o755},
+	})
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(tarGzData)
+	}))
+	defer server.Close()
+
+	destDir := t.TempDir()
+
+	// act
+	err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 0, nil)
+
+	// assert
+	if err != nil {
+		t.Fatalf("DownloadAndExtractTarGzAll() error = %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(destDir, "bin", "codex")); statErr != nil {
+		t.Errorf("expected bin/codex to be extracted, stat err = %v", statErr)
+	}
+	if _, statErr := os.Lstat(filepath.Join(destDir, "pax_global_header")); !os.IsNotExist(statErr) {
+		t.Errorf("global header should not land on disk (lstat err = %v)", statErr)
 	}
 }
 
@@ -440,7 +749,7 @@ func TestDownloadAndExtractTarGzAll__strips_setuid(t *testing.T) {
 	destDir := t.TempDir()
 
 	// act
-	if err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", nil); err != nil {
+	if err := DownloadAndExtractTarGzAll(context.Background(), server.URL, destDir, "", 1, nil); err != nil {
 		t.Fatalf("DownloadAndExtractTarGzAll() error = %v", err)
 	}
 

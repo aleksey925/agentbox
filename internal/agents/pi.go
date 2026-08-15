@@ -49,7 +49,8 @@ func (p *PiAgent) Download(ctx context.Context, version, destDir string, progres
 	// the pi binary loads sibling files (package.json, node_modules, assets,
 	// wasm) relative to its own path, so the whole archive must be extracted,
 	// not just the binary - same shape as cursor, but pi publishes a checksum.
-	if err := download.DownloadAndExtractTarGzAll(ctx, baseURL+"/"+assetName, destDir, checksum, progress); err != nil {
+	// its entries sit under a pi/ wrapper, so one component is stripped.
+	if err := download.DownloadAndExtractTarGzAll(ctx, baseURL+"/"+assetName, destDir, checksum, 1, progress); err != nil {
 		return fmt.Errorf("pi: %w", err)
 	}
 	return nil

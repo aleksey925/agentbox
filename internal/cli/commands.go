@@ -84,7 +84,11 @@ Use "agentbox init skeleton --help" for more information.
 		return code
 	}
 
-	return toShellExit(a.doInit())
+	code := a.doInit()
+	if code == exitOK {
+		a.warnStaleLayouts(agents.AllAgentNames())
+	}
+	return toShellExit(code)
 }
 
 func (a *App) cmdInitSkeleton(args []string) int {
@@ -195,7 +199,7 @@ func (a *App) doInit() int {
 		fmt.Println("Warning: .agentbox/ already exists and will be overwritten (except local.yml)")
 		if !a.confirmAction("Continue?") {
 			fmt.Println("Aborted")
-			return 0
+			return exitCanceled
 		}
 	}
 
@@ -227,7 +231,7 @@ func (a *App) doInit() int {
 
 	a.createMiseToml(cwd)
 
-	if code := a.ensureAgentsInstalled(paths); code != 0 {
+	if code := a.ensureAgentsInstalled(); code != exitOK {
 		return code
 	}
 
@@ -473,6 +477,10 @@ otherwise it starts a new one.
 		return code
 	}
 
+	// above every exit below, so attaching to a container that is already up warns
+	// too - the install path further down is only reached when a new one starts
+	a.warnStaleLayouts(agents.AllAgentNames())
+
 	opts := a.parseRunFlags(args)
 
 	cwd, err := os.Getwd()
@@ -569,7 +577,7 @@ func (a *App) ensureProjectReady(cwd string) int {
 	agentboxDir := filepath.Join(cwd, ".agentbox")
 	if !skeleton.ProjectInitialized(agentboxDir) {
 		fmt.Println("Warning: not initialized or incomplete, running init first...")
-		if code := a.doInit(); code != 0 {
+		if code := a.doInit(); code != exitOK {
 			return code
 		}
 		fmt.Println()
@@ -593,7 +601,7 @@ func (a *App) ensureProjectReady(cwd string) int {
 		return 1
 	}
 
-	if code := a.ensureAgentsInstalled(paths); code != 0 {
+	if code := a.ensureAgentsInstalled(); code != exitOK {
 		return code
 	}
 
@@ -668,10 +676,14 @@ Use "agentbox agent <command> --help" for more information about a command.
 		return 1
 	}
 
-	return a.showAgentStatus(manager)
+	a.showAgentStatus(manager)
+	// the table compares versions, so an install this binary rejects still renders
+	// as "up to date" - the warning is what tells them apart
+	a.warnStaleLayouts(agents.AllAgentNames())
+	return exitOK
 }
 
-func (a *App) showAgentStatus(manager *agents.Manager) int {
+func (a *App) showAgentStatus(manager *agents.Manager) {
 	fmt.Println("\nFetching agent versions...")
 	statuses := manager.GetStatus()
 
@@ -706,7 +718,6 @@ func (a *App) showAgentStatus(manager *agents.Manager) int {
 	fmt.Println()
 	table.Render()
 	fmt.Println()
-	return 0
 }
 
 func (a *App) cmdAgentUpdate(args []string) int {
@@ -822,6 +833,7 @@ Examples:
 	}
 
 	fmt.Printf("%s switched to %s\n", agentName, version)
+	a.warnStaleLayouts([]string{agentName})
 	return 0
 }
 
@@ -1271,8 +1283,27 @@ func createMiseTomlIfNotExists(projectDir string) error {
 	return nil
 }
 
-func (a *App) ensureAgentsInstalled(paths *config.Paths) int {
-	manager, err := agents.NewManager(paths)
+// warnStaleLayouts is advisory: it reads `current` and stats a couple of files,
+// changes nothing, and never changes an exit code - so a manager it cannot build
+// is a skipped warning, not a refused launch.
+func (a *App) warnStaleLayouts(names []string) {
+	manager, err := a.AgentManager()
+	if err != nil {
+		return
+	}
+	for _, name := range names {
+		if manager.HasCurrentLayout(name) {
+			continue
+		}
+		fmt.Fprintf(os.Stderr,
+			"Warning: the %s install is incomplete and may fail to start.\n", name)
+		fmt.Fprintf(os.Stderr,
+			"Run 'agentbox agent update %s' to reinstall it - that installs the latest version.\n", name)
+	}
+}
+
+func (a *App) ensureAgentsInstalled() int {
+	manager, err := a.AgentManager()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		return 1
