@@ -1,6 +1,7 @@
 package skeleton
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -275,5 +276,43 @@ func TestDockerfile_agent_launchers(t *testing.T) {
 		if !strings.Contains(content, expectedLauncher) {
 			t.Errorf("Dockerfile missing launcher script for %s (expected %q)", name, expectedLauncher)
 		}
+	}
+}
+
+func TestDockerfile_precreates_named_volume_targets(t *testing.T) {
+	// arrange
+	templates, err := GetEmbeddedComposeTemplates()
+	if err != nil {
+		t.Fatalf("GetEmbeddedComposeTemplates error: %v", err)
+	}
+	dockerfile, err := GetEmbeddedDockerfile()
+	if err != nil {
+		t.Fatalf("GetEmbeddedDockerfile error: %v", err)
+	}
+	var targets []string
+	for _, tmpl := range templates {
+		for line := range strings.SplitSeq(string(tmpl.Content), "\n") {
+			source, target, isMount := strings.Cut(strings.TrimPrefix(strings.TrimSpace(line), "- "), ":/home/box/")
+			if isMount && !strings.ContainsAny(source, "~/. ") {
+				targets = append(targets, "/home/box/"+target)
+			}
+		}
+	}
+
+	// act
+	var missing []string
+	precreated := strings.Fields(string(dockerfile.Content))
+	for _, target := range targets {
+		if !slices.Contains(precreated, target) {
+			missing = append(missing, target)
+		}
+	}
+
+	// assert
+	if len(targets) == 0 {
+		t.Fatal("no named volume mounts found in the compose templates")
+	}
+	if len(missing) != 0 {
+		t.Errorf("named volume targets the Dockerfile does not pre-create (they would be root-owned): %v", missing)
 	}
 }

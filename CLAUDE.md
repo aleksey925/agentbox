@@ -355,6 +355,14 @@ For the same reason the install check looks only at what agentbox itself relies 
 manifest, an executable `bin/codex` and the link - and does not mirror codex's list. The
 background server also needs `ps` to track its process, so the image installs `procps`.
 
+To run that server codex copies its whole package into `~/.codex/packages` and starts it
+from the copy. `~/.codex` is a bind mount of the host's directory, so a named volume shared
+across agentbox projects is mounted over `packages` - the same nested-mount scheme as the
+tool caches. The copy is about 400 MB of Linux binaries the host has no use for, and the
+volume keeps it warm across runs instead of landing it on the host disk. The lock and pid
+files of the server stay in the shared `~/.codex`; a codex running on the host at the same
+time as one in a sandbox was not tested.
+
 An existing version directory normally skips the download: for most agents the directory
 existing is the whole check, and an agent that needs more opts in by implementing the
 layout check itself. codex does - it rejects a directory written by an older layout - and

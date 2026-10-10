@@ -103,6 +103,7 @@ RUN mkdir -p /home/box/.config \
              /home/box/.local/state/mise \
              /home/box/.cache/mise \
              /home/box/.cache/opencode \
+             /home/box/.codex/packages \
              /home/box/go \
              /home/box/.cache/uv
 
