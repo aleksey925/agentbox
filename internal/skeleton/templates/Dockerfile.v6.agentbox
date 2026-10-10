@@ -20,6 +20,7 @@ RUN apt-get update -y && \
                     ca-certificates \
                     jq \
                     sudo \
+                    procps \
     && ln -s /usr/bin/fdfind /usr/local/bin/fd \
     && rm -rf /var/lib/apt/lists/* \
               /var/cache/apt/* \

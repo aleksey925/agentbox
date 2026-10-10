@@ -232,7 +232,7 @@ unmasked; a user who wants it masked adds the line by hand.
 
 Limitation on Docker Desktop (macOS): the mask volume nests inside the project
 bind, which goes through a live file-sharing layer. Deleting a masked directory
-on the host *while the sandbox runs* detaches the volume - the path reverts to
+on the host _while the sandbox runs_ detaches the volume - the path reverts to
 the project bind and containment is lost until the next launch. It is not
 agent-exploitable (inside the sandbox the masked path is the volume, so
 deleting it removes volume content, not the host directory); only a host-side
@@ -285,8 +285,8 @@ by choice:
   truncated or wrong-version checksums file cannot downgrade to an unverified install.
   `pi` and `codex` download a whole archive, so the checksum covers the entire tree
   rather than one binary - `pi` because its binary loads siblings by relative path like
-  `cursor`, `codex` because the package bundle is its only checksummed asset (agentbox
-  then trims that bundle, see "Agent install layout").
+  `cursor`, `codex` because it refuses to run outside its package layout (see "Agent
+  install layout").
 - `opencode` and `cursor` are unverified: opencode checksums only its desktop builds, and
   cursor publishes nothing and has its version scraped from a live install script. Pinning
   hashes in-repo is not an option because the version is resolved live ("latest") on each
@@ -327,26 +327,28 @@ guarantee, not something a caller earns by deleting the destination on error.
 ### Agent install layout
 
 The in-sandbox launcher execs one fixed path per agent, `<agent>/<version>/<binary>`, so
-that path has to be a real binary and the version directory a complete install behind it.
-`cursor` and `pi` keep their vendor layout verbatim, because they load siblings by relative
-path. `codex` deliberately does not: its package bundle keeps the binary one level down in
-`bin/`, so agentbox promotes the contents of `bin/` to the version root and drops the rest
-of the bundle. That puts `codex-code-mode-host` where codex looks for it - next to its own
-executable - without teaching the launcher a second path shape.
+that path has to lead to a real binary and the version directory a complete install
+behind it.
+`cursor`, `pi` and `codex` keep their vendor layout verbatim: `cursor` and `pi` load
+siblings by relative path, and `codex` checks that it runs from a complete package before
+it starts its background server - a manifest next to `bin/`, plus the helper, `rg` and
+`bwrap` at their package paths. Trimming the bundle to the binaries, as agentbox did
+before, makes codex 0.162 and later refuse to start.
 
-The dropped parts cost nothing: the image's apt `ripgrep` is the `rg` codex used before,
-`bwrap` cannot create a namespace without `CAP_SYS_ADMIN` (see "Container capabilities"),
-and the bundled `zsh` is unused. The bundle is still the download source only because it
-is the one codex asset with a published checksum.
+The codex bundle keeps its binary one level down in `bin/`, so agentbox adds one thing on
+top of the vendor tree: a relative symlink `codex -> bin/codex` at the version root. This
+is the same link codex creates in its own managed copy of the package, so it is part of
+the layout codex expects rather than a foreign file in it. codex resolves its own
+executable through the link, so it still finds the package around the real file, and the
+launcher keeps a single path shape. The link is created last, after the whole archive is
+on disk, so it doubles as the mark of a finished install.
 
-Only regular files are promoted - anything else in `bin/` fails the install. Promotion
-moves an entry one directory up, and that rebases every relative symlink under it: a
-target the extractor cleared as inside the version directory (see "Download integrity")
-resolves one level higher once promoted, and two such links chained together climb
-arbitrarily far. Checking the shape is enough because the version directory is defined as
-the bundle's binaries and nothing else. The cost is that a bundle which ever ships a
-symlink or a subdirectory in `bin/` stops installing until agentbox learns the new shape -
-the right direction to fail for a path that ends in an exec.
+Nothing in the bundle is dropped, even the parts the sandbox cannot use (`bwrap` cannot
+create a namespace without `CAP_SYS_ADMIN`, see "Container capabilities"): which files
+codex requires is its own moving contract, and a guess that goes stale is a broken agent.
+For the same reason the install check looks only at what agentbox itself relies on - the
+manifest, an executable `bin/codex` and the link - and does not mirror codex's list. The
+background server also needs `ps` to track its process, so the image installs `procps`.
 
 An existing version directory normally skips the download: for most agents the directory
 existing is the whole check, and an agent that needs more opts in by implementing the
