@@ -9,7 +9,7 @@
 # services:
 #   agentbox:
 #     volumes:
-#       - ~/CodeProjects:/home/box/CodeProjects:ro
+#       - ~/CodeProjects:${HOME:?}/CodeProjects:ro
 #     environment:
 #       - MY_CUSTOM_VAR=value
 
