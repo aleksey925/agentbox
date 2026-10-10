@@ -2,7 +2,9 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,8 +61,6 @@ func (c *CodexAgent) IsInstalled(destDir string) bool {
 	if err != nil || !manifest.Mode().IsRegular() {
 		return false
 	}
-	// only what agentbox itself relies on - which other files the package must
-	// hold is codex's own contract, and a copy of it here would go stale
 	entrypoint, err := os.Lstat(filepath.Join(destDir, c.entrypointTarget()))
 	if err != nil || !entrypoint.Mode().IsRegular() || entrypoint.Mode().Perm()&0o111 == 0 {
 		return false
@@ -95,20 +95,33 @@ func (c *CodexAgent) Download(ctx context.Context, version, destDir string, prog
 	}
 
 	// the package archive, not the bare binary: it is the only codex asset with a
-	// published checksum, and codex refuses to run outside its package layout.
-	// the archive has no wrapping directory, so nothing is stripped.
+	// published checksum, and codex refuses to run outside its package layout
 	if err := download.DownloadAndExtractTarGzAll(ctx, releaseURL+"/"+assetName, destDir, checksum, 0, progress); err != nil {
 		return fmt.Errorf("codex: %w", err)
 	}
 
-	// the link goes last, after the whole package is on disk: IsInstalled reads
-	// it as the mark of a finished install
-	if err := os.Symlink(c.entrypointTarget(), filepath.Join(destDir, c.BinaryName())); err != nil {
-		return fmt.Errorf("codex: link entrypoint: %w", err)
+	if err := c.linkEntrypoint(destDir); err != nil {
+		return fmt.Errorf("codex: %w", err)
 	}
 
 	if !c.IsInstalled(destDir) {
 		return fmt.Errorf("codex: package archive did not yield %s and an executable %s", codexPackageManifest, c.entrypointTarget())
 	}
 	return nil
+}
+
+// linkEntrypoint tolerates an archive that already ships the same link, and
+// fails on any other entry under that name.
+func (c *CodexAgent) linkEntrypoint(destDir string) error {
+	link := filepath.Join(destDir, c.BinaryName())
+	err := os.Symlink(c.entrypointTarget(), link)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, fs.ErrExist) {
+		if target, readErr := os.Readlink(link); readErr == nil && target == c.entrypointTarget() {
+			return nil
+		}
+	}
+	return fmt.Errorf("link entrypoint: %w", err)
 }

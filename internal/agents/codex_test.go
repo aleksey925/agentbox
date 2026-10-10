@@ -58,16 +58,16 @@ func TestCodexAgent_Download(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Download() error = %v", err)
 	}
-	want := []string{
-		"bin/codex",
-		"bin/codex-code-mode-host",
-		"codex -> bin/codex",
-		"codex-package.json",
-		"codex-path/rg",
-		"codex-resources/bwrap",
-		"codex-resources/zsh/bin/zsh",
+	want := []string{agent.BinaryName() + " -> " + filepath.ToSlash(agent.entrypointTarget())}
+	for _, entry := range codexBundleEntries() {
+		if !entry.isDir {
+			want = append(want, entry.name)
+		}
 	}
-	if got := listTree(t, destDir); !slices.Equal(got, want) {
+	slices.Sort(want)
+	got := listTree(t, destDir)
+	slices.Sort(got)
+	if !slices.Equal(got, want) {
 		t.Errorf("install tree = %v, want %v", got, want)
 	}
 	content, err := os.ReadFile(filepath.Join(destDir, agent.BinaryName()))
@@ -80,7 +80,7 @@ func TestCodexAgent_Download(t *testing.T) {
 }
 
 func TestCodexAgent_Download__rejects_an_incomplete_package(t *testing.T) {
-	for _, missing := range codexRequiredFiles() {
+	for _, missing := range codexRequiredFiles(newCodexAgent(t)) {
 		t.Run(missing, func(t *testing.T) {
 			// arrange
 			agent := newCodexAgent(t)
@@ -93,24 +93,54 @@ func TestCodexAgent_Download__rejects_an_incomplete_package(t *testing.T) {
 			err := agent.Download(context.Background(), "1.2.3", destDir, nil)
 
 			// assert
-			if err == nil {
-				t.Fatalf("expected error when the archive has no %s", missing)
+			if err == nil || !strings.Contains(err.Error(), codexIncompleteMessage) {
+				t.Fatalf("Download() error = %v, want %q when the archive has no %s", err, codexIncompleteMessage, missing)
 			}
 		})
 	}
 }
 
-func TestCodexAgent_Download__rejects_an_archive_that_ships_the_entrypoint_link_name(t *testing.T) {
+func TestCodexAgent_Download__rejects_an_archive_that_ships_another_entry_as_the_entrypoint_link(t *testing.T) {
+	linkName := newCodexAgent(t).BinaryName()
+	cases := []struct {
+		name  string
+		entry codexPackageEntry
+	}{
+		{name: "regular file", entry: codexFileEntry(linkName)},
+		{name: "foreign link", entry: codexPackageEntry{name: linkName, mode: 0o777, linkTarget: "codex-path/rg"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// arrange
+			agent := newCodexAgent(t)
+			destDir := serveCodexBundle(t, agent, append(codexBundleEntries(), tc.entry))
+
+			// act
+			err := agent.Download(context.Background(), "1.2.3", destDir, nil)
+
+			// assert
+			if err == nil || !strings.Contains(err.Error(), "link entrypoint") {
+				t.Fatalf("Download() error = %v, want a link entrypoint error", err)
+			}
+		})
+	}
+}
+
+func TestCodexAgent_Download__accepts_an_archive_that_ships_the_same_entrypoint_link(t *testing.T) {
 	// arrange
 	agent := newCodexAgent(t)
-	destDir := serveCodexBundle(t, agent, append(codexBundleEntries(), codexFileEntry(agent.BinaryName())))
+	link := codexPackageEntry{name: agent.BinaryName(), mode: 0o777, linkTarget: agent.entrypointTarget()}
+	destDir := serveCodexBundle(t, agent, append(codexBundleEntries(), link))
 
 	// act
 	err := agent.Download(context.Background(), "1.2.3", destDir, nil)
 
 	// assert
-	if err == nil {
-		t.Fatal("expected error when the archive root already holds the entrypoint name")
+	if err != nil {
+		t.Fatalf("Download() error = %v", err)
+	}
+	if !agent.IsInstalled(destDir) {
+		t.Error("a package that ships the entrypoint link itself must count as installed")
 	}
 }
 
@@ -131,8 +161,8 @@ func TestCodexAgent_Download__non_executable_entrypoint(t *testing.T) {
 	err := agent.Download(context.Background(), "1.2.3", destDir, nil)
 
 	// assert
-	if err == nil {
-		t.Fatal("expected error when the archive's entrypoint is not executable")
+	if err == nil || !strings.Contains(err.Error(), codexIncompleteMessage) {
+		t.Fatalf("Download() error = %v, want %q", err, codexIncompleteMessage)
 	}
 }
 
@@ -150,7 +180,7 @@ func TestCodexAgent_Download__archive_checksum_mismatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when the archive does not match its published checksum")
 	}
-	if got := listNames(t, destDir); len(got) != 0 {
+	if got := listTree(t, destDir); len(got) != 0 {
 		t.Errorf("install listing = %v, want an empty directory", got)
 	}
 }
@@ -175,71 +205,110 @@ func TestCodexAgent_Download__checksum_entry_missing(t *testing.T) {
 }
 
 func TestCodexAgent_IsInstalled(t *testing.T) {
-	// arrange
-	agent := newCodexAgent(t)
-	complete := t.TempDir()
-	seedCodexPackage(t, complete)
-
-	flat := t.TempDir()
-	writeExecutable(t, filepath.Join(flat, agent.BinaryName()))
-	writeExecutable(t, filepath.Join(flat, "codex-code-mode-host"))
-
-	noLink := t.TempDir()
-	seedCodexPackage(t, noLink)
-	if err := os.Remove(filepath.Join(noLink, agent.BinaryName())); err != nil {
-		t.Fatalf("remove entrypoint link: %v", err)
+	type seedFunc func(t *testing.T, agent *CodexAgent, dir string)
+	cases := []struct {
+		name string
+		seed seedFunc
+		want bool
+	}{
+		{
+			name: "whole package plus the entrypoint link",
+			seed: seedCodexPackage,
+			want: true,
+		},
+		{
+			name: "flattened layout of older agentbox versions",
+			seed: func(t *testing.T, agent *CodexAgent, dir string) {
+				writeStubFile(t, filepath.Join(dir, agent.BinaryName()))
+				writeStubFile(t, filepath.Join(dir, codexHostBinary))
+			},
+		},
+		{
+			name: "no entrypoint link",
+			seed: func(t *testing.T, agent *CodexAgent, dir string) {
+				seedCodexPackage(t, agent, dir)
+				removeCodexFile(t, dir, agent.BinaryName())
+			},
+		},
+		{
+			name: "entrypoint link to another file",
+			seed: func(t *testing.T, agent *CodexAgent, dir string) {
+				seedCodexPackage(t, agent, dir)
+				removeCodexFile(t, dir, agent.BinaryName())
+				if err := os.Symlink(filepath.Join("codex-path", "rg"), filepath.Join(dir, agent.BinaryName())); err != nil {
+					t.Fatalf("create foreign link: %v", err)
+				}
+			},
+		},
+		{
+			name: "regular file in place of the entrypoint link",
+			seed: func(t *testing.T, agent *CodexAgent, dir string) {
+				seedCodexPackage(t, agent, dir)
+				removeCodexFile(t, dir, agent.BinaryName())
+				writeStubFile(t, filepath.Join(dir, agent.BinaryName()))
+			},
+		},
+		{
+			name: "non-executable entrypoint",
+			seed: func(t *testing.T, agent *CodexAgent, dir string) {
+				seedCodexPackage(t, agent, dir)
+				if err := os.Chmod(filepath.Join(dir, agent.entrypointTarget()), 0o644); err != nil {
+					t.Fatalf("chmod entrypoint: %v", err)
+				}
+			},
+		},
+		{
+			name: "manifest that is not a regular file",
+			seed: func(t *testing.T, agent *CodexAgent, dir string) {
+				seedCodexPackage(t, agent, dir)
+				removeCodexFile(t, dir, codexPackageManifest)
+				if err := os.Mkdir(filepath.Join(dir, codexPackageManifest), 0o755); err != nil {
+					t.Fatalf("create manifest dir: %v", err)
+				}
+			},
+		},
+		{
+			name: "entrypoint target that is a symlink",
+			seed: func(t *testing.T, agent *CodexAgent, dir string) {
+				seedCodexPackage(t, agent, dir)
+				removeCodexFile(t, dir, agent.entrypointTarget())
+				writeStubFile(t, filepath.Join(dir, "real-codex"))
+				if err := os.Symlink(filepath.Join("..", "real-codex"), filepath.Join(dir, agent.entrypointTarget())); err != nil {
+					t.Fatalf("link entrypoint target: %v", err)
+				}
+			},
+		},
+		{
+			name: "missing directory",
+			seed: func(*testing.T, *CodexAgent, string) {},
+		},
 	}
-
-	foreignLink := t.TempDir()
-	seedCodexPackage(t, foreignLink)
-	if err := os.Remove(filepath.Join(foreignLink, agent.BinaryName())); err != nil {
-		t.Fatalf("remove entrypoint link: %v", err)
+	for _, missing := range codexRequiredFiles(newCodexAgent(t)) {
+		cases = append(cases, struct {
+			name string
+			seed seedFunc
+			want bool
+		}{
+			name: "package without " + missing,
+			seed: func(t *testing.T, agent *CodexAgent, dir string) {
+				seedCodexPackage(t, agent, dir)
+				removeCodexFile(t, dir, missing)
+			},
+		})
 	}
-	if err := os.Symlink(filepath.Join("codex-path", "rg"), filepath.Join(foreignLink, agent.BinaryName())); err != nil {
-		t.Fatalf("create foreign link: %v", err)
-	}
-
-	notExecutable := t.TempDir()
-	seedCodexPackage(t, notExecutable)
-	if err := os.Chmod(filepath.Join(notExecutable, agent.entrypointTarget()), 0o644); err != nil {
-		t.Fatalf("chmod entrypoint: %v", err)
-	}
-
-	// act & assert
-	if !agent.IsInstalled(complete) {
-		t.Error("the whole package plus the entrypoint link must count as installed")
-	}
-	if agent.IsInstalled(flat) {
-		t.Error("the flattened layout of older agentbox versions must not count as installed")
-	}
-	if agent.IsInstalled(noLink) {
-		t.Error("a package without the entrypoint link must not count as installed")
-	}
-	if agent.IsInstalled(foreignLink) {
-		t.Error("an entrypoint link to another file must not count as installed")
-	}
-	if agent.IsInstalled(notExecutable) {
-		t.Error("a non-executable entrypoint must not count as installed")
-	}
-	if agent.IsInstalled(filepath.Join(t.TempDir(), "absent")) {
-		t.Error("a missing directory must not count as installed")
-	}
-}
-
-func TestCodexAgent_IsInstalled__rejects_a_package_missing_a_required_file(t *testing.T) {
-	for _, missing := range codexRequiredFiles() {
-		t.Run(missing, func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
 			// arrange
 			agent := newCodexAgent(t)
-			dir := t.TempDir()
-			seedCodexPackage(t, dir)
-			if err := os.Remove(filepath.Join(dir, missing)); err != nil {
-				t.Fatalf("remove %s: %v", missing, err)
-			}
+			dir := filepath.Join(t.TempDir(), "1.2.3")
+			tc.seed(t, agent, dir)
 
-			// act & assert
-			if agent.IsInstalled(dir) {
-				t.Errorf("a package without %s must not count as installed", missing)
+			// act
+			got := agent.IsInstalled(dir)
+
+			// assert
+			if got != tc.want {
+				t.Errorf("IsInstalled() = %v, want %v", got, tc.want)
 			}
 		})
 	}
@@ -255,23 +324,28 @@ func newCodexAgent(t *testing.T) *CodexAgent {
 	return agent
 }
 
-func codexRequiredFiles() []string {
-	return []string{filepath.Join(codexBundleBinDir, "codex"), codexPackageManifest}
+const (
+	codexIncompleteMessage = "package archive did not yield"
+	codexHostBinary        = "codex-code-mode-host"
+)
+
+func codexRequiredFiles(agent *CodexAgent) []string {
+	return []string{agent.entrypointTarget(), codexPackageManifest}
 }
 
-// seedCodexPackage writes the layout Download produces into dir.
-func seedCodexPackage(t *testing.T, dir string) {
+// seedCodexPackage writes the minimal layout IsInstalled accepts into dir.
+func seedCodexPackage(t *testing.T, agent *CodexAgent, dir string) {
 	t.Helper()
 
-	for _, name := range codexRequiredFiles() {
-		writeExecutable(t, filepath.Join(dir, name))
+	for _, name := range codexRequiredFiles(agent) {
+		writeStubFile(t, filepath.Join(dir, name))
 	}
-	if err := os.Symlink(filepath.Join(codexBundleBinDir, "codex"), filepath.Join(dir, "codex")); err != nil {
+	if err := os.Symlink(agent.entrypointTarget(), filepath.Join(dir, agent.BinaryName())); err != nil {
 		t.Fatalf("link entrypoint: %v", err)
 	}
 }
 
-func writeExecutable(t *testing.T, path string) {
+func writeStubFile(t *testing.T, path string) {
 	t.Helper()
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -279,6 +353,14 @@ func writeExecutable(t *testing.T, path string) {
 	}
 	if err := os.WriteFile(path, []byte("x"), 0o755); err != nil {
 		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func removeCodexFile(t *testing.T, dir, name string) {
+	t.Helper()
+
+	if err := os.Remove(filepath.Join(dir, name)); err != nil {
+		t.Fatalf("remove %s: %v", name, err)
 	}
 }
 
@@ -307,20 +389,6 @@ func listTree(t *testing.T, dir string) []string {
 		t.Fatalf("walk %s: %v", dir, err)
 	}
 	return tree
-}
-
-func listNames(t *testing.T, dir string) []string {
-	t.Helper()
-
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatalf("read dir %s: %v", dir, err)
-	}
-	names := make([]string, 0, len(entries))
-	for _, entry := range entries {
-		names = append(names, entry.Name())
-	}
-	return names
 }
 
 func codexAssetName(agent *CodexAgent) string {
@@ -361,10 +429,11 @@ func serveCodexRelease(t *testing.T, agent *CodexAgent, version string, archive 
 }
 
 type codexPackageEntry struct {
-	name    string
-	isDir   bool
-	mode    int64
-	content string
+	name       string
+	isDir      bool
+	mode       int64
+	content    string
+	linkTarget string
 }
 
 func codexFileEntry(name string) codexPackageEntry {
@@ -381,7 +450,7 @@ func codexBundleEntries() []codexPackageEntry {
 	return []codexPackageEntry{
 		codexDirEntry("bin"),
 		codexFileEntry("bin/codex"),
-		codexFileEntry("bin/codex-code-mode-host"),
+		codexFileEntry("bin/" + codexHostBinary),
 		codexFileEntry("codex-package.json"),
 		codexDirEntry("codex-path"),
 		codexFileEntry("codex-path/rg"),
@@ -412,10 +481,14 @@ func createCodexPackage(t *testing.T, entries []codexPackageEntry) []byte {
 			header.Size = 0
 			header.Typeflag = tar.TypeDir
 		}
+		if entry.linkTarget != "" {
+			header.Linkname = entry.linkTarget
+			header.Typeflag = tar.TypeSymlink
+		}
 		if err := tw.WriteHeader(header); err != nil {
 			t.Fatalf("write tar header: %v", err)
 		}
-		if entry.isDir {
+		if entry.isDir || entry.linkTarget != "" {
 			continue
 		}
 		if _, err := tw.Write([]byte(entry.content)); err != nil {

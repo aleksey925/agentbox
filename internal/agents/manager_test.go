@@ -256,8 +256,11 @@ func TestManager_HasCurrentLayout(t *testing.T) {
 	writeCurrentVersion(t, selected, "codex", "1.0.0")
 
 	unselected := newTestManager(t)
-	seedAgentVersion(t, unselected, "codex", "1.0.0")
-	seedCodexPackage(t, unselected.paths.AgentVersionDir("codex", "1.0.0"))
+	seedCodexPackage(t, newCodexAgent(t), unselected.paths.AgentVersionDir("codex", "1.0.0"))
+
+	packaged := newTestManager(t)
+	seedCodexPackage(t, newCodexAgent(t), packaged.paths.AgentVersionDir("codex", "1.0.0"))
+	writeCurrentVersion(t, packaged, "codex", "1.0.0")
 
 	fresh := newTestManager(t)
 
@@ -274,6 +277,9 @@ func TestManager_HasCurrentLayout(t *testing.T) {
 	}
 	if selected.HasCurrentLayout("codex") {
 		t.Error("a selected codex install without the package must be reported as stale")
+	}
+	if !packaged.HasCurrentLayout("codex") {
+		t.Error("a selected codex install holding the whole package must not be reported as stale")
 	}
 	if unselected.HasCurrentLayout("codex") {
 		t.Error("a version on disk with nothing selected must be reported as stale")
@@ -416,7 +422,7 @@ func seedAgentVersion(t *testing.T, manager *Manager, name, version string, file
 		t.Fatalf("create version dir: %v", err)
 	}
 	for _, file := range files {
-		writeExecutable(t, filepath.Join(versionDir, file))
+		writeStubFile(t, filepath.Join(versionDir, file))
 	}
 }
 

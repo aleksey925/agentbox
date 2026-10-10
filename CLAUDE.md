@@ -285,8 +285,8 @@ by choice:
   truncated or wrong-version checksums file cannot downgrade to an unverified install.
   `pi` and `codex` download a whole archive, so the checksum covers the entire tree
   rather than one binary - `pi` because its binary loads siblings by relative path like
-  `cursor`, `codex` because it refuses to run outside its package layout (see "Agent
-  install layout").
+  `cursor`, `codex` because the package bundle is its only checksummed asset and it
+  refuses to run outside that layout (see "Agent install layout").
 - `opencode` and `cursor` are unverified: opencode checksums only its desktop builds, and
   cursor publishes nothing and has its version scraped from a live install script. Pinning
   hashes in-repo is not an option because the version is resolved live ("latest") on each
@@ -327,13 +327,12 @@ guarantee, not something a caller earns by deleting the destination on error.
 ### Agent install layout
 
 The in-sandbox launcher execs one fixed path per agent, `<agent>/<version>/<binary>`, so
-that path has to lead to a real binary and the version directory a complete install
-behind it.
-`cursor`, `pi` and `codex` keep their vendor layout verbatim: `cursor` and `pi` load
-siblings by relative path, and `codex` checks that it runs from a complete package before
-it starts its background server - a manifest next to `bin/`, plus the helper, `rg` and
-`bwrap` at their package paths. Trimming the bundle to the binaries, as agentbox did
-before, makes codex 0.162 and later refuse to start.
+that path has to lead to a real binary, and the version directory has to be a complete
+install behind it. `cursor`, `pi` and `codex` keep their vendor layout verbatim: `cursor`
+and `pi` load siblings by relative path, and `codex` checks that it runs from a complete
+package before it starts its background server - a manifest next to `bin/`, plus the
+helper, `rg` and `bwrap` at their package paths. Trimming the bundle to the binaries, as
+agentbox did before, makes codex 0.162 and later refuse to start.
 
 The codex bundle keeps its binary one level down in `bin/`, so agentbox adds one thing on
 top of the vendor tree: a relative symlink `codex -> bin/codex` at the version root. This
@@ -341,7 +340,13 @@ is the same link codex creates in its own managed copy of the package, so it is 
 the layout codex expects rather than a foreign file in it. codex resolves its own
 executable through the link, so it still finds the package around the real file, and the
 launcher keeps a single path shape. The link is created last, after the whole archive is
-on disk, so it doubles as the mark of a finished install.
+on disk, so it doubles as the mark of a finished install. An archive that already ships
+the same link is accepted; any other entry under that name fails the install.
+
+The link sits inside the `~/.agentbox/bin` bind mount, where `current` is a plain file
+rather than a symlink because of Docker VM cache issues. The link differs in that it is
+written once at install and never repointed. It was checked in a Linux container only;
+Docker Desktop for macOS is not verified.
 
 Nothing in the bundle is dropped, even the parts the sandbox cannot use (`bwrap` cannot
 create a namespace without `CAP_SYS_ADMIN`, see "Container capabilities"): which files
@@ -353,27 +358,30 @@ background server also needs `ps` to track its process, so the image installs `p
 An existing version directory normally skips the download: for most agents the directory
 existing is the whole check, and an agent that needs more opts in by implementing the
 layout check itself. codex does - it rejects a directory written by an older layout - and
-the caller then drops that directory and re-seeds it.
+the caller then drops that directory and re-seeds it. The check does not look at the codex
+version, so a pinned codex older than 0.162 in the old flat layout is rejected too, even
+if it could still start from it. Such a user gets the stale-install warning on every run;
+older versions were not tested with the new layout.
 
-Why: a bare binary that fails closed on a missing sibling is a broken install that still
-looks complete. A completed version directory is reused as-is rather than re-downloaded
-into; a rejected one is cleared before the re-seed, never extracted over, or the install
-would end up a mix of two layouts. The re-seed is non-atomic, so without the
-reject-and-reseed step a layout fix would reach a user only once the vendor happened to
-publish a new version. A stale install is reported with the command that repairs it
-wherever agentbox meets one - `agent use`, `agent`, `init`, and every `run`,
-including the ones that attach to a container already up - rather than repaired behind the
-user's back, because an unannounced ~110 MB download inside `agentbox run` costs a session
-while an ignored warning costs a line of stderr. The same warning covers any agent whose
-selected version directory is simply gone, and any agent whose directory holds anything at
-all with no version selected - either way the launcher has nothing to exec, and reinstalling
-is the same remedy. Only a directory that is absent or empty stays silent, deliberately: a
-never-installed agent and an install that failed before it wrote anything are the same
-state, so warning would fire for every agent the user chose not to install. That is also
-exactly the test that decides whether a first run installs everything, so a directory
-counted as installed can never be silently skipped here. The warning says the remedy
-plainly - `agent update` installs the latest version, so a user sitting on a deliberately
-pinned older one knows the advice costs them the pin.
+Why: an install codex refuses to start from - a bare binary, or a bundle trimmed to its
+binaries - is a broken install that still looks complete. A completed version directory is
+reused as-is rather than re-downloaded into; a rejected one is cleared before the re-seed,
+never extracted over, or the install would end up a mix of two layouts. The re-seed is
+non-atomic, so without the reject-and-reseed step a layout fix would reach a user only once
+the vendor happened to publish a new version. A stale install is reported with the command
+that repairs it wherever agentbox meets one - `agent use`, `agent`, `init`, and every
+`run`, including the ones that attach to a container already up - rather than repaired
+behind the user's back, because an unannounced ~110 MB download inside `agentbox run` costs
+a session while an ignored warning costs a line of stderr. The same warning covers any
+agent whose selected version directory is simply gone, and any agent whose directory holds
+anything at all with no version selected - either way the launcher has nothing to exec, and
+reinstalling is the same remedy. Only a directory that is absent or empty stays silent,
+deliberately: a never-installed agent and an install that failed before it wrote anything
+are the same state, so warning would fire for every agent the user chose not to install.
+That is also exactly the test that decides whether a first run installs everything, so a
+directory counted as installed can never be silently skipped here. The warning says the
+remedy plainly - `agent update` installs the latest version, so a user sitting on a
+deliberately pinned older one knows the advice costs them the pin.
 
 ## Project commands
 
