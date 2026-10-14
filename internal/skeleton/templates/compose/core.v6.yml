@@ -31,6 +31,7 @@ services:
       # codex copies its own package here to run its background server; a
       # sandbox-local volume keeps those linux binaries off the host
       - codex-packages:/home/box/.codex/packages
+      - ~/.agents/:/home/box/.agents/
       - ~/.cursor/:/home/box/.cursor/
       - ~/.config/opencode/:/home/box/.config/opencode/
       - ~/.local/share/opencode/:/home/box/.local/share/opencode/

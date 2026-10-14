@@ -53,7 +53,7 @@ func AllAgentNames() []string {
 var agentConfigDirs = map[string][]string{
 	"claude":   {".claude"},
 	"copilot":  {".copilot"},
-	"codex":    {".codex"},
+	"codex":    {".codex", ".agents"},
 	"cursor":   {".cursor"},
 	"opencode": {".config/opencode", ".local/share/opencode", ".local/state/opencode"},
 	"pi":       {".pi"},
