@@ -28,8 +28,6 @@ services:
       - ~/.claude/:/home/box/.claude/
       - ~/.copilot/:/home/box/.copilot/
       - ~/.codex/:/home/box/.codex/
-      # codex copies its own package here to run its background server; a
-      # sandbox-local volume keeps those linux binaries off the host
       - codex-packages:/home/box/.codex/packages
       - ~/.agents/:/home/box/.agents/
       - ~/.cursor/:/home/box/.cursor/
