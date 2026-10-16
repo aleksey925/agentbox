@@ -195,6 +195,9 @@ project/.agentbox/
 ```
 
 - **`local.yml`** — add project-specific settings here, this file is never overwritten
+  - The current project is mounted in the container at its host path. Mount
+    other projects at their host path too, so the agent does not mix up paths:
+    `~/CodeProjects:${HOME:?}/CodeProjects:ro`
 - **`masked-dirs`** — list project sub-directories to hide from the sandbox;
   each is replaced inside the container by its own isolated, empty volume.
   Detected `.venv` and `node_modules` are masked by default, so host-built

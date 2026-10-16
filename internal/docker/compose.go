@@ -19,6 +19,7 @@ var SharedVolumes = []string{
 	"agentbox-mise-data",
 	"agentbox-mise-cache",
 	"agentbox-opencode-cache",
+	"agentbox-codex-packages",
 	"agentbox-go-cache",
 	"agentbox-uv-cache",
 }

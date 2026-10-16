@@ -21,8 +21,8 @@ type Agent interface {
 
 // installVerifier lets an agent reject a version directory that exists but was
 // written by an older layout - an upstream package that gained files the
-// previous release did not ship. Agents that install a single binary don't need
-// it: for them the directory existing is proof enough.
+// previous release did not ship. Other agents don't need it: for them the
+// directory existing is proof enough.
 type installVerifier interface {
 	IsInstalled(destDir string) bool
 }
@@ -53,7 +53,7 @@ func AllAgentNames() []string {
 var agentConfigDirs = map[string][]string{
 	"claude":   {".claude"},
 	"copilot":  {".copilot"},
-	"codex":    {".codex"},
+	"codex":    {".codex", ".agents"},
 	"cursor":   {".cursor"},
 	"opencode": {".config/opencode", ".local/share/opencode", ".local/state/opencode"},
 	"pi":       {".pi"},

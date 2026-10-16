@@ -2,7 +2,9 @@ package agents
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,9 +18,8 @@ const (
 	// codexBundleBinDir is where the package archive keeps its executables,
 	// relative to the archive root.
 	codexBundleBinDir = "bin"
-	// codexCodeModeHost is the helper codex spawns from the directory of its own
-	// resolved executable, failing closed on code mode when it is missing.
-	codexCodeModeHost = "codex-code-mode-host"
+	// codexPackageManifest marks the directory above bin/ as a codex package.
+	codexPackageManifest = "codex-package.json"
 )
 
 type CodexAgent struct {
@@ -51,18 +52,25 @@ func (c *CodexAgent) FetchLatestVersion(ctx context.Context) (string, error) {
 	return strings.TrimPrefix(tag, "rust-v"), nil
 }
 
-// IsInstalled states the layout Download produces: the binary the launcher execs
-// and the helper codex spawns beside it, both real executables. It rejects the
-// single-binary layout agentbox installed before the package archive, which has
-// no codex-code-mode-host and so fails closed on code mode.
+// IsInstalled states the layout Download produces: the vendor package kept
+// whole, plus the entrypoint link the launcher execs. It rejects the layouts
+// agentbox installed before, which have no package manifest and so cannot
+// start the codex background server.
 func (c *CodexAgent) IsInstalled(destDir string) bool {
-	for _, name := range []string{c.BinaryName(), codexCodeModeHost} {
-		info, err := os.Lstat(filepath.Join(destDir, name))
-		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
-			return false
-		}
+	manifest, err := os.Lstat(filepath.Join(destDir, codexPackageManifest))
+	if err != nil || !manifest.Mode().IsRegular() {
+		return false
 	}
-	return true
+	entrypoint, err := os.Lstat(filepath.Join(destDir, c.entrypointTarget()))
+	if err != nil || !entrypoint.Mode().IsRegular() || entrypoint.Mode().Perm()&0o111 == 0 {
+		return false
+	}
+	link, err := os.Readlink(filepath.Join(destDir, c.BinaryName()))
+	return err == nil && link == c.entrypointTarget()
+}
+
+func (c *CodexAgent) entrypointTarget() string {
+	return filepath.Join(codexBundleBinDir, c.BinaryName())
 }
 
 func (c *CodexAgent) rustArch() string {
@@ -87,80 +95,33 @@ func (c *CodexAgent) Download(ctx context.Context, version, destDir string, prog
 	}
 
 	// the package archive, not the bare binary: it is the only codex asset with a
-	// published checksum, and it carries codex-code-mode-host. its layout has no
-	// wrapping directory, so nothing is stripped.
+	// published checksum, and codex refuses to run outside its package layout
 	if err := download.DownloadAndExtractTarGzAll(ctx, releaseURL+"/"+assetName, destDir, checksum, 0, progress); err != nil {
 		return fmt.Errorf("codex: %w", err)
 	}
 
-	if err := c.flattenPackage(destDir); err != nil {
+	if err := c.linkEntrypoint(destDir); err != nil {
 		return fmt.Errorf("codex: %w", err)
 	}
 
 	if !c.IsInstalled(destDir) {
-		return fmt.Errorf("codex: package archive did not yield executable %s and %s", c.BinaryName(), codexCodeModeHost)
+		return fmt.Errorf("codex: package archive did not yield %s and an executable %s", codexPackageManifest, c.entrypointTarget())
 	}
 	return nil
 }
 
-// flattenPackage promotes bin/'s files to destDir and drops the rest of the
-// bundle, so <version>/codex is the file the launcher execs and the helpers sit
-// next to it. A bin/ entry that is not a regular file fails the install - see
-// CLAUDE.md "Agent install layout".
-func (c *CodexAgent) flattenPackage(destDir string) error {
-	roots, err := os.ReadDir(destDir)
-	if err != nil {
-		return fmt.Errorf("read package root: %w", err)
-	}
-	// the extras go before the promotion, so a bundle that ever ships bin/<name>
-	// colliding with a root <name> cannot have its promoted file deleted after
-	for _, entry := range roots {
-		if entry.Name() == codexBundleBinDir {
-			continue
-		}
-		if err = os.RemoveAll(filepath.Join(destDir, entry.Name())); err != nil {
-			return fmt.Errorf("drop %s: %w", entry.Name(), err)
-		}
-	}
-
-	binDir := filepath.Join(destDir, codexBundleBinDir)
-	payload, err := os.ReadDir(binDir)
-	if err != nil {
-		return fmt.Errorf("read package %s: %w", codexBundleBinDir, err)
-	}
-	// promotion moves an entry one directory up, which rebases every relative
-	// symlink under it: a target the extractor cleared as inside destDir then
-	// resolves outside it
-	for _, entry := range payload {
-		if !entry.Type().IsRegular() {
-			return fmt.Errorf("package %s/%s is not a regular file", codexBundleBinDir, entry.Name())
-		}
-	}
-	promote := func(name string) error {
-		if err := os.Rename(filepath.Join(binDir, name), filepath.Join(destDir, name)); err != nil {
-			return fmt.Errorf("promote %s: %w", name, err)
-		}
+// linkEntrypoint tolerates an archive that already ships the same link, and
+// fails on any other entry under that name.
+func (c *CodexAgent) linkEntrypoint(destDir string) error {
+	link := filepath.Join(destDir, c.BinaryName())
+	err := os.Symlink(c.entrypointTarget(), link)
+	if err == nil {
 		return nil
 	}
-	for _, entry := range payload {
-		if entry.Name() == c.BinaryName() {
-			continue
-		}
-		if err := promote(entry.Name()); err != nil {
-			return err
+	if errors.Is(err, fs.ErrExist) {
+		if target, readErr := os.Readlink(link); readErr == nil && target == c.entrypointTarget() {
+			return nil
 		}
 	}
-	// the entrypoint goes last, after every helper: IsInstalled reads it as the
-	// mark of a finished install, so an interrupted flatten must never leave it at
-	// the root ahead of something else
-	if err := promote(c.BinaryName()); err != nil {
-		return err
-	}
-
-	// os.Remove, not RemoveAll: a bin/ that is still non-empty means an entry was
-	// not promoted, and silently deleting it would ship a half-installed codex
-	if err := os.Remove(binDir); err != nil {
-		return fmt.Errorf("drop %s: %w", codexBundleBinDir, err)
-	}
-	return nil
+	return fmt.Errorf("link entrypoint: %w", err)
 }

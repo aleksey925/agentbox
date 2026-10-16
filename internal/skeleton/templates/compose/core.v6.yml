@@ -5,7 +5,7 @@ services:
     image: agentbox:local
     build:
       context: .
-      dockerfile: .agentbox/Dockerfile.v5.agentbox
+      dockerfile: .agentbox/Dockerfile.v6.agentbox
     # mirror the host project path (see CLAUDE.md "Live, not baked")
     working_dir: ${AGENTBOX_PROJECT_PATH:?launch via the agentbox CLI, not docker compose directly}
     environment:
@@ -28,6 +28,8 @@ services:
       - ~/.claude/:/home/box/.claude/
       - ~/.copilot/:/home/box/.copilot/
       - ~/.codex/:/home/box/.codex/
+      - codex-packages:/home/box/.codex/packages
+      - ~/.agents/:/home/box/.agents/
       - ~/.cursor/:/home/box/.cursor/
       - ~/.config/opencode/:/home/box/.config/opencode/
       - ~/.local/share/opencode/:/home/box/.local/share/opencode/
@@ -59,4 +61,7 @@ volumes:
     external: true
   opencode-cache:
     name: agentbox-opencode-cache
+    external: true
+  codex-packages:
+    name: agentbox-codex-packages
     external: true

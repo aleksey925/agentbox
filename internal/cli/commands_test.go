@@ -888,7 +888,7 @@ func TestCmdAgentUse__warns_about_a_stale_install(t *testing.T) {
 
 func TestCmdAgentUse__silent_on_a_current_install(t *testing.T) {
 	// arrange
-	app := appWithCodexInstall(t, "codex", "codex-code-mode-host")
+	app := appWithCodexPackage(t)
 
 	// act
 	stderr := captureStderr(func() {
@@ -920,7 +920,7 @@ func TestCmdRun__warns_about_a_stale_install_when_attaching(t *testing.T) {
 
 func TestCmdRun__silent_on_a_current_install(t *testing.T) {
 	// arrange
-	app := appWithCodexInstall(t, "codex", "codex-code-mode-host")
+	app := appWithCodexPackage(t)
 	selectCodexVersion(t, app)
 	blockDocker(t)
 
@@ -989,7 +989,7 @@ func TestCmdInit__says_nothing_when_init_fails(t *testing.T) {
 
 func TestWarnStaleLayouts__warns_when_nothing_is_selected(t *testing.T) {
 	// arrange
-	app := appWithCodexInstall(t, "codex", "codex-code-mode-host")
+	app := appWithCodexPackage(t)
 
 	// act
 	stderr := captureStderr(func() { app.warnStaleLayouts([]string{"codex"}) })
@@ -1102,11 +1102,26 @@ func appWithCodexInstall(t *testing.T, files ...string) *App {
 		t.Fatalf("create version dir: %v", err)
 	}
 	for _, file := range files {
-		if err := os.WriteFile(filepath.Join(versionDir, file), []byte("x"), 0o755); err != nil {
+		path := filepath.Join(versionDir, file)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("create dir for %s: %v", file, err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o755); err != nil {
 			t.Fatalf("write %s: %v", file, err)
 		}
 	}
 	return &App{paths: paths}
+}
+
+func appWithCodexPackage(t *testing.T) *App {
+	t.Helper()
+
+	app := appWithCodexInstall(t, "bin/codex", "codex-package.json")
+	entrypoint := filepath.Join(app.paths.AgentVersionDir("codex", codexTestVersion), "codex")
+	if err := os.Symlink("bin/codex", entrypoint); err != nil {
+		t.Fatalf("link entrypoint: %v", err)
+	}
+	return app
 }
 
 // blockDocker keeps a test that reaches the attach path from shelling out to a

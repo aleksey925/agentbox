@@ -232,7 +232,7 @@ unmasked; a user who wants it masked adds the line by hand.
 
 Limitation on Docker Desktop (macOS): the mask volume nests inside the project
 bind, which goes through a live file-sharing layer. Deleting a masked directory
-on the host *while the sandbox runs* detaches the volume - the path reverts to
+on the host _while the sandbox runs_ detaches the volume - the path reverts to
 the project bind and containment is lost until the next launch. It is not
 agent-exploitable (inside the sandbox the masked path is the volume, so
 deleting it removes volume content, not the host directory); only a host-side
@@ -285,8 +285,8 @@ by choice:
   truncated or wrong-version checksums file cannot downgrade to an unverified install.
   `pi` and `codex` download a whole archive, so the checksum covers the entire tree
   rather than one binary - `pi` because its binary loads siblings by relative path like
-  `cursor`, `codex` because the package bundle is its only checksummed asset (agentbox
-  then trims that bundle, see "Agent install layout").
+  `cursor`, `codex` because the package bundle is its only checksummed asset and it
+  refuses to run outside that layout (see "Agent install layout").
 - `opencode` and `cursor` are unverified: opencode checksums only its desktop builds, and
   cursor publishes nothing and has its version scraped from a live install script. Pinning
   hashes in-repo is not an option because the version is resolved live ("latest") on each
@@ -327,51 +327,69 @@ guarantee, not something a caller earns by deleting the destination on error.
 ### Agent install layout
 
 The in-sandbox launcher execs one fixed path per agent, `<agent>/<version>/<binary>`, so
-that path has to be a real binary and the version directory a complete install behind it.
-`cursor` and `pi` keep their vendor layout verbatim, because they load siblings by relative
-path. `codex` deliberately does not: its package bundle keeps the binary one level down in
-`bin/`, so agentbox promotes the contents of `bin/` to the version root and drops the rest
-of the bundle. That puts `codex-code-mode-host` where codex looks for it - next to its own
-executable - without teaching the launcher a second path shape.
+that path has to lead to a real binary, and the version directory has to be a complete
+install behind it. `cursor`, `pi` and `codex` keep their vendor layout verbatim: `cursor`
+and `pi` load siblings by relative path, and `codex` checks that it runs from a complete
+package before it starts its background server - a manifest next to `bin/`, plus the
+helper, `rg` and `bwrap` at their package paths. Trimming the bundle to the binaries, as
+agentbox did before, makes codex 0.162 and later refuse to start.
 
-The dropped parts cost nothing: the image's apt `ripgrep` is the `rg` codex used before,
-`bwrap` cannot create a namespace without `CAP_SYS_ADMIN` (see "Container capabilities"),
-and the bundled `zsh` is unused. The bundle is still the download source only because it
-is the one codex asset with a published checksum.
+The codex bundle keeps its binary one level down in `bin/`, so agentbox adds one thing on
+top of the vendor tree: a relative symlink `codex -> bin/codex` at the version root. This
+is the same link codex creates in its own managed copy of the package, so it is part of
+the layout codex expects rather than a foreign file in it. codex resolves its own
+executable through the link, so it still finds the package around the real file, and the
+launcher keeps a single path shape. The link is created last, after the whole archive is
+on disk, so it doubles as the mark of a finished install. An archive that already ships
+the same link is accepted; any other entry under that name fails the install.
 
-Only regular files are promoted - anything else in `bin/` fails the install. Promotion
-moves an entry one directory up, and that rebases every relative symlink under it: a
-target the extractor cleared as inside the version directory (see "Download integrity")
-resolves one level higher once promoted, and two such links chained together climb
-arbitrarily far. Checking the shape is enough because the version directory is defined as
-the bundle's binaries and nothing else. The cost is that a bundle which ever ships a
-symlink or a subdirectory in `bin/` stops installing until agentbox learns the new shape -
-the right direction to fail for a path that ends in an exec.
+The link sits inside the `~/.agentbox/bin` bind mount, where `current` is a plain file
+rather than a symlink because of Docker VM cache issues. The link differs in that it is
+written once at install and never repointed. It was checked in a Linux container only;
+Docker Desktop for macOS is not verified.
+
+Nothing in the bundle is dropped, even the parts the sandbox cannot use (`bwrap` cannot
+create a namespace without `CAP_SYS_ADMIN`, see "Container capabilities"): which files
+codex requires is its own moving contract, and a guess that goes stale is a broken agent.
+For the same reason the install check looks only at what agentbox itself relies on - the
+manifest, an executable `bin/codex` and the link - and does not mirror codex's list. The
+background server also needs `ps` to track its process, so the image installs `procps`.
+
+To run that server codex copies its whole package into `~/.codex/packages` and starts it
+from the copy. `~/.codex` is a bind mount of the host's directory, so a named volume shared
+across agentbox projects is mounted over `packages` - the same nested-mount scheme as the
+tool caches. The copy is about 400 MB of Linux binaries the host has no use for, and the
+volume keeps it warm across runs instead of landing it on the host disk. The lock and pid
+files of the server stay in the shared `~/.codex`; a codex running on the host at the same
+time as one in a sandbox was not tested.
 
 An existing version directory normally skips the download: for most agents the directory
 existing is the whole check, and an agent that needs more opts in by implementing the
 layout check itself. codex does - it rejects a directory written by an older layout - and
-the caller then drops that directory and re-seeds it.
+the caller then drops that directory and re-seeds it. The check does not look at the codex
+version, so a pinned codex older than 0.162 in the old flat layout is rejected too, even
+if it could still start from it. Such a user gets the stale-install warning on every run;
+older versions were not tested with the new layout.
 
-Why: a bare binary that fails closed on a missing sibling is a broken install that still
-looks complete. A completed version directory is reused as-is rather than re-downloaded
-into; a rejected one is cleared before the re-seed, never extracted over, or the install
-would end up a mix of two layouts. The re-seed is non-atomic, so without the
-reject-and-reseed step a layout fix would reach a user only once the vendor happened to
-publish a new version. A stale install is reported with the command that repairs it
-wherever agentbox meets one - `agent use`, `agent`, `init`, and every `run`,
-including the ones that attach to a container already up - rather than repaired behind the
-user's back, because an unannounced ~110 MB download inside `agentbox run` costs a session
-while an ignored warning costs a line of stderr. The same warning covers any agent whose
-selected version directory is simply gone, and any agent whose directory holds anything at
-all with no version selected - either way the launcher has nothing to exec, and reinstalling
-is the same remedy. Only a directory that is absent or empty stays silent, deliberately: a
-never-installed agent and an install that failed before it wrote anything are the same
-state, so warning would fire for every agent the user chose not to install. That is also
-exactly the test that decides whether a first run installs everything, so a directory
-counted as installed can never be silently skipped here. The warning says the remedy
-plainly - `agent update` installs the latest version, so a user sitting on a deliberately
-pinned older one knows the advice costs them the pin.
+Why: an install codex refuses to start from - a bare binary, or a bundle trimmed to its
+binaries - is a broken install that still looks complete. A completed version directory is
+reused as-is rather than re-downloaded into; a rejected one is cleared before the re-seed,
+never extracted over, or the install would end up a mix of two layouts. The re-seed is
+non-atomic, so without the reject-and-reseed step a layout fix would reach a user only once
+the vendor happened to publish a new version. A stale install is reported with the command
+that repairs it wherever agentbox meets one - `agent use`, `agent`, `init`, and every
+`run`, including the ones that attach to a container already up - rather than repaired
+behind the user's back, because an unannounced ~110 MB download inside `agentbox run` costs
+a session while an ignored warning costs a line of stderr. The same warning covers any
+agent whose selected version directory is simply gone, and any agent whose directory holds
+anything at all with no version selected - either way the launcher has nothing to exec, and
+reinstalling is the same remedy. Only a directory that is absent or empty stays silent,
+deliberately: a never-installed agent and an install that failed before it wrote anything
+are the same state, so warning would fire for every agent the user chose not to install.
+That is also exactly the test that decides whether a first run installs everything, so a
+directory counted as installed can never be silently skipped here. The warning says the
+remedy plainly - `agent update` installs the latest version, so a user sitting on a
+deliberately pinned older one knows the advice costs them the pin.
 
 ## Project commands
 
